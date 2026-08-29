@@ -38,6 +38,8 @@ export type PlayerFeature = {
   xg: number;
   xa: number;
   defcon: number;
+  lastSeasonPointsPer90: number;
+  lastSeasonXgiPer90: number;
   teamAttack: number;
   teamDefence: number;
   fixtures: UpcomingFixture[];

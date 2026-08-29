@@ -10,6 +10,7 @@ import { scorePlayers } from "@/lib/scoring";
 
 type PlayerRow = {
   player_id: number;
+  player_code: number | null;
   name: string;
   team: string;
   team_short_name: string;
@@ -22,6 +23,8 @@ type PlayerRow = {
   xg: number | null;
   xa: number | null;
   defcon: number | null;
+  last_season_points_per_90: number | null;
+  last_season_xgi_per_90: number | null;
 };
 
 type TeamFormRow = {
@@ -42,7 +45,7 @@ type FixtureRow = {
 export async function getRankingData(params: RankingParams): Promise<RankingResponse> {
   const sync = await query<{ season: string; synced_at: Date | string }>(
     `SELECT season, max(completed_at) AS synced_at
-     FROM sync_runs WHERE status = 'complete'
+     FROM sync_runs WHERE status = 'complete' AND source = 'official-fpl-api'
      GROUP BY season ORDER BY synced_at DESC NULLS LAST LIMIT 1`,
   );
   const current = sync[0];
@@ -51,6 +54,7 @@ export async function getRankingData(params: RankingParams): Promise<RankingResp
   }
 
   const season = current.season;
+  const priorSeason = `${Number(season.slice(0, 4)) - 1}-${season.slice(2, 4)}`;
   const gameweekRows = await query<{ current_gameweek: number | null }>(
     `SELECT max(event) AS current_gameweek FROM fixtures WHERE season = ? AND finished = true`,
     [season],
@@ -60,21 +64,25 @@ export async function getRankingData(params: RankingParams): Promise<RankingResp
 
   const [players, teamForm, upcoming, teams] = await Promise.all([
     query<PlayerRow>(
-      `SELECT p.player_id, p.web_name AS name, t.name AS team, t.short_name AS team_short_name,
+      `SELECT p.player_id, p.player_code, p.web_name AS name, t.name AS team, t.short_name AS team_short_name,
               p.position, p.now_cost AS cost, p.status, p.chance_of_playing_next_round,
               coalesce(sum(s.minutes), 0) AS minutes,
               coalesce(sum(s.total_points), 0) AS form_points,
               coalesce(sum(s.expected_goals), 0) AS xg,
               coalesce(sum(s.expected_assists), 0) AS xa,
-              coalesce(sum(s.defensive_contribution), 0) AS defcon
+              coalesce(sum(s.defensive_contribution), 0) AS defcon,
+              coalesce(max(summary.total_points / nullif(summary.minutes, 0) * 90), 0) AS last_season_points_per_90,
+              coalesce(max((summary.expected_goals + summary.expected_assists) / nullif(summary.minutes, 0) * 90), 0) AS last_season_xgi_per_90
        FROM players p
        JOIN teams t ON t.season = p.season AND t.team_id = p.team_id
+       LEFT JOIN player_season_summaries summary
+         ON summary.season = ? AND summary.player_code = p.player_code
        LEFT JOIN player_fixture_stats s
          ON s.season = p.season AND s.player_id = p.player_id
          AND s.event BETWEEN ? AND ?
        WHERE p.season = ?
        GROUP BY ALL`,
-      [startGameweek, currentGameweek, season],
+      [priorSeason, startGameweek, currentGameweek, season],
     ),
     query<TeamFormRow>(
       `WITH match_form AS (
@@ -161,6 +169,8 @@ export async function getRankingData(params: RankingParams): Promise<RankingResp
       xg: Number(player.xg ?? 0),
       xa: Number(player.xa ?? 0),
       defcon: Number(player.defcon ?? 0),
+      lastSeasonPointsPer90: Number(player.last_season_points_per_90 ?? 0),
+      lastSeasonXgiPer90: Number(player.last_season_xgi_per_90 ?? 0),
       teamAttack: Number(teamScore?.attack ?? 0),
       teamDefence: Number(teamScore?.defence ?? 0),
       fixtures: fixtureMap.get(team?.team_id ?? -1) ?? [],

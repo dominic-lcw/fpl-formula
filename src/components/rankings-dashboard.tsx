@@ -237,7 +237,7 @@ export function RankingsDashboard() {
               ) : (
                 <table className="w-full min-w-[820px] text-left text-sm">
                   <thead className="border-b border-white/10 text-xs uppercase tracking-wider text-slate-500">
-                    <tr><th className="pb-3 pr-3">Rank</th><th className="pb-3">Player</th><th className="pb-3">Form</th><th className="pb-3">xG / xA</th><th className="pb-3">Defcon</th><th className="pb-3">Next</th><th className="pb-3">Score</th><th className="pb-3" /></tr>
+                    <tr><th className="pb-3 pr-3">Rank</th><th className="pb-3">Player</th><th className="pb-3">Form</th><th className="pb-3">xG / xA</th><th className="pb-3">Last year /90</th><th className="pb-3">Defcon</th><th className="pb-3">Next</th><th className="pb-3">Score</th><th className="pb-3" /></tr>
                   </thead>
                   <tbody>
                     {rankings.map((player) => (
@@ -246,6 +246,7 @@ export function RankingsDashboard() {
                         <td className="py-4"><div className="font-medium text-slate-100">{player.name}</div><div className="mt-0.5 text-xs text-slate-500">{player.teamShortName} · {player.position} · £{player.cost.toFixed(1)}m</div></td>
                         <td className="py-4 text-slate-300">{player.formPoints.toFixed(0)} pts <span className="text-slate-500">/ {player.minutes.toFixed(0)}m</span></td>
                         <td className="py-4 text-slate-300">{player.xg.toFixed(2)} <span className="text-slate-500">/</span> {player.xa.toFixed(2)}</td>
+                        <td className="py-4 text-slate-300">{player.lastSeasonPointsPer90.toFixed(1)} <span className="text-slate-500">pts · {player.lastSeasonXgiPer90.toFixed(2)} xGI</span></td>
                         <td className="py-4 text-slate-300">{player.defcon.toFixed(0)}</td>
                         <td className="py-4"><div className="flex gap-1">{player.fixtures.slice(0, 3).map((fixture, index) => <Badge key={`${fixture.event}-${index}`} className={fixtureTone(fixture.difficulty)}>{fixture.opponent.slice(0, 3).toUpperCase()} {fixture.wasHome ? "H" : "A"}</Badge>)}</div></td>
                         <td className="py-4"><span className="font-mono text-lg font-semibold text-cyan-200">{player.score.toFixed(1)}</span></td>

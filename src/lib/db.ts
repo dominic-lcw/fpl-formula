@@ -29,6 +29,7 @@ const schema = `
     web_name VARCHAR NOT NULL,
     first_name VARCHAR,
     second_name VARCHAR,
+    player_code INTEGER,
     team_id INTEGER,
     position VARCHAR NOT NULL,
     now_cost DOUBLE,
@@ -36,6 +37,21 @@ const schema = `
     chance_of_playing_next_round INTEGER,
     selected_by_percent DOUBLE,
     PRIMARY KEY (season, player_id)
+  );
+
+  ALTER TABLE players ADD COLUMN IF NOT EXISTS player_code INTEGER;
+
+  CREATE TABLE IF NOT EXISTS player_season_summaries (
+    season VARCHAR NOT NULL,
+    player_code INTEGER NOT NULL,
+    web_name VARCHAR NOT NULL,
+    position VARCHAR NOT NULL,
+    total_points DOUBLE,
+    minutes DOUBLE,
+    expected_goals DOUBLE,
+    expected_assists DOUBLE,
+    defensive_contribution DOUBLE,
+    PRIMARY KEY (season, player_code)
   );
 
   CREATE TABLE IF NOT EXISTS fixtures (

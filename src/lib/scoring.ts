@@ -49,7 +49,13 @@ function scale(values: number[]): (value: number) => number {
 function individualRaw(player: PlayerFeature) {
   const attacking = player.xg + player.xa;
   const defconWeight = player.position === "DEF" ? 1 : player.position === "MID" ? 0.55 : 0.15;
-  return attacking * 0.55 + player.formPoints * 0.3 + player.defcon * defconWeight * 0.15;
+  const priorSeasonReference = player.lastSeasonXgiPer90 * 4 + player.lastSeasonPointsPer90;
+  return (
+    attacking * 0.55 +
+    player.formPoints * 0.3 +
+    player.defcon * defconWeight * 0.15 +
+    priorSeasonReference * 0.25
+  );
 }
 
 function teamRaw(player: PlayerFeature) {

@@ -16,6 +16,8 @@ const basePlayer: PlayerFeature = {
   xg: 2.5,
   xa: 1.8,
   defcon: 20,
+  lastSeasonPointsPer90: 5.8,
+  lastSeasonXgiPer90: 0.54,
   teamAttack: 8,
   teamDefence: 5,
   fixtures: [{ event: 5, opponent: "Leeds", difficulty: 2, wasHome: true, kickoffTime: null }],

@@ -4,8 +4,8 @@ import { parse } from "csv-parse/sync";
 import { databasePath, execute, getConnection } from "../src/lib/db";
 
 const FPL_API = "https://fantasy.premierleague.com/api";
-const ARCHIVE_API = "https://api.github.com/repos/vaastav/Fantasy-Premier-League/contents/data";
-const ARCHIVE_RAW = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data";
+const LAST_SEASON_ARCHIVE =
+  "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/9779cdbc0c07f6c900c2d0c181ddf6bb9c800f88/data";
 const currentOnly = process.argv.includes("--current-only");
 const positionById: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
 
@@ -23,6 +23,11 @@ function text(value: unknown): string | null {
 
 function seasonCode(date = new Date()) {
   const startYear = date.getUTCMonth() >= 6 ? date.getUTCFullYear() : date.getUTCFullYear() - 1;
+  return `${startYear}-${String(startYear + 1).slice(-2)}`;
+}
+
+function previousSeasonCode(season = seasonCode()) {
+  const startYear = Number(season.slice(0, 4)) - 1;
   return `${startYear}-${String(startYear + 1).slice(-2)}`;
 }
 
@@ -87,19 +92,42 @@ async function upsertTeam(season: string, team: Json) {
 async function upsertPlayer(season: string, player: Json) {
   const position = positionById[number(player.element_type) ?? number(player.position) ?? 0] ?? "MID";
   await execute(
-    `INSERT OR REPLACE INTO players VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO players
+      (season, player_id, web_name, first_name, second_name, player_code, team_id, position, now_cost, status, chance_of_playing_next_round, selected_by_percent)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       season,
       number(player.id) ?? number(player.element) ?? 0,
       text(player.web_name) ?? text(player.name) ?? "Unknown",
       text(player.first_name),
       text(player.second_name),
+      number(player.code) ?? number(player.element_code),
       number(player.team),
       position,
       number(player.now_cost),
       text(player.status) ?? "a",
       number(player.chance_of_playing_next_round),
       number(player.selected_by_percent),
+    ],
+  );
+}
+
+async function upsertPreviousSeasonSummary(season: string, player: Json) {
+  const playerCode = number(player.code) ?? number(player.element_code);
+  if (!playerCode) return;
+  const position = positionById[number(player.element_type) ?? number(player.position) ?? 0] ?? "MID";
+  await execute(
+    `INSERT OR REPLACE INTO player_season_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      season,
+      playerCode,
+      text(player.web_name) ?? text(player.name) ?? "Unknown",
+      position,
+      number(player.total_points),
+      number(player.minutes),
+      number(player.expected_goals),
+      number(player.expected_assists),
+      number(player.defensive_contribution),
     ],
   );
 }
@@ -196,63 +224,18 @@ async function hydrateCurrentSeason() {
   }
 }
 
-async function archiveSeasons(): Promise<string[]> {
-  const contents = await fetchJson<Array<{ type: string; name: string }>>(ARCHIVE_API);
-  return contents
-    .filter((entry) => entry.type === "dir" && /^\d{4}-\d{2}$/.test(entry.name))
-    .map((entry) => entry.name)
-    .filter((season) => season < seasonCode())
-    .sort();
-}
-
-async function loadArchiveFile(season: string, file: string) {
-  return fetchCsv(`${ARCHIVE_RAW}/${season}/${file}`);
-}
-
-async function hydrateArchiveSeason(season: string) {
-  const source = "vaastav-fpl-archive";
-  let records = 0;
-  await beginRun(season, source);
-  try {
-    const [teams, players, fixtures] = await Promise.all([
-      loadArchiveFile(season, "teams.csv"),
-      loadArchiveFile(season, "players_raw.csv"),
-      loadArchiveFile(season, "fixtures.csv"),
-    ]);
-    const stats = await loadArchiveFile(season, "gws/merged_gw.csv").catch(() =>
-      loadArchiveFile(season, "gws/merged_gws.csv"),
-    );
-    await execute(`INSERT OR REPLACE INTO seasons VALUES (?, ?, current_timestamp)`, [season, source]);
-    for (const team of teams) {
-      await upsertTeam(season, team);
-      records++;
-    }
-    for (const player of players) {
-      await upsertPlayer(season, player);
-      records++;
-    }
-    for (const fixture of fixtures) {
-      await upsertFixture(season, fixture);
-      records++;
-    }
-    for (const stat of stats) {
-      await upsertStats(season, number(stat.element) ?? 0, stat);
-      records++;
-    }
-    await endRun(season, source, "complete", records, "Archived FPL CSV sync");
-    console.log(`Synced ${season}: ${records} archive records.`);
-  } catch (error) {
-    await endRun(season, source, "failed", records, error instanceof Error ? error.message : String(error));
-    console.warn(`Skipped ${season}: ${error instanceof Error ? error.message : String(error)}`);
-  }
+async function hydratePreviousSeasonSummary() {
+  const season = previousSeasonCode();
+  const players = await fetchCsv(`${LAST_SEASON_ARCHIVE}/${season}/players_raw.csv`);
+  for (const player of players) await upsertPreviousSeasonSummary(season, player);
+  console.log(`Synced ${season}: ${players.length} player summaries.`);
 }
 
 async function main() {
   await mkdir(path.dirname(databasePath), { recursive: true });
   await getConnection();
   if (!currentOnly) {
-    const seasons = await archiveSeasons();
-    for (const season of seasons) await hydrateArchiveSeason(season);
+    await hydratePreviousSeasonSummary();
   }
   await hydrateCurrentSeason();
 }
