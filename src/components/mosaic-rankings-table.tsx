@@ -10,34 +10,30 @@ type TableElement = HTMLElement & {
   };
 };
 
-type TableStatus = "loading" | "ready" | "error";
-
 function formatNumber(value: unknown, digits = 0) {
   return Number(value).toFixed(digits);
 }
 
 export function MosaicRankingsTable({ version }: { version: number }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState<TableStatus>("loading");
+  const activeTableRef = useRef<TableElement | undefined>(undefined);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    let isCurrent = true;
-    let table: TableElement | undefined;
+    let cancelled = false;
+    let stagedTable: TableElement | undefined;
     const host = hostRef.current;
 
     if (!host) return;
-    host.replaceChildren();
-
-    void Promise.resolve().then(() => {
-      if (isCurrent) setStatus("loading");
-    });
 
     const mountTable = async () => {
       const vg = await getMosaic();
-      if (!isCurrent) return;
+      if (cancelled) return;
 
-      table = vg.table({
-        element: host,
+      const stage = document.createElement("div");
+      stage.className = "mosaic-rankings-table-stage";
+      stagedTable = vg.table({
+        element: stage,
         from: "ranked_players",
         columns: [
           "rank",
@@ -55,7 +51,7 @@ export function MosaicRankingsTable({ version }: { version: number }) {
           "score",
         ],
         height: 600,
-        rowBatch: 80,
+        rowBatch: 120,
         width: {
           rank: 64,
           player: 170,
@@ -83,35 +79,49 @@ export function MosaicRankingsTable({ version }: { version: number }) {
         },
       }) as TableElement;
 
-      await table.value?.pending;
+      await stagedTable.value?.pending;
+      if (cancelled) return;
+
+      const previousTable = activeTableRef.current;
+      host.replaceChildren(stage);
+      activeTableRef.current = stagedTable;
+      previousTable?.value?.destroy();
     };
 
     void mountTable().then(
       () => {
-        if (isCurrent) setStatus("ready");
+        if (!cancelled) setError(false);
       },
       () => {
-        if (isCurrent) setStatus("error");
+        if (!cancelled) setError(true);
       },
     );
 
     return () => {
-      isCurrent = false;
-      table?.value?.destroy();
-      table?.remove();
+      cancelled = true;
+      if (stagedTable && activeTableRef.current !== stagedTable) {
+        stagedTable.value?.destroy();
+        stagedTable.remove();
+      }
     };
   }, [version]);
+
+  useEffect(
+    () => () => {
+      activeTableRef.current?.value?.destroy();
+      activeTableRef.current?.remove();
+    },
+    [],
+  );
 
   return (
     <>
       <div
         ref={hostRef}
-        aria-busy={status === "loading"}
         aria-label="Player rankings table"
         className="mosaic-rankings-table"
       />
-      {status === "loading" && <p className="py-12 text-center text-slate-400">Preparing the scrollable table…</p>}
-      {status === "error" && <p className="py-12 text-center text-rose-200">Unable to prepare the scrollable table.</p>}
+      {error && <p className="py-12 text-center text-rose-200">Unable to prepare the scrollable table.</p>}
     </>
   );
 }

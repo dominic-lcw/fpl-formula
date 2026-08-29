@@ -30,6 +30,10 @@ input {
   overflow: auto;
 }
 
+.mosaic-rankings-table-stage {
+  animation: mosaic-table-enter 120ms ease-out;
+}
+
 .mosaic-rankings-table table {
   width: 100%;
   min-width: 1350px;
@@ -66,4 +70,22 @@ input {
 
 .mosaic-rankings-table tr:hover td {
   background: rgb(255 255 255 / 0.04);
+}
+
+@keyframes mosaic-table-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mosaic-rankings-table-stage {
+    animation: none;
+  }
 }
