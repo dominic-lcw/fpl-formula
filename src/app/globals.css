@@ -72,6 +72,31 @@ input {
   background: rgb(255 255 255 / 0.04);
 }
 
+.mosaic-rankings-table th:nth-child(2) {
+  color: rgb(165 243 252);
+  background: rgb(12 32 48);
+}
+
+.mosaic-rankings-table td:nth-child(2) {
+  background: rgb(8 145 178 / 0.07);
+}
+
+.mosaic-rankings-table tr:hover td:nth-child(2) {
+  background: rgb(8 145 178 / 0.14);
+}
+
+.score-badge {
+  display: inline-flex;
+  min-width: 3.4rem;
+  justify-content: center;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
 @keyframes mosaic-table-enter {
   from {
     opacity: 0;

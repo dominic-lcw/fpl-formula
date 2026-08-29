@@ -249,6 +249,7 @@ function rankingQuery(
     )
     SELECT
       rank,
+      score,
       player,
       club,
       position,
@@ -259,8 +260,7 @@ function rankingQuery(
       xa,
       last_year_per_90,
       defcon,
-      next_fixtures,
-      score
+      next_fixtures
     FROM ranked
     ${where}
   `;

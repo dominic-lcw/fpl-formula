@@ -2,6 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getMosaic } from "@/lib/mosaic-rankings";
+import { paintScoreColumn } from "@/lib/score-style";
+
+const rankingColumns = [
+  "rank",
+  "score",
+  "player",
+  "club",
+  "position",
+  "price",
+  "form_points",
+  "minutes",
+  "xg",
+  "xa",
+  "last_year_per_90",
+  "defcon",
+  "next_fixtures",
+] as const;
+
+const scoreColumnIndex = rankingColumns.indexOf("score") + 1;
 
 type TableElement = HTMLElement & {
   value?: {
@@ -22,6 +41,7 @@ export function MosaicRankingsTable({ version }: { version: number }) {
   useEffect(() => {
     let cancelled = false;
     let stagedTable: TableElement | undefined;
+    let disconnectColors: (() => void) | undefined;
     const host = hostRef.current;
 
     if (!host) return;
@@ -35,25 +55,12 @@ export function MosaicRankingsTable({ version }: { version: number }) {
       stagedTable = vg.table({
         element: stage,
         from: "ranked_players",
-        columns: [
-          "rank",
-          "player",
-          "club",
-          "position",
-          "price",
-          "form_points",
-          "minutes",
-          "xg",
-          "xa",
-          "last_year_per_90",
-          "defcon",
-          "next_fixtures",
-          "score",
-        ],
+        columns: [...rankingColumns],
         height: 600,
         rowBatch: 120,
         width: {
           rank: 64,
+          score: 88,
           player: 170,
           club: 64,
           position: 72,
@@ -65,7 +72,9 @@ export function MosaicRankingsTable({ version }: { version: number }) {
           last_year_per_90: 130,
           defcon: 76,
           next_fixtures: 158,
-          score: 78,
+        },
+        align: {
+          score: "center",
         },
         format: {
           price: (value: unknown) => `£${formatNumber(value, 1)}m`,
@@ -86,6 +95,7 @@ export function MosaicRankingsTable({ version }: { version: number }) {
       host.replaceChildren(stage);
       activeTableRef.current = stagedTable;
       previousTable?.value?.destroy();
+      disconnectColors = paintScoreColumn(stage, scoreColumnIndex);
     };
 
     void mountTable().then(
@@ -99,6 +109,7 @@ export function MosaicRankingsTable({ version }: { version: number }) {
 
     return () => {
       cancelled = true;
+      disconnectColors?.();
       if (stagedTable && activeTableRef.current !== stagedTable) {
         stagedTable.value?.destroy();
         stagedTable.remove();
