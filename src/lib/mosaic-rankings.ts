@@ -47,7 +47,7 @@ async function loadDataset() {
   if (!datasetPromise) {
     datasetPromise = getMosaic().then(async (vg) => {
       await vg.coordinator().exec(
-        parquetTables.map((table) => vg.loadParquet(table, `/api/parquet/${table}`)),
+        parquetTables.map((table) => vg.loadParquet(table, `${typeof window !== 'undefined' ? window.location.origin : ''}/api/parquet/${table}`)),
       );
       return vg;
     });
@@ -93,7 +93,7 @@ function rankingQuery(
         coalesce((
           SELECT max(event)
           FROM fixtures
-          WHERE season = current_sync.season AND finished = true
+          WHERE fixtures.season = current_sync.season AND finished = true
         ), 0) AS current_gameweek
       FROM current_sync
     ),
@@ -132,7 +132,7 @@ function rankingQuery(
         team_a_score AS conceded
       FROM fixtures
       CROSS JOIN context c
-      WHERE season = c.season AND finished = true AND event BETWEEN ${startGameweek} AND c.current_gameweek
+      WHERE fixtures.season = c.season AND finished = true AND event BETWEEN ${startGameweek} AND c.current_gameweek
       UNION ALL
       SELECT
         team_a AS team_id,
@@ -141,7 +141,7 @@ function rankingQuery(
         team_h_score AS conceded
       FROM fixtures
       CROSS JOIN context c
-      WHERE season = c.season AND finished = true AND event BETWEEN ${startGameweek} AND c.current_gameweek
+      WHERE fixtures.season = c.season AND finished = true AND event BETWEEN ${startGameweek} AND c.current_gameweek
     ),
     player_form AS (
       SELECT
@@ -284,11 +284,11 @@ export async function calculateMosaicRankings(
 
   const [metadataResult, teamsResult, countResult] = await Promise.all([
     coordinator.query(
-      `SELECT season, max(event) AS current_gameweek, max(completed_at) AS synced_at
+      `SELECT sync_runs.season, max(event) AS current_gameweek, max(completed_at) AS synced_at
        FROM sync_runs
        LEFT JOIN fixtures USING (season)
        WHERE status = 'complete' AND source = 'official-fpl-api' AND finished = true
-       GROUP BY season
+       GROUP BY sync_runs.season
        ORDER BY synced_at DESC NULLS LAST
        LIMIT 1`,
       { type: "json", cache: false },
