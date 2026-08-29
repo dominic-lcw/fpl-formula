@@ -2,7 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, RefreshCw, Settings2, SlidersHorizontal, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Position, RankedPlayer, RankingParams, RankingResponse } from "@/lib/fpl-types";
@@ -98,7 +98,7 @@ export function RankingsDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadRankings(nextParams = params) {
+  const loadRankings = useCallback(async (nextParams: RankingParams) => {
     setIsLoading(true);
     setError(null);
     const search = new URLSearchParams({
@@ -120,22 +120,22 @@ export function RankingsDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
+    let savedParams = DEFAULT_PARAMS;
     const saved = window.localStorage.getItem("fpl-ranking-preset");
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as RankingParams;
-        setParams(parsed);
-        loadRankings(parsed);
-        return;
+        savedParams = parsed;
+        window.setTimeout(() => setParams(parsed), 0);
       } catch {
         window.localStorage.removeItem("fpl-ranking-preset");
       }
     }
-    void loadRankings(DEFAULT_PARAMS);
-  }, []);
+    void loadRankings(savedParams);
+  }, [loadRankings]);
 
   const rankings = useMemo(
     () =>
@@ -151,7 +151,7 @@ export function RankingsDashboard() {
 
   function applyFormula() {
     window.localStorage.setItem("fpl-ranking-preset", JSON.stringify(params));
-    void loadRankings();
+    void loadRankings(params);
   }
 
   return (
@@ -216,7 +216,7 @@ export function RankingsDashboard() {
                 <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-slate-500" size={15} />
               </label>
             </div>
-            <button onClick={() => void loadRankings()} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5">
+            <button onClick={() => void loadRankings(params)} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5">
               <RefreshCw size={15} /> Refresh
             </button>
           </div>
