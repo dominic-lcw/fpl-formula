@@ -97,10 +97,13 @@ export function RankingsDashboard() {
   const [team, setTeam] = useState("ALL");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [hasLoadedPreset, setHasLoadedPreset] = useState(false);
+  const activeRequest = useRef<AbortController | null>(null);
   const latestRequest = useRef(0);
 
-  const loadRankings = useCallback(async (nextParams: RankingParams, signal?: AbortSignal) => {
+  const loadRankings = useCallback(async (nextParams: RankingParams) => {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     const requestId = ++latestRequest.current;
     setIsLoading(true);
     setError(null);
@@ -114,7 +117,7 @@ export function RankingsDashboard() {
       venue: String(nextParams.weights.venue),
     });
     try {
-      const response = await fetch(`/api/rankings?${search}`, { signal });
+      const response = await fetch(`/api/rankings?${search}`, { signal: controller.signal });
       const payload = (await response.json()) as RankingResponse & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to load rankings.");
       if (requestId === latestRequest.current) setData(payload);
@@ -129,25 +132,23 @@ export function RankingsDashboard() {
   }, []);
 
   useEffect(() => {
+    let savedParams = DEFAULT_PARAMS;
     const saved = window.localStorage.getItem("fpl-ranking-preset");
     if (saved) {
       try {
-        setParams(JSON.parse(saved) as RankingParams);
+        savedParams = JSON.parse(saved) as RankingParams;
       } catch {
         window.localStorage.removeItem("fpl-ranking-preset");
       }
     }
-    setHasLoadedPreset(true);
-  }, []);
+    const timeout = window.setTimeout(() => {
+      setParams(savedParams);
+      void loadRankings(savedParams);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [loadRankings]);
 
-  useEffect(() => {
-    if (!hasLoadedPreset) return;
-
-    window.localStorage.setItem("fpl-ranking-preset", JSON.stringify(params));
-    const controller = new AbortController();
-    void loadRankings(params, controller.signal);
-    return () => controller.abort();
-  }, [hasLoadedPreset, loadRankings, params]);
+  useEffect(() => () => activeRequest.current?.abort(), []);
 
   const rankings = useMemo(
     () =>
@@ -157,8 +158,14 @@ export function RankingsDashboard() {
     [data, position, team],
   );
 
+  function updateParams(nextParams: RankingParams) {
+    setParams(nextParams);
+    window.localStorage.setItem("fpl-ranking-preset", JSON.stringify(nextParams));
+    void loadRankings(nextParams);
+  }
+
   function updateWeight(key: keyof RankingParams["weights"], value: number) {
-    setParams((current) => ({ ...current, weights: { ...current.weights, [key]: value } }));
+    updateParams({ ...params, weights: { ...params.weights, [key]: value } });
   }
 
   return (
@@ -188,9 +195,9 @@ export function RankingsDashboard() {
             <p className="text-sm text-slate-400">Rankings update and settings save as you adjust each control.</p>
           </CardHeader>
           <CardContent className="grid gap-5">
-            <ParameterSlider label="Form window (GWs)" value={params.formWindow} min={1} max={10} onChange={(value) => setParams({ ...params, formWindow: value })} />
-            <ParameterSlider label="Fixture horizon (GWs)" value={params.fixtureHorizon} min={1} max={8} onChange={(value) => setParams({ ...params, fixtureHorizon: value })} />
-            <ParameterSlider label="Minimum minutes" value={params.minMinutes} min={0} max={900} onChange={(value) => setParams({ ...params, minMinutes: value })} />
+            <ParameterSlider label="Form window (GWs)" value={params.formWindow} min={1} max={10} onChange={(value) => updateParams({ ...params, formWindow: value })} />
+            <ParameterSlider label="Fixture horizon (GWs)" value={params.fixtureHorizon} min={1} max={8} onChange={(value) => updateParams({ ...params, fixtureHorizon: value })} />
+            <ParameterSlider label="Minimum minutes" value={params.minMinutes} min={0} max={900} onChange={(value) => updateParams({ ...params, minMinutes: value })} />
             <div className="grid gap-3 border-t border-white/10 pt-4">
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Score weights</p>
               <ParameterSlider label="Individual" value={params.weights.individual} min={0} max={100} onChange={(value) => updateWeight("individual", value)} />
