@@ -34,7 +34,7 @@ Each component is normalized against the eligible player pool (0–100), so the 
 - **Fixtures:** next 3 Gameweeks’ FPL fixture difficulty, including doubles and blanks.
 - **Venue:** the home/away balance in that same fixture horizon.
 
-Use the dashboard controls to change the rolling window, horizon, minutes threshold, and all weights. Applied settings are saved locally in the browser.
+Use the dashboard controls to change the rolling window, horizon, minutes threshold, and all weights. Rankings recalculate and settings save locally in the browser as each control changes.
 
 ## Commands
 

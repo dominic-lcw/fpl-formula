@@ -2,7 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, RefreshCw, Settings2, SlidersHorizontal, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Position, RankedPlayer, RankingParams, RankingResponse } from "@/lib/fpl-types";
@@ -97,8 +97,11 @@ export function RankingsDashboard() {
   const [team, setTeam] = useState("ALL");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoadedPreset, setHasLoadedPreset] = useState(false);
+  const latestRequest = useRef(0);
 
-  const loadRankings = useCallback(async (nextParams: RankingParams) => {
+  const loadRankings = useCallback(async (nextParams: RankingParams, signal?: AbortSignal) => {
+    const requestId = ++latestRequest.current;
     setIsLoading(true);
     setError(null);
     const search = new URLSearchParams({
@@ -111,36 +114,40 @@ export function RankingsDashboard() {
       venue: String(nextParams.weights.venue),
     });
     try {
-      const response = await fetch(`/api/rankings?${search}`);
+      const response = await fetch(`/api/rankings?${search}`, { signal });
       const payload = (await response.json()) as RankingResponse & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to load rankings.");
-      setData(payload);
+      if (requestId === latestRequest.current) setData(payload);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to load rankings.");
+      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      if (requestId === latestRequest.current) {
+        setError(reason instanceof Error ? reason.message : "Unable to load rankings.");
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === latestRequest.current) setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    let savedParams = DEFAULT_PARAMS;
-    let parsedPreset: RankingParams | null = null;
     const saved = window.localStorage.getItem("fpl-ranking-preset");
     if (saved) {
       try {
-        const parsed = JSON.parse(saved) as RankingParams;
-        savedParams = parsed;
-        parsedPreset = parsed;
+        setParams(JSON.parse(saved) as RankingParams);
       } catch {
         window.localStorage.removeItem("fpl-ranking-preset");
       }
     }
-    const timeout = window.setTimeout(() => {
-      if (parsedPreset) setParams(parsedPreset);
-      void loadRankings(savedParams);
-    }, 0);
-    return () => window.clearTimeout(timeout);
-  }, [loadRankings]);
+    setHasLoadedPreset(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedPreset) return;
+
+    window.localStorage.setItem("fpl-ranking-preset", JSON.stringify(params));
+    const controller = new AbortController();
+    void loadRankings(params, controller.signal);
+    return () => controller.abort();
+  }, [hasLoadedPreset, loadRankings, params]);
 
   const rankings = useMemo(
     () =>
@@ -152,11 +159,6 @@ export function RankingsDashboard() {
 
   function updateWeight(key: keyof RankingParams["weights"], value: number) {
     setParams((current) => ({ ...current, weights: { ...current.weights, [key]: value } }));
-  }
-
-  function applyFormula() {
-    window.localStorage.setItem("fpl-ranking-preset", JSON.stringify(params));
-    void loadRankings(params);
   }
 
   return (
@@ -183,7 +185,7 @@ export function RankingsDashboard() {
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-cyan-200" /> Formula controls</CardTitle>
-            <p className="text-sm text-slate-400">Saved automatically on Apply.</p>
+            <p className="text-sm text-slate-400">Rankings update and settings save as you adjust each control.</p>
           </CardHeader>
           <CardContent className="grid gap-5">
             <ParameterSlider label="Form window (GWs)" value={params.formWindow} min={1} max={10} onChange={(value) => setParams({ ...params, formWindow: value })} />
@@ -196,9 +198,6 @@ export function RankingsDashboard() {
               <ParameterSlider label="Fixtures" value={params.weights.fixtures} min={0} max={100} onChange={(value) => updateWeight("fixtures", value)} />
               <ParameterSlider label="Home / away" value={params.weights.venue} min={0} max={100} onChange={(value) => updateWeight("venue", value)} />
             </div>
-            <button onClick={applyFormula} className="rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200">
-              Apply formula
-            </button>
           </CardContent>
         </Card>
 
