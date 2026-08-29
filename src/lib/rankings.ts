@@ -71,8 +71,8 @@ export async function getRankingData(params: RankingParams): Promise<RankingResp
               coalesce(sum(s.expected_goals), 0) AS xg,
               coalesce(sum(s.expected_assists), 0) AS xa,
               coalesce(sum(s.defensive_contribution), 0) AS defcon,
-              coalesce(max(summary.total_points / nullif(summary.minutes, 0) * 90), 0) AS last_season_points_per_90,
-              coalesce(max((summary.expected_goals + summary.expected_assists) / nullif(summary.minutes, 0) * 90), 0) AS last_season_xgi_per_90
+              coalesce(max(CASE WHEN summary.minutes >= 450 THEN summary.total_points / summary.minutes * 90 END), 0) AS last_season_points_per_90,
+              coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_season_xgi_per_90
        FROM players p
        JOIN teams t ON t.season = p.season AND t.team_id = p.team_id
        LEFT JOIN player_season_summaries summary
