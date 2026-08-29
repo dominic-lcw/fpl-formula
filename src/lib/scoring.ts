@@ -9,7 +9,7 @@ import type {
 export const DEFAULT_PARAMS: RankingParams = {
   formWindow: 5,
   fixtureHorizon: 3,
-  minMinutes: 180,
+  minMinutes: 0,
   weights: { individual: 45, team: 20, fixtures: 25, venue: 10 },
 };
 

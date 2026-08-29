@@ -39,7 +39,7 @@ describe("scorePlayers", () => {
 
   it("keeps blanks and low-minute players from being misleading", () => {
     const lowMinutes = { ...basePlayer, playerId: 2, minutes: 40, fixtures: [] };
-    const rankings = scorePlayers([basePlayer, lowMinutes], DEFAULT_PARAMS);
+    const rankings = scorePlayers([basePlayer, lowMinutes], { ...DEFAULT_PARAMS, minMinutes: 180 });
     expect(rankings).toHaveLength(1);
     expect(rankings[0].fixtures).toHaveLength(1);
   });
