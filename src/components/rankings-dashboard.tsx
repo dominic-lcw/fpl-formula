@@ -124,17 +124,22 @@ export function RankingsDashboard() {
 
   useEffect(() => {
     let savedParams = DEFAULT_PARAMS;
+    let parsedPreset: RankingParams | null = null;
     const saved = window.localStorage.getItem("fpl-ranking-preset");
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as RankingParams;
         savedParams = parsed;
-        window.setTimeout(() => setParams(parsed), 0);
+        parsedPreset = parsed;
       } catch {
         window.localStorage.removeItem("fpl-ranking-preset");
       }
     }
-    void loadRankings(savedParams);
+    const timeout = window.setTimeout(() => {
+      if (parsedPreset) setParams(parsedPreset);
+      void loadRankings(savedParams);
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [loadRankings]);
 
   const rankings = useMemo(
