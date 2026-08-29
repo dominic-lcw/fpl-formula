@@ -1,10 +1,11 @@
 "use client";
 
 import { ChevronDown, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Position, RankingParams, RankingResponse } from "@/lib/fpl-types";
+import type { Position, RankingParams } from "@/lib/fpl-types";
+import { calculateMosaicRankings, type MosaicRankingData } from "@/lib/mosaic-rankings";
 import { DEFAULT_PARAMS } from "@/lib/scoring";
 
 const positionOptions: Array<Position | "ALL"> = ["ALL", "GKP", "DEF", "MID", "FWD"];
@@ -39,39 +40,31 @@ function ParameterSlider({
 
 export function RankingsDashboard() {
   const [params, setParams] = useState<RankingParams>(DEFAULT_PARAMS);
-  const [data, setData] = useState<RankingResponse | null>(null);
+  const [data, setData] = useState<MosaicRankingData | null>(null);
   const [position, setPosition] = useState<Position | "ALL">("ALL");
   const [team, setTeam] = useState("ALL");
+  const [tableVersion, setTableVersion] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const activeRequest = useRef<AbortController | null>(null);
   const latestRequest = useRef(0);
 
-  const loadRankings = useCallback(async (nextParams: RankingParams) => {
-    activeRequest.current?.abort();
-    const controller = new AbortController();
-    activeRequest.current = controller;
+  const loadRankings = useCallback(async (
+    nextParams: RankingParams,
+    nextPosition: Position | "ALL",
+    nextTeam: string,
+  ) => {
     const requestId = ++latestRequest.current;
     setIsLoading(true);
     setError(null);
-    const search = new URLSearchParams({
-      formWindow: String(nextParams.formWindow),
-      fixtureHorizon: String(nextParams.fixtureHorizon),
-      minMinutes: String(nextParams.minMinutes),
-      individual: String(nextParams.weights.individual),
-      team: String(nextParams.weights.team),
-      fixtures: String(nextParams.weights.fixtures),
-      venue: String(nextParams.weights.venue),
-    });
     try {
-      const response = await fetch(`/api/rankings?${search}`, { signal: controller.signal });
-      const payload = (await response.json()) as RankingResponse & { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to load rankings.");
-      if (requestId === latestRequest.current) setData(payload);
-    } catch (reason) {
-      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam);
       if (requestId === latestRequest.current) {
-        setError(reason instanceof Error ? reason.message : "Unable to load rankings.");
+        setData(payload);
+        setTableVersion((version) => version + 1);
+      }
+    } catch (reason) {
+      if (requestId === latestRequest.current) {
+        setError(reason instanceof Error ? reason.message : "Unable to calculate rankings locally.");
       }
     } finally {
       if (requestId === latestRequest.current) setIsLoading(false);
@@ -90,25 +83,15 @@ export function RankingsDashboard() {
     }
     const timeout = window.setTimeout(() => {
       setParams(savedParams);
-      void loadRankings(savedParams);
+      void loadRankings(savedParams, "ALL", "ALL");
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [loadRankings]);
 
-  useEffect(() => () => activeRequest.current?.abort(), []);
-
-  const rankings = useMemo(
-    () =>
-      (data?.rankings ?? []).filter(
-        (player) => (position === "ALL" || player.position === position) && (team === "ALL" || player.team === team),
-      ),
-    [data, position, team],
-  );
-
   function updateParams(nextParams: RankingParams) {
     setParams(nextParams);
     window.localStorage.setItem("fpl-ranking-preset", JSON.stringify(nextParams));
-    void loadRankings(nextParams);
+    void loadRankings(nextParams, position, team);
   }
 
   function updateWeight(key: keyof RankingParams["weights"], value: number) {
@@ -160,36 +143,42 @@ export function RankingsDashboard() {
             <div className="flex flex-wrap gap-2">
               <label className="relative">
                 <span className="sr-only">Position</span>
-                <select value={position} onChange={(event) => setPosition(event.target.value as Position | "ALL")} className="appearance-none rounded-lg border border-white/10 bg-slate-900 px-3 py-2 pr-8 text-sm text-slate-200 outline-none focus:border-cyan-300">
+                <select value={position} onChange={(event) => {
+                  const nextPosition = event.target.value as Position | "ALL";
+                  setPosition(nextPosition);
+                  void loadRankings(params, nextPosition, team);
+                }} className="appearance-none rounded-lg border border-white/10 bg-slate-900 px-3 py-2 pr-8 text-sm text-slate-200 outline-none focus:border-cyan-300">
                   {positionOptions.map((option) => <option key={option} value={option}>{option === "ALL" ? "All positions" : option}</option>)}
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-slate-500" size={15} />
               </label>
               <label className="relative">
                 <span className="sr-only">Club</span>
-                <select value={team} onChange={(event) => setTeam(event.target.value)} className="appearance-none rounded-lg border border-white/10 bg-slate-900 px-3 py-2 pr-8 text-sm text-slate-200 outline-none focus:border-cyan-300">
+                <select value={team} onChange={(event) => {
+                  const nextTeam = event.target.value;
+                  setTeam(nextTeam);
+                  void loadRankings(params, position, nextTeam);
+                }} className="appearance-none rounded-lg border border-white/10 bg-slate-900 px-3 py-2 pr-8 text-sm text-slate-200 outline-none focus:border-cyan-300">
                   <option value="ALL">All clubs</option>
                   {data?.availableTeams.map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-slate-500" size={15} />
               </label>
             </div>
-            <button onClick={() => void loadRankings(params)} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5">
+            <button onClick={() => void loadRankings(params, position, team)} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5">
               <RefreshCw size={15} /> Refresh
             </button>
           </div>
 
           <Card>
             <CardHeader className="flex-row items-center justify-between">
-              <div><CardTitle>Expected ranking</CardTitle><p className="text-sm text-slate-400">{rankings.length} eligible players</p></div>
+              <div><CardTitle>Expected ranking</CardTitle><p className="text-sm text-slate-400">{data?.count ?? 0} eligible players</p></div>
               <Settings2 size={18} className="text-slate-500" />
             </CardHeader>
             <CardContent>
               {isLoading ? <p className="py-12 text-center text-slate-400">Calculating the player pool…</p> : error ? <p className="py-12 text-center text-rose-200">{error}</p> : !data?.season ? (
                 <div className="py-12 text-center"><p className="font-medium text-slate-100">No FPL data has been hydrated yet.</p><p className="mt-2 text-sm text-slate-400">Run <code className="rounded bg-slate-800 px-1.5 py-0.5">pnpm hydrate</code> to download the archive and current season.</p></div>
-              ) : (
-                <MosaicRankingsTable rankings={rankings} />
-              )}
+              ) : data.count ? <MosaicRankingsTable version={tableVersion} /> : <p className="py-12 text-center text-slate-400">No players match these filters.</p>}
             </CardContent>
           </Card>
         </div>

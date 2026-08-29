@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { RankedPlayer } from "@/lib/fpl-types";
-
-const TABLE_NAME = "ranked_players";
+import { getMosaic } from "@/lib/mosaic-rankings";
 
 type TableElement = HTMLElement & {
   value?: {
@@ -13,48 +11,12 @@ type TableElement = HTMLElement & {
 };
 
 type TableStatus = "loading" | "ready" | "error";
-type Vgplot = typeof import("@uwdata/vgplot");
-
-let vgplotPromise: Promise<Vgplot> | undefined;
-let databaseUpdate: Promise<void> = Promise.resolve();
-
-function getVgplot() {
-  if (!vgplotPromise) {
-    vgplotPromise = import("@uwdata/vgplot").then((vg) => {
-      vg.coordinator().databaseConnector(vg.wasmConnector());
-      return vg;
-    });
-  }
-  return vgplotPromise;
-}
-
-function toTableRows(rankings: RankedPlayer[]) {
-  return rankings.map((player) => ({
-    rank: player.rank,
-    player: player.name,
-    club: player.teamShortName,
-    position: player.position,
-    price: player.cost,
-    form_points: player.formPoints,
-    minutes: player.minutes,
-    xg: player.xg,
-    xa: player.xa,
-    last_year_per_90: player.lastSeasonPointsPer90,
-    defcon: player.defcon,
-    next_fixtures:
-      player.fixtures
-        .slice(0, 3)
-        .map((fixture) => `${fixture.opponent.slice(0, 3).toUpperCase()} ${fixture.wasHome ? "H" : "A"}`)
-        .join(" · ") || "—",
-    score: player.score,
-  }));
-}
 
 function formatNumber(value: unknown, digits = 0) {
   return Number(value).toFixed(digits);
 }
 
-export function MosaicRankingsTable({ rankings }: { rankings: RankedPlayer[] }) {
+export function MosaicRankingsTable({ version }: { version: number }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<TableStatus>("loading");
 
@@ -66,25 +28,17 @@ export function MosaicRankingsTable({ rankings }: { rankings: RankedPlayer[] }) 
     if (!host) return;
     host.replaceChildren();
 
-    if (!rankings.length) {
-      return;
-    }
-
     void Promise.resolve().then(() => {
       if (isCurrent) setStatus("loading");
     });
 
-    const loadTable = async () => {
-      const vg = await getVgplot();
-      const coordinator = vg.coordinator();
-      coordinator.clear({ clients: false });
-      await coordinator.exec(vg.loadObjects(TABLE_NAME, toTableRows(rankings), { replace: true }));
-
+    const mountTable = async () => {
+      const vg = await getMosaic();
       if (!isCurrent) return;
 
       table = vg.table({
         element: host,
-        from: TABLE_NAME,
+        from: "ranked_players",
         columns: [
           "rank",
           "player",
@@ -132,10 +86,7 @@ export function MosaicRankingsTable({ rankings }: { rankings: RankedPlayer[] }) 
       await table.value?.pending;
     };
 
-    const queuedUpdate = databaseUpdate.then(loadTable);
-    databaseUpdate = queuedUpdate.catch(() => undefined);
-
-    void queuedUpdate.then(
+    void mountTable().then(
       () => {
         if (isCurrent) setStatus("ready");
       },
@@ -149,7 +100,7 @@ export function MosaicRankingsTable({ rankings }: { rankings: RankedPlayer[] }) 
       table?.value?.destroy();
       table?.remove();
     };
-  }, [rankings]);
+  }, [version]);
 
   return (
     <>
@@ -160,7 +111,6 @@ export function MosaicRankingsTable({ rankings }: { rankings: RankedPlayer[] }) 
         className="mosaic-rankings-table"
       />
       {status === "loading" && <p className="py-12 text-center text-slate-400">Preparing the scrollable table…</p>}
-      {!rankings.length && <p className="py-12 text-center text-slate-400">No players match these filters.</p>}
       {status === "error" && <p className="py-12 text-center text-rose-200">Unable to prepare the scrollable table.</p>}
     </>
   );
