@@ -12,7 +12,7 @@ type TableElement = HTMLElement & {
   };
 };
 
-type TableStatus = "loading" | "ready" | "error" | "empty";
+type TableStatus = "loading" | "ready" | "error";
 type Vgplot = typeof import("@uwdata/vgplot");
 
 let vgplotPromise: Promise<Vgplot> | undefined;
@@ -67,11 +67,12 @@ export function MosaicRankingsTable({ rankings }: { rankings: RankedPlayer[] }) 
     host.replaceChildren();
 
     if (!rankings.length) {
-      setStatus("empty");
       return;
     }
 
-    setStatus("loading");
+    void Promise.resolve().then(() => {
+      if (isCurrent) setStatus("loading");
+    });
 
     const loadTable = async () => {
       const vg = await getVgplot();
@@ -159,7 +160,7 @@ export function MosaicRankingsTable({ rankings }: { rankings: RankedPlayer[] }) 
         className="mosaic-rankings-table"
       />
       {status === "loading" && <p className="py-12 text-center text-slate-400">Preparing the scrollable table…</p>}
-      {status === "empty" && <p className="py-12 text-center text-slate-400">No players match these filters.</p>}
+      {!rankings.length && <p className="py-12 text-center text-slate-400">No players match these filters.</p>}
       {status === "error" && <p className="py-12 text-center text-rose-200">Unable to prepare the scrollable table.</p>}
     </>
   );
