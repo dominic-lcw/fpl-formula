@@ -1,0 +1,43 @@
+{
+  "name": "fpl-formula",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.3",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "hydrate": "tsx scripts/hydrate-fpl.ts",
+    "hydrate:current": "tsx scripts/hydrate-fpl.ts --current-only"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "1.5.5-r.4",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-select": "^2.3.7",
+    "@radix-ui/react-slider": "^1.4.7",
+    "@radix-ui/react-tooltip": "^1.2.16",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "csv-parse": "^7.0.2",
+    "lucide-react": "^1.35.0",
+    "next": "^16.3.3",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwind-merge": "^3.6.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.3",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}
