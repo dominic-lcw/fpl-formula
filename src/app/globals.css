@@ -23,3 +23,47 @@ select,
 input {
   font: inherit;
 }
+
+.mosaic-rankings-table {
+  width: 100%;
+  min-height: 9rem;
+  overflow: auto;
+}
+
+.mosaic-rankings-table table {
+  width: 100%;
+  min-width: 1350px;
+  border-collapse: collapse;
+  color: rgb(203 213 225);
+  font-size: 0.875rem;
+}
+
+.mosaic-rankings-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.75rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(15 23 42);
+  color: rgb(100 116 139);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mosaic-rankings-table th:hover {
+  color: rgb(165 243 252);
+}
+
+.mosaic-rankings-table td {
+  padding: 0.8rem 0.75rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.05);
+  white-space: nowrap;
+}
+
+.mosaic-rankings-table tr:hover td {
+  background: rgb(255 255 255 / 0.04);
+}
