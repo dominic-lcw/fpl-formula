@@ -10,7 +10,7 @@ pnpm hydrate          # previous-season summaries, then the live season
 pnpm dev
 ```
 
-Open `http://localhost:3000`. Re-run `pnpm hydrate:current` after a Gameweek to refresh current-season data. The app reads its local DuckDB file from `data/fpl.duckdb`; override that location with `FPL_DB_PATH`.
+Open `http://localhost:3000`. Re-run `pnpm hydrate:current` after a Gameweek to refresh current-season data. Hydration writes a normalized Parquet dataset to `data/parquet/`; the app loads those files into an in-memory DuckDB instance on startup. Override the dataset location with `FPL_PARQUET_DIR`.
 
 ## Data sources
 
@@ -46,4 +46,4 @@ pnpm lint
 pnpm build
 ```
 
-For routine updates, schedule `pnpm hydrate:current` after each FPL Gameweek completes. The previous-season summary refresh is idempotent and runs only with `pnpm hydrate`.
+For routine updates, schedule `pnpm hydrate:current` after each FPL Gameweek completes. The previous-season summary refresh is idempotent and runs only with `pnpm hydrate`. Restart the app process after hydration so its in-memory DuckDB query layer reloads the new Parquet dataset.

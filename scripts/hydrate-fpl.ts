@@ -1,7 +1,6 @@
-import { mkdir } from "node:fs/promises";
-import path from "node:path";
+import type { DuckDBConnection } from "@duckdb/node-api";
 import { parse } from "csv-parse/sync";
-import { databasePath, execute, getConnection } from "../src/lib/db";
+import { createHydrationConnection, exportParquetDataset } from "../src/lib/db";
 
 const FPL_API = "https://fantasy.premierleague.com/api";
 const LAST_SEASON_ARCHIVE =
@@ -10,6 +9,11 @@ const currentOnly = process.argv.includes("--current-only");
 const positionById: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
 
 type Json = Record<string, unknown>;
+let connection: DuckDBConnection;
+
+async function execute(sql: string, values?: (string | number | boolean | null)[]) {
+  return connection.run(sql, values);
+}
 
 function number(value: unknown): number | null {
   if (value === null || value === undefined || value === "" || value === "null") return null;
@@ -232,12 +236,16 @@ async function hydratePreviousSeasonSummary() {
 }
 
 async function main() {
-  await mkdir(path.dirname(databasePath), { recursive: true });
-  await getConnection();
-  if (!currentOnly) {
-    await hydratePreviousSeasonSummary();
+  connection = await createHydrationConnection();
+  try {
+    if (!currentOnly) {
+      await hydratePreviousSeasonSummary();
+    }
+    await hydrateCurrentSeason();
+    await exportParquetDataset(connection);
+  } finally {
+    connection.closeSync();
   }
-  await hydrateCurrentSeason();
 }
 
 main().catch((error) => {
