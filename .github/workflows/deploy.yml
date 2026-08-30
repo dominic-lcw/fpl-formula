@@ -1,0 +1,70 @@
+name: Deploy FPL Formula
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: fpl-formula-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment: production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Set up pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests and lint checks
+        run: |
+          pnpm test
+          pnpm lint
+
+      - name: Hydrate FPL data
+        run: pnpm hydrate
+
+      - name: Build standalone server
+        run: |
+          pnpm build
+          mkdir -p .next/standalone/.next
+          cp -R .next/static .next/standalone/.next/static
+          if [ -d public ]; then cp -R public .next/standalone/public; fi
+          cp -R data .next/standalone/data
+          cd .next/standalone
+          zip -qr ../../fpl-formula.zip .
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy package to App Service
+        run: >
+          az webapp deploy
+          --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"
+          --name "${{ vars.AZURE_WEBAPP_NAME }}"
+          --src-path fpl-formula.zip
+          --type zip
+          --async false
