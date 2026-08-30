@@ -2,6 +2,8 @@
 
 The Azure infrastructure creates a user-assigned managed identity with a federated credential for the `production` GitHub Actions environment. This lets the workflow sign in to Azure without storing a password, client secret, or App Service publish profile in GitHub.
 
+The federated credential uses the subject claim emitted by this repository's GitHub Enterprise Managed User setup. If GitHub displays a different subject value in a future Azure login failure, update the `githubRepository` parameter in `infra/main.parameters.json` to the repository component of that claim.
+
 ## Initial setup
 
 1. Provision `infra/main.bicep` with an Azure identity that can create resources in the subscription. The deployment outputs include `webAppName`, `pipelineClientId`, `tenantId`, and `subscriptionId`.

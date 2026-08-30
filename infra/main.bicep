@@ -9,8 +9,8 @@ param appResourceGroupName string = 'fpl-formula-rg'
 @description('Deployment environment used to generate deterministic resource names.')
 param environmentName string = 'production'
 
-@description('GitHub repository authorized to deploy the application, in owner/repository format.')
-param githubRepository string = 'dominic-lcw/fpl-formula'
+@description('Repository component of the GitHub OIDC subject claim.')
+param githubRepository string = 'dominic-lcw@42367021/fpl-formula@1350268343'
 
 @description('GitHub Actions environment used by the deployment job.')
 param githubEnvironment string = 'production'
