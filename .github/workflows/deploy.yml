@@ -48,13 +48,10 @@ jobs:
       - name: Build standalone server
         run: |
           pnpm build
-          next_package="$(node -p "require.resolve('next/package.json')")"
-          next_dependency_dir="$(dirname "$(dirname "$next_package")")"
           helpers_package="$(node -e "const path = require('node:path'); const nextPackage = require.resolve('next/package.json'); console.log(require.resolve('@swc/helpers/package.json', { paths: [path.dirname(nextPackage)] }))")"
-          standalone_dependency_dir=".next/standalone/${next_dependency_dir#"$GITHUB_WORKSPACE/node_modules/"}"
-          mkdir -p "$standalone_dependency_dir/@swc"
-          rm -rf "$standalone_dependency_dir/@swc/helpers"
-          cp -RL "$(dirname "$helpers_package")" "$standalone_dependency_dir/@swc/helpers"
+          mkdir -p .next/standalone/node_modules/@swc
+          rm -rf .next/standalone/node_modules/@swc/helpers
+          cp -RL "$(dirname "$helpers_package")" .next/standalone/node_modules/@swc/helpers
           mkdir -p .next/standalone/.next
           cp -R .next/static .next/standalone/.next/static
           if [ -d public ]; then cp -R public .next/standalone/public; fi
