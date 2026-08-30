@@ -45,19 +45,17 @@ jobs:
       - name: Hydrate FPL data
         run: pnpm hydrate
 
-      - name: Build standalone server
+      - name: Build production package
         run: |
           pnpm build
-          helpers_package="$(node -e "const path = require('node:path'); const nextPackage = require.resolve('next/package.json'); console.log(require.resolve('@swc/helpers/package.json', { paths: [path.dirname(nextPackage)] }))")"
-          mkdir -p .next/standalone/node_modules/@swc
-          rm -rf .next/standalone/node_modules/@swc/helpers
-          cp -RL "$(dirname "$helpers_package")" .next/standalone/node_modules/@swc/helpers
-          mkdir -p .next/standalone/.next
-          cp -R .next/static .next/standalone/.next/static
-          if [ -d public ]; then cp -R public .next/standalone/public; fi
-          cp -R data .next/standalone/data
-          cd .next/standalone
-          zip -qr ../../fpl-formula.zip .
+          mkdir deployment
+          cp package.json pnpm-lock.yaml next.config.ts deployment/
+          pnpm --dir deployment install --prod --frozen-lockfile
+          cp -R .next deployment/.next
+          if [ -d public ]; then cp -R public deployment/public; fi
+          cp -R data deployment/data
+          cd deployment
+          zip -qr ../fpl-formula.zip .
 
       - name: Sign in to Azure
         uses: azure/login@v2

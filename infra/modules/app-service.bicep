@@ -70,7 +70,7 @@ resource webApp 'Microsoft.Web/sites@2026-07-15' = {
     serverFarmId: appServicePlan.id
     siteConfig: {
       alwaysOn: true
-      appCommandLine: 'node server.js'
+      appCommandLine: 'node node_modules/next/dist/bin/next start'
       ftpsState: 'Disabled'
       healthCheckPath: '/api/health'
       linuxFxVersion: 'NODE|20-lts'
