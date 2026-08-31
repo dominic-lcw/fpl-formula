@@ -45,19 +45,14 @@ jobs:
       - name: Hydrate FPL data
         run: pnpm hydrate
 
-      - name: Build production package
+      - name: Build standalone server
         run: |
           pnpm build
+          rm -rf deployment
           mkdir deployment
-          cp package.json pnpm-lock.yaml next.config.ts deployment/
-          pnpm --dir deployment install --prod --frozen-lockfile
-          mkdir deployment/node_modules.runtime
-          for dependency in deployment/node_modules/*; do
-            cp -RL "$dependency" deployment/node_modules.runtime/
-          done
-          rm -rf deployment/node_modules
-          mv deployment/node_modules.runtime deployment/node_modules
-          cp -R .next deployment/.next
+          cp -RL .next/standalone/. deployment/
+          mkdir -p deployment/.next
+          cp -R .next/static deployment/.next/static
           if [ -d public ]; then cp -R public deployment/public; fi
           cp -R data deployment/data
           cd deployment
@@ -69,6 +64,13 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure standalone startup command
+        run: >
+          az webapp config set
+          --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"
+          --name "${{ vars.AZURE_WEBAPP_NAME }}"
+          --startup-file "node server.js"
 
       - name: Deploy package to App Service
         run: >
