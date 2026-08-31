@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - cursor/deployment-health-check-01fb
   workflow_dispatch:
 
 permissions:
