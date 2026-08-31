@@ -51,6 +51,9 @@ jobs:
           rm -rf deployment
           mkdir deployment
           cp -RL .next/standalone/. deployment/
+          helpers_package="$(node -e "const path = require('node:path'); const nextPackage = require.resolve('next/package.json'); console.log(require.resolve('@swc/helpers/package.json', { paths: [path.dirname(nextPackage)] }))")"
+          mkdir -p deployment/node_modules/@swc
+          cp -RL "$(dirname "$helpers_package")" deployment/node_modules/@swc/helpers
           mkdir -p deployment/.next
           cp -R .next/static deployment/.next/static
           if [ -d public ]; then cp -R public deployment/public; fi
