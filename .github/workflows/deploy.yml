@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - cursor/deployment-health-check-01fb
   workflow_dispatch:
 
 permissions:
@@ -72,4 +73,45 @@ jobs:
           --name "${{ vars.AZURE_WEBAPP_NAME }}"
           --src-path fpl-formula.zip
           --type zip
-          --async false
+          --async true
+
+      - name: Verify deployed service
+        env:
+          WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+        run: |
+          health_url="https://${WEBAPP_NAME}.azurewebsites.net/api/health"
+          status_url="https://${WEBAPP_NAME}.azurewebsites.net/api/status"
+          rankings_url="https://${WEBAPP_NAME}.azurewebsites.net/api/rankings?minMinutes=0"
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          deadline=$((SECONDS + 180))
+          attempt=0
+
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            attempt=$((attempt + 1))
+            health_status="$(curl --silent --output "$temp_dir/health.json" --write-out "%{http_code}" --connect-timeout 5 --max-time 10 "$health_url" || true)"
+
+            if [ "$health_status" = "200" ]; then
+              status_code="$(curl --silent --output "$temp_dir/status.json" --write-out "%{http_code}" --connect-timeout 5 --max-time 10 "$status_url" || true)"
+              rankings_code="$(curl --silent --output "$temp_dir/rankings.json" --write-out "%{http_code}" --connect-timeout 5 --max-time 10 "$rankings_url" || true)"
+
+              if [ "$status_code" = "200" ] && [ "$rankings_code" = "200" ] && node -e '
+                const fs = require("node:fs");
+                const status = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                const rankings = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+                if (status.latest?.status !== "complete" || rankings.rankings?.length < 1) {
+                  throw new Error("FPL data is incomplete or rankings are empty.");
+                }
+              ' "$temp_dir/status.json" "$temp_dir/rankings.json"; then
+                echo "Production service is healthy with hydrated FPL rankings."
+                exit 0
+              fi
+            fi
+
+            echo "Attempt ${attempt}: production service is not ready yet (health HTTP ${health_status})."
+            sleep 5
+          done
+
+          echo "Production service did not become healthy within three minutes."
+          az webapp log startup show --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --name "${WEBAPP_NAME}" || true
+          exit 1
