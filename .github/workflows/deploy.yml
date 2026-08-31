@@ -48,15 +48,10 @@ jobs:
       - name: Build production package
         run: |
           pnpm build
+          rm -rf deployment fpl-formula.zip
           mkdir deployment
           cp package.json pnpm-lock.yaml next.config.ts deployment/
-          pnpm --dir deployment install --prod --frozen-lockfile
-          mkdir deployment/node_modules.runtime
-          for dependency in deployment/node_modules/*; do
-            cp -RL "$dependency" deployment/node_modules.runtime/
-          done
-          rm -rf deployment/node_modules
-          mv deployment/node_modules.runtime deployment/node_modules
+          pnpm --dir deployment install --prod --frozen-lockfile --node-linker=hoisted
           cp -R .next deployment/.next
           if [ -d public ]; then cp -R public deployment/public; fi
           cp -R data deployment/data
