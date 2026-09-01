@@ -25,6 +25,10 @@ export type PlayerHighlightsResponse = {
   highlights: PlayerHighlight[];
 };
 
+export type PlayerHighlightResponse = Omit<PlayerHighlightsResponse, "highlights"> & {
+  highlight: PlayerHighlight | null;
+};
+
 function round(value: number) {
   return Number(value.toFixed(1));
 }
@@ -96,4 +100,34 @@ export async function getPlayerHighlights(): Promise<PlayerHighlightsResponse> {
   );
 
   return buildPlayerHighlights(rankings, rows);
+}
+
+export async function getPlayerHighlight(playerId: number): Promise<PlayerHighlightResponse> {
+  const rankings = await getRankingData(DEFAULT_PARAMS);
+  const player = rankings.rankings.find((entry) => entry.playerId === playerId);
+  if (!player || !rankings.season || !rankings.currentGameweek) {
+    return {
+      season: rankings.season,
+      currentGameweek: rankings.currentGameweek,
+      gameweeks: [],
+      highlight: null,
+    };
+  }
+
+  const startGameweek = Math.max(1, rankings.currentGameweek - DEFAULT_PARAMS.formWindow + 1);
+  const rows = await query<PlayerGameweekRow>(
+    `SELECT player_id, event, sum(total_points) AS points
+     FROM player_fixture_stats
+     WHERE season = ? AND player_id = ? AND event BETWEEN ? AND ?
+     GROUP BY player_id, event`,
+    [rankings.season, playerId, startGameweek, rankings.currentGameweek],
+  );
+  const result = buildPlayerHighlights({ ...rankings, rankings: [player] }, rows);
+
+  return {
+    season: result.season,
+    currentGameweek: result.currentGameweek,
+    gameweeks: result.gameweeks,
+    highlight: result.highlights[0] ?? null,
+  };
 }

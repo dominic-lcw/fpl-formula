@@ -48,9 +48,11 @@ function highlightRankedRow(host: HTMLElement, rank: number | null) {
 export function MosaicRankingsTable({
   version,
   selectedRank,
+  onOpenPlayer,
 }: {
   version: number;
   selectedRank: number | null;
+  onOpenPlayer: (rank: number) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const activeTableRef = useRef<TableElement | undefined>(undefined);
@@ -121,6 +123,11 @@ export function MosaicRankingsTable({
       previousTable?.value?.destroy();
       disconnectColors = paintScoreColumn(stage, scoreColumnIndex);
       highlightRankedRow(stage, selectedRankRef.current);
+      stage.addEventListener("click", (event) => {
+        const row = (event.target as HTMLElement).closest<HTMLTableRowElement>("tbody tr");
+        const rank = Number(row?.cells.item(0)?.textContent?.trim());
+        if (Number.isSafeInteger(rank) && rank > 0) onOpenPlayer(rank);
+      });
     };
 
     void mountTable().then(
@@ -140,7 +147,7 @@ export function MosaicRankingsTable({
         stagedTable.remove();
       }
     };
-  }, [version]);
+  }, [version, onOpenPlayer]);
 
   useEffect(
     () => () => {
@@ -154,8 +161,8 @@ export function MosaicRankingsTable({
     <>
       <div
         ref={hostRef}
-        aria-label="Player rankings table"
-        className="mosaic-rankings-table"
+        aria-label="Player rankings table. Click a player to open their highlight."
+        className="mosaic-rankings-table mosaic-rankings-table-clickable"
       />
       {error && <p className="py-12 text-center text-destructive">Unable to prepare the scrollable table.</p>}
     </>

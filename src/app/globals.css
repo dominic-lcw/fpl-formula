@@ -138,6 +138,10 @@ input {
   background: var(--muted);
 }
 
+.mosaic-rankings-table-clickable tbody tr {
+  cursor: pointer;
+}
+
 .mosaic-rankings-table tr.mosaic-rankings-table-selected td {
   background: var(--accent);
 }

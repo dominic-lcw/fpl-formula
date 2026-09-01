@@ -5,7 +5,11 @@ import { ArrowLeft, ArrowRight, Minus, RefreshCw, TrendingDown, TrendingUp } fro
 import { useCallback, useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { PlayerHighlight, PlayerHighlightsResponse } from "@/lib/player-highlights";
+import type {
+  PlayerHighlight,
+  PlayerHighlightResponse,
+  PlayerHighlightsResponse,
+} from "@/lib/player-highlights";
 import { scoreTone } from "@/lib/score-style";
 
 const trendCopy = {
@@ -154,8 +158,86 @@ export function PlayerHighlights() {
           <div className="py-16 text-center"><p className="font-medium">No completed Gameweek data is available yet.</p><p className="mt-2 text-sm text-muted-foreground">Run the FPL hydration job, then refresh this page.</p></div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {data.highlights.map((player) => <HighlightCard key={player.playerId} player={player} gameweeks={data.gameweeks} />)}
+            {data.highlights.map((player) => (
+              <Link
+                key={player.playerId}
+                href={`/highlights/${player.playerId}`}
+                className="block rounded-lg transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <HighlightCard player={player} gameweeks={data.gameweeks} />
+              </Link>
+            ))}
           </div>
+        )}
+      </section>
+    </main>
+  );
+}
+
+export function PlayerHighlightDetail({ playerId }: { playerId: number }) {
+  const [data, setData] = useState<PlayerHighlightResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadHighlight = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/highlights/${playerId}`, { cache: "no-store" });
+      const payload = (await response.json()) as PlayerHighlightResponse | { error: string };
+      if (!response.ok || "error" in payload) {
+        throw new Error("error" in payload ? payload.error : "Unable to load this player highlight.");
+      }
+      setData(payload);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to load this player highlight.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [playerId]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      void loadHighlight();
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [loadHighlight]);
+
+  return (
+    <main className="mx-auto min-h-screen max-w-4xl px-4 py-8 sm:px-8">
+      <header className="flex flex-col justify-between gap-5 border-b pb-8 md:flex-row md:items-end">
+        <div>
+          <Link href="/highlights" className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+            <ArrowLeft size={16} /> All highlights
+          </Link>
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            {data?.highlight?.name ?? "Player highlight"}
+          </h1>
+          <p className="mt-2 max-w-2xl text-muted-foreground">
+            Recent completed-Gameweek points and the current formula outlook.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {data?.season && <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm"><p className="text-muted-foreground">Dataset</p><p className="mt-1 font-medium">{data.season} · after GW{data.currentGameweek}</p></div>}
+          <button
+            type="button"
+            onClick={() => void loadHighlight()}
+            disabled={isLoading}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+          >
+            <RefreshCw size={15} /> Refresh
+          </button>
+          <ThemeToggle />
+        </div>
+      </header>
+
+      <section className="py-8">
+        {isLoading ? <p className="py-16 text-center text-muted-foreground">Preparing player highlight…</p> : error ? (
+          <div className="py-16 text-center"><p className="text-destructive">{error}</p><button type="button" onClick={() => void loadHighlight()} className="mt-4 text-sm font-medium underline underline-offset-4">Try again</button></div>
+        ) : !data?.highlight ? (
+          <div className="py-16 text-center"><p className="font-medium">This player is not available in the current ranking.</p><Link href="/" className="mt-4 inline-flex text-sm font-medium underline underline-offset-4">Return to rankings</Link></div>
+        ) : (
+          <HighlightCard player={data.highlight} gameweeks={data.gameweeks} />
         )}
       </section>
     </main>

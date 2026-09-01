@@ -412,3 +412,15 @@ export async function searchRankedPlayers(searchTerm: string): Promise<RankedPla
     score: Number(result.score),
   }));
 }
+
+export async function rankedPlayerId(rank: number): Promise<number | null> {
+  if (!Number.isSafeInteger(rank) || rank < 1) return null;
+
+  await databaseUpdate;
+  const results = await (await getMosaic()).coordinator().query(
+    `SELECT player_id FROM ranked_players WHERE rank = ${rank} LIMIT 1`,
+    { type: "json", cache: false },
+  ) as Array<{ player_id: number }>;
+
+  return results[0] ? Number(results[0].player_id) : null;
+}
