@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ChevronDown, GitBranch, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
@@ -196,6 +197,12 @@ export function RankingsDashboard() {
             <GitBranch size={16} />
             GitHub
           </a>
+          <Link
+            href="/highlights"
+            className="inline-flex h-9 items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            Highlights
+          </Link>
           <ThemeToggle />
         </div>
       </header>
