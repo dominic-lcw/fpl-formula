@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Github, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, GitBranch, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
@@ -156,7 +156,7 @@ export function RankingsDashboard() {
             rel="noreferrer"
             className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 hover:text-white"
           >
-            <Github size={16} />
+            <GitBranch size={16} />
             GitHub
           </a>
         </div>
