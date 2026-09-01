@@ -1,19 +1,37 @@
 "use client";
 
-import { ChevronDown, GitBranch, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppSidebar, type DashboardView } from "@/components/app-sidebar";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
 import { PlayerRankSearch } from "@/components/player-rank-search";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { ScoreFormula } from "@/components/score-formula";
+import { FormulaTracker } from "@/components/formula-tracker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { Position, RankingParams } from "@/lib/fpl-types";
 import { calculateMosaicRankings, type MosaicRankingData } from "@/lib/mosaic-rankings";
 import { DEFAULT_PARAMS, FORMULA_PRESETS, sanitiseParams } from "@/lib/scoring";
 
 const positionOptions: Array<Position | "ALL"> = ["ALL", "GKP", "DEF", "MID", "FWD"];
+
+const viewMeta: Record<DashboardView, { title: string; description: string }> = {
+  rankings: {
+    title: "Player rankings, explained.",
+    description: "FPL-only scores built from individual form, team form, and fixtures with home advantage included.",
+  },
+  team: {
+    title: "My FPL team",
+    description: "Save your public entry ID and compare your squad with the current formula.",
+  },
+  tracker: {
+    title: "Formula tracker",
+    description: "Backtest saved strategies from GW1 with no forward-looking performance signals.",
+  },
+};
 
 type StatusResponse = {
   liveGameweek: LiveGameweekStatus | null;
@@ -62,7 +80,7 @@ export function RankingsDashboard() {
   const [data, setData] = useState<MosaicRankingData | null>(null);
   const [position, setPosition] = useState<Position | "ALL">("ALL");
   const [team, setTeam] = useState("ALL");
-  const [activeTab, setActiveTab] = useState<"rankings" | "team">("rankings");
+  const [activeTab, setActiveTab] = useState<DashboardView>("rankings");
   const [tableVersion, setTableVersion] = useState(0);
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -174,63 +192,30 @@ export function RankingsDashboard() {
     });
   }
 
+  const seasonLabel = data?.season
+    ? `${data.season} · ${data.includesLiveGameweek ? `live through GW${data.currentGameweek ?? "?"}` : `after GW${data.currentGameweek ?? "?"}`}`
+    : "Awaiting first hydration";
+
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-4 py-8 sm:px-8">
-      <header className="flex flex-col justify-between gap-5 border-b pb-8 md:flex-row md:items-end">
-        <div>
-          <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <span className="size-2 rounded-full bg-foreground" /> FPL Formula Lab
+    <SidebarProvider>
+      <AppSidebar
+        activeView={activeTab}
+        onNavigate={setActiveTab}
+        seasonLabel={seasonLabel}
+        liveLabel={liveGameweek ? liveGameweekLabel(liveGameweek) : null}
+      />
+      <SidebarInset>
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 hidden h-4 sm:block" />
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-semibold tracking-tight sm:text-xl">{viewMeta[activeTab].title}</h1>
+            <p className="hidden truncate text-sm text-muted-foreground md:block">{viewMeta[activeTab].description}</p>
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Player rankings, explained.</h1>
-          <p className="mt-2 max-w-2xl text-muted-foreground">
-            FPL-only scores built from individual form, team form, and fixtures with home advantage included.
-          </p>
-        </div>
-        <div className="flex items-start gap-2">
-          <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm">
-            <p className="text-muted-foreground">Dataset</p>
-            <p className="mt-1 font-medium">
-              {data?.season
-                ? `${data.season} · ${data.includesLiveGameweek ? `live through GW${data.currentGameweek ?? "?"}` : `after GW${data.currentGameweek ?? "?"}`}`
-                : "Awaiting first hydration"}
-            </p>
-            {liveGameweek ? <p aria-live="polite" className="mt-1 text-xs text-muted-foreground">{liveGameweekLabel(liveGameweek)}</p> : null}
-          </div>
-          <a
-            href="https://github.com/dominic-lcw/fpl-formula"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-          >
-            <GitBranch size={16} />
-            GitHub
-          </a>
-          <ThemeToggle />
-        </div>
-      </header>
+        </header>
 
-      <div className="mt-6 flex gap-2 border-b" role="tablist" aria-label="Dashboard views">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "rankings"}
-          onClick={() => setActiveTab("rankings")}
-          className={`border-b-2 px-4 py-3 text-sm font-medium transition-colors ${activeTab === "rankings" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-        >
-          Rankings
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "team"}
-          onClick={() => setActiveTab("team")}
-          className={`border-b-2 px-4 py-3 text-sm font-medium transition-colors ${activeTab === "team" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-        >
-          My team
-        </button>
-      </div>
-
-      {activeTab === "team" ? <div className="mt-6"><TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /></div> : <section className="mt-6 grid gap-5 xl:grid-cols-[285px_1fr]">
+        <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 p-4 sm:p-6">
+          {activeTab === "team" ? <TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /> : activeTab === "tracker" ? <FormulaTracker currentParams={params} /> : <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-muted-foreground" /> Formula controls</CardTitle>
@@ -344,6 +329,8 @@ export function RankingsDashboard() {
           </Card>
         </div>
       </section>}
-    </main>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
