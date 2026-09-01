@@ -48,9 +48,11 @@ function Suggestion({ player }: { player: RankedPlayer }) {
 export function TeamAnalysisPanel({
   params,
   showLiveData,
+  onShowLiveDataChange,
 }: {
   params: RankingParams;
   showLiveData: boolean;
+  onShowLiveDataChange: (enabled: boolean) => void;
 }) {
   const [teamId, setTeamId] = useState("");
   const [analysis, setAnalysis] = useState<TeamResponse | null>(null);
@@ -129,6 +131,19 @@ export function TeamAnalysisPanel({
               <Save size={16} /> {isLoading ? "Analysing…" : "Save & analyse"}
             </button>
           </form>
+          <label className="mt-4 flex cursor-pointer items-start gap-3 border-t border-white/10 pt-4 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={showLiveData}
+              disabled={isLoading}
+              onChange={(event) => onShowLiveDataChange(event.target.checked)}
+              className="mt-0.5 accent-cyan-300"
+            />
+            <span>
+              <span className="block font-medium text-slate-100">Show live GW data</span>
+              <span className="block text-xs text-slate-400">Updates this team&apos;s score and recommendations with available in-progress GW data.</span>
+            </span>
+          </label>
           {error && <p className="mt-3 text-sm text-rose-200">{error}</p>}
         </CardContent>
       </Card>
