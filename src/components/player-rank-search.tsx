@@ -8,11 +8,10 @@ import {
 } from "@/lib/mosaic-rankings";
 
 type PlayerRankSearchProps = {
-  version: number;
   onSelectRank: (rank: number | null) => void;
 };
 
-export function PlayerRankSearch({ version, onSelectRank }: PlayerRankSearchProps) {
+export function PlayerRankSearch({ onSelectRank }: PlayerRankSearchProps) {
   const listboxId = useId();
   const requestId = useRef(0);
   const [query, setQuery] = useState("");
@@ -21,38 +20,29 @@ export function PlayerRankSearch({ version, onSelectRank }: PlayerRankSearchProp
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    requestId.current += 1;
-    setQuery("");
-    setSuggestions([]);
-    setIsSearching(false);
-    setIsOpen(false);
-    onSelectRank(null);
-  }, [version, onSelectRank]);
-
-  useEffect(() => {
     const trimmedQuery = query.trim();
-    if (!trimmedQuery) {
-      requestId.current += 1;
-      setSuggestions([]);
-      setIsSearching(false);
-      return;
-    }
+    if (!trimmedQuery) return;
 
     const currentRequest = ++requestId.current;
+    let cancelled = false;
     setIsSearching(true);
     void searchRankedPlayers(trimmedQuery).then(
       (nextSuggestions) => {
-        if (currentRequest !== requestId.current) return;
+        if (cancelled || currentRequest !== requestId.current) return;
         setSuggestions(nextSuggestions);
         setIsOpen(true);
       },
       () => {
-        if (currentRequest !== requestId.current) return;
+        if (cancelled || currentRequest !== requestId.current) return;
         setSuggestions([]);
       },
     ).finally(() => {
-      if (currentRequest === requestId.current) setIsSearching(false);
+      if (!cancelled && currentRequest === requestId.current) setIsSearching(false);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [query]);
 
   function selectSuggestion(suggestion: RankedPlayerSuggestion) {
@@ -72,8 +62,15 @@ export function PlayerRankSearch({ version, onSelectRank }: PlayerRankSearchProp
           type="search"
           value={query}
           onChange={(event) => {
-            setQuery(event.target.value);
+            const nextQuery = event.target.value;
+            setQuery(nextQuery);
             onSelectRank(null);
+            if (!nextQuery.trim()) {
+              requestId.current += 1;
+              setSuggestions([]);
+              setIsSearching(false);
+              setIsOpen(false);
+            }
           }}
           onFocus={() => {
             if (suggestions.length) setIsOpen(true);
@@ -81,6 +78,7 @@ export function PlayerRankSearch({ version, onSelectRank }: PlayerRankSearchProp
           aria-autocomplete="list"
           aria-controls={listboxId}
           aria-expanded={shouldShowSuggestions}
+          role="combobox"
           placeholder="Find a player’s rank"
           className="w-full rounded-lg border border-white/10 bg-slate-900 py-2 pl-9 pr-3 text-sm text-slate-200 outline-none placeholder:text-slate-500 focus:border-cyan-300"
         />
@@ -99,6 +97,7 @@ export function PlayerRankSearch({ version, onSelectRank }: PlayerRankSearchProp
               key={`${suggestion.rank}-${suggestion.player}`}
               type="button"
               role="option"
+              aria-selected={false}
               aria-label={`${suggestion.player}, rank ${suggestion.rank}`}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => selectSuggestion(suggestion)}

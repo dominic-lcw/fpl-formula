@@ -99,6 +99,7 @@ export function RankingsDashboard() {
       const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam, options);
       if (requestId === latestRequest.current) {
         setData(payload);
+        setSelectedRank(null);
         setTableVersion((version) => version + 1);
       }
     } catch (reason) {
@@ -281,7 +282,7 @@ export function RankingsDashboard() {
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-slate-500" size={15} />
               </label>
-              {data?.season ? <PlayerRankSearch version={tableVersion} onSelectRank={setSelectedRank} /> : null}
+              {data?.season ? <PlayerRankSearch key={tableVersion} onSelectRank={setSelectedRank} /> : null}
             </div>
             <button
               type="button"
