@@ -72,6 +72,14 @@ input {
   background: rgb(255 255 255 / 0.04);
 }
 
+.mosaic-rankings-table tr.mosaic-rankings-table-selected td {
+  background: rgb(34 211 238 / 0.14);
+}
+
+.mosaic-rankings-table tr.mosaic-rankings-table-selected td:first-child {
+  box-shadow: inset 3px 0 0 rgb(103 232 249);
+}
+
 .mosaic-rankings-table th:nth-child(2) {
   color: rgb(165 243 252);
   background: rgb(12 32 48);
