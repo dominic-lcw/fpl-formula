@@ -34,7 +34,7 @@ function formatNumber(value: unknown, digits = 0) {
 }
 
 function highlightRankedRow(host: HTMLElement, rank: number | null) {
-  const rows = Array.from(host.querySelectorAll("tbody tr"));
+  const rows = Array.from(host.querySelectorAll<HTMLTableRowElement>("tbody tr"));
   for (const row of rows) row.classList.remove("mosaic-rankings-table-selected");
   if (rank === null) return;
 
