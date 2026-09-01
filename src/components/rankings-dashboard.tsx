@@ -55,12 +55,13 @@ export function RankingsDashboard() {
     nextParams: RankingParams,
     nextPosition: Position | "ALL",
     nextTeam: string,
+    refreshDataset = false,
   ) => {
     const requestId = ++latestRequest.current;
     setIsLoading(true);
     setError(null);
     try {
-      const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam);
+      const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam, refreshDataset);
       if (requestId === latestRequest.current) {
         setData(payload);
         setTableVersion((version) => version + 1);
@@ -189,7 +190,12 @@ export function RankingsDashboard() {
                 <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-slate-500" size={15} />
               </label>
             </div>
-            <button onClick={() => void loadRankings(params, position, team)} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5">
+            <button
+              type="button"
+              onClick={() => void loadRankings(params, position, team, true)}
+              disabled={isLoading}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
               <RefreshCw size={15} /> Refresh
             </button>
           </div>
