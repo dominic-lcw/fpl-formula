@@ -179,10 +179,15 @@ export function RankingsDashboard() {
 
           <Card>
             <CardHeader aria-busy={isLoading} className="flex-row items-center justify-between">
-              <div><CardTitle>Expected ranking</CardTitle><p className="text-sm text-slate-400">{data?.count ?? 0} eligible players</p></div>
+              <div>
+                <CardTitle>Expected ranking</CardTitle>
+                <p aria-live="polite" className="text-sm text-slate-400">
+                  {isLoading && data ? "Updating rankings…" : `${data?.count ?? 0} eligible players`}
+                </p>
+              </div>
               <Settings2 size={18} className="text-slate-500" />
             </CardHeader>
-            <CardContent>
+            <CardContent className={isLoading && data ? "opacity-60 transition-opacity" : "transition-opacity"}>
               {isLoading && !data ? <p className="py-12 text-center text-slate-400">Calculating the player pool…</p> : error && !data ? <p className="py-12 text-center text-rose-200">{error}</p> : !data?.season ? (
                 <div className="py-12 text-center"><p className="font-medium text-slate-100">No FPL data has been hydrated yet.</p><p className="mt-2 text-sm text-slate-400">Run <code className="rounded bg-slate-800 px-1.5 py-0.5">pnpm hydrate</code> to download the archive and current season.</p></div>
               ) : data.count ? <MosaicRankingsTable version={tableVersion} /> : <p className="py-12 text-center text-slate-400">No players match these filters.</p>}
