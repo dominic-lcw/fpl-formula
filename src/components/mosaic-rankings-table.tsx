@@ -33,10 +33,34 @@ function formatNumber(value: unknown, digits = 0) {
   return Number(value).toFixed(digits);
 }
 
-export function MosaicRankingsTable({ version }: { version: number }) {
+function highlightRankedRow(host: HTMLElement, rank: number | null) {
+  const rows = Array.from(host.querySelectorAll("tbody tr"));
+  for (const row of rows) row.classList.remove("mosaic-rankings-table-selected");
+  if (rank === null) return;
+
+  const selectedRow = rows.find((row) => row.cells.item(0)?.textContent?.trim() === String(rank));
+  if (!selectedRow) return;
+
+  selectedRow.classList.add("mosaic-rankings-table-selected");
+  selectedRow.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+export function MosaicRankingsTable({
+  version,
+  selectedRank,
+}: {
+  version: number;
+  selectedRank: number | null;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const activeTableRef = useRef<TableElement | undefined>(undefined);
+  const selectedRankRef = useRef(selectedRank);
   const [error, setError] = useState(false);
+
+  useEffect(() => {
+    selectedRankRef.current = selectedRank;
+    if (hostRef.current) highlightRankedRow(hostRef.current, selectedRank);
+  }, [selectedRank]);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +120,7 @@ export function MosaicRankingsTable({ version }: { version: number }) {
       activeTableRef.current = stagedTable;
       previousTable?.value?.destroy();
       disconnectColors = paintScoreColumn(stage, scoreColumnIndex);
+      highlightRankedRow(stage, selectedRankRef.current);
     };
 
     void mountTable().then(

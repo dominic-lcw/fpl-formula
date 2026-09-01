@@ -3,6 +3,7 @@
 import { ChevronDown, GitBranch, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
+import { PlayerRankSearch } from "@/components/player-rank-search";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { ScoreFormula } from "@/components/score-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,6 +63,7 @@ export function RankingsDashboard() {
   const [team, setTeam] = useState("ALL");
   const [activeTab, setActiveTab] = useState<"rankings" | "team">("rankings");
   const [tableVersion, setTableVersion] = useState(0);
+  const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveGameweek, setLiveGameweek] = useState<LiveGameweekStatus | null>(null);
@@ -279,6 +281,7 @@ export function RankingsDashboard() {
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-slate-500" size={15} />
               </label>
+              {data?.season ? <PlayerRankSearch version={tableVersion} onSelectRank={setSelectedRank} /> : null}
             </div>
             <button
               type="button"
@@ -309,7 +312,7 @@ export function RankingsDashboard() {
             <CardContent className={isLoading && data ? "opacity-60 transition-opacity" : "transition-opacity"}>
               {isLoading && !data ? <p className="py-12 text-center text-slate-400">Calculating the player pool…</p> : error && !data ? <p className="py-12 text-center text-rose-200">{error}</p> : !data?.season ? (
                 <div className="py-12 text-center"><p className="font-medium text-slate-100">No FPL data has been hydrated yet.</p><p className="mt-2 text-sm text-slate-400">Run <code className="rounded bg-slate-800 px-1.5 py-0.5">pnpm hydrate</code> to download the archive and current season.</p></div>
-              ) : data.count ? <MosaicRankingsTable version={tableVersion} /> : <p className="py-12 text-center text-slate-400">No players match these filters.</p>}
+              ) : data.count ? <MosaicRankingsTable version={tableVersion} selectedRank={selectedRank} /> : <p className="py-12 text-center text-slate-400">No players match these filters.</p>}
             </CardContent>
           </Card>
         </div>
