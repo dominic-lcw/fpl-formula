@@ -75,8 +75,11 @@ export function TeamAnalysisPanel({ params }: { params: RankingParams }) {
   useEffect(() => {
     const savedTeamId = window.localStorage.getItem(storageKey);
     if (!savedTeamId) return;
-    setTeamId(savedTeamId);
-    void analyseTeam(savedTeamId);
+    const timeout = window.setTimeout(() => {
+      setTeamId(savedTeamId);
+      void analyseTeam(savedTeamId);
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [analyseTeam]);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
