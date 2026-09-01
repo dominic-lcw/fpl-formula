@@ -3,6 +3,7 @@
 import { ChevronDown, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
+import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { ScoreFormula } from "@/components/score-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Position, RankingParams } from "@/lib/fpl-types";
@@ -44,6 +45,7 @@ export function RankingsDashboard() {
   const [data, setData] = useState<MosaicRankingData | null>(null);
   const [position, setPosition] = useState<Position | "ALL">("ALL");
   const [team, setTeam] = useState("ALL");
+  const [activeTab, setActiveTab] = useState<"rankings" | "team">("rankings");
   const [tableVersion, setTableVersion] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -119,7 +121,28 @@ export function RankingsDashboard() {
         </div>
       </header>
 
-      <section className="mt-6 grid gap-5 xl:grid-cols-[285px_1fr]">
+      <div className="mt-6 flex gap-2 border-b border-white/10" role="tablist" aria-label="Dashboard views">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "rankings"}
+          onClick={() => setActiveTab("rankings")}
+          className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "rankings" ? "border-cyan-300 text-cyan-200" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+        >
+          Rankings
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "team"}
+          onClick={() => setActiveTab("team")}
+          className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "team" ? "border-cyan-300 text-cyan-200" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+        >
+          My team
+        </button>
+      </div>
+
+      {activeTab === "team" ? <div className="mt-6"><TeamAnalysisPanel params={params} /></div> : <section className="mt-6 grid gap-5 xl:grid-cols-[285px_1fr]">
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-cyan-200" /> Formula controls</CardTitle>
@@ -194,7 +217,7 @@ export function RankingsDashboard() {
             </CardContent>
           </Card>
         </div>
-      </section>
+      </section>}
     </main>
   );
 }
