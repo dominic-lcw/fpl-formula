@@ -59,6 +59,8 @@ export function buildPlayerHighlights(
         ? earlierPoints.reduce((total, points) => total + points, 0) / earlierPoints.length
         : recentPoints[0] ?? 0;
       const trendDelta = round((recentPoints.at(-1) ?? 0) - earlierAverage);
+      const trend: PlayerHighlight["trend"] =
+        trendDelta > 1 ? "rising" : trendDelta < -1 ? "falling" : "steady";
 
       return {
         playerId: player.playerId,
@@ -71,7 +73,7 @@ export function buildPlayerHighlights(
         fixtures: player.fixtures,
         recentPoints,
         trendDelta,
-        trend: trendDelta > 1 ? "rising" : trendDelta < -1 ? "falling" : "steady",
+        trend,
       };
     });
 

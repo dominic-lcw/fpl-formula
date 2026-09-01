@@ -107,7 +107,10 @@ export function PlayerHighlights() {
   }, []);
 
   useEffect(() => {
-    void loadHighlights();
+    const timeout = window.setTimeout(() => {
+      void loadHighlights();
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [loadHighlights]);
 
   return (
