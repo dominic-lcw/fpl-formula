@@ -17,9 +17,10 @@ type TeamResponse = TeamAnalysis & {
   };
   season: string;
   currentGameweek: number;
+  includesLiveGameweek: boolean;
 };
 
-function queryFor(params: RankingParams) {
+function queryFor(params: RankingParams, showLiveData: boolean) {
   const query = new URLSearchParams({
     formWindow: String(params.formWindow),
     fixtureHorizon: String(params.fixtureHorizon),
@@ -27,6 +28,7 @@ function queryFor(params: RankingParams) {
     team: String(params.weights.team),
     fixtures: String(params.weights.fixtures),
     venue: String(params.weights.venue),
+    includeLive: String(showLiveData),
   });
   return query.toString();
 }
@@ -43,7 +45,15 @@ function Suggestion({ player }: { player: RankedPlayer }) {
   );
 }
 
-export function TeamAnalysisPanel({ params }: { params: RankingParams }) {
+export function TeamAnalysisPanel({
+  params,
+  showLiveData,
+  onShowLiveDataChange,
+}: {
+  params: RankingParams;
+  showLiveData: boolean;
+  onShowLiveDataChange: (enabled: boolean) => void;
+}) {
   const [teamId, setTeamId] = useState("");
   const [analysis, setAnalysis] = useState<TeamResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -58,7 +68,7 @@ export function TeamAnalysisPanel({ params }: { params: RankingParams }) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/team/${nextTeamId}?${queryFor(params)}`);
+      const response = await fetch(`/api/team/${nextTeamId}?${queryFor(params, showLiveData)}`);
       const payload = (await response.json()) as TeamResponse | { error: string };
       if (!response.ok || "error" in payload) {
         throw new Error("error" in payload ? payload.error : "Unable to analyse this FPL team.");
@@ -70,7 +80,7 @@ export function TeamAnalysisPanel({ params }: { params: RankingParams }) {
     } finally {
       setIsLoading(false);
     }
-  }, [params]);
+  }, [params, showLiveData]);
 
   useEffect(() => {
     const savedTeamId = window.localStorage.getItem(storageKey);
@@ -121,6 +131,19 @@ export function TeamAnalysisPanel({ params }: { params: RankingParams }) {
               <Save size={16} /> {isLoading ? "Analysing…" : "Save & analyse"}
             </button>
           </form>
+          <label className="mt-4 flex cursor-pointer items-start gap-3 border-t border-white/10 pt-4 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={showLiveData}
+              disabled={isLoading}
+              onChange={(event) => onShowLiveDataChange(event.target.checked)}
+              className="mt-0.5 accent-cyan-300"
+            />
+            <span>
+              <span className="block font-medium text-slate-100">Show live GW data</span>
+              <span className="block text-xs text-slate-400">Updates this team&apos;s score and recommendations with available in-progress GW data.</span>
+            </span>
+          </label>
           {error && <p className="mt-3 text-sm text-rose-200">{error}</p>}
         </CardContent>
       </Card>
@@ -145,7 +168,9 @@ export function TeamAnalysisPanel({ params }: { params: RankingParams }) {
             <Card>
               <CardContent>
                 <p className="text-sm text-slate-400">Data context</p>
-                <p className="mt-1 text-lg font-semibold text-slate-50">{analysis.season} · GW{analysis.currentGameweek}</p>
+                <p className="mt-1 text-lg font-semibold text-slate-50">
+                  {analysis.season} · {analysis.includesLiveGameweek ? `live through GW${analysis.currentGameweek}` : `after GW${analysis.currentGameweek}`}
+                </p>
                 <p className="text-sm text-slate-400">{analysis.members.length} scored squad members</p>
               </CardContent>
             </Card>

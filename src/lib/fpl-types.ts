@@ -61,6 +61,7 @@ export type RankedPlayer = PlayerFeature & {
 export type RankingResponse = {
   season: string | null;
   currentGameweek: number | null;
+  includesLiveGameweek?: boolean;
   syncedAt: string | null;
   rankings: RankedPlayer[];
   availableTeams: string[];

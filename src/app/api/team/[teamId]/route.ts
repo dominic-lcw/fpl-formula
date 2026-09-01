@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { RankingParams } from "@/lib/fpl-types";
+import { liveGameweekForRankings, summarizeGameweeks, type FplEvent } from "@/lib/fpl-gameweeks";
 import { getRankingData } from "@/lib/rankings";
 import { DEFAULT_PARAMS, sanitiseParams } from "@/lib/scoring";
 import { buildTeamAnalysis, type FplPick } from "@/lib/team-analysis";
@@ -14,6 +15,10 @@ type FplEntry = {
 
 type FplPicksResponse = {
   picks: FplPick[];
+};
+
+type FplBootstrapResponse = {
+  events: FplEvent[];
 };
 
 function numberParam(value: string | null) {
@@ -56,7 +61,11 @@ export async function GET(
   }
 
   try {
-    const rankingData = await getRankingData(paramsFromRequest(request));
+    const includeLiveData = request.nextUrl.searchParams.get("includeLive") === "true";
+    const liveGameweek = includeLiveData
+      ? liveGameweekForRankings(summarizeGameweeks((await getFplJson<FplBootstrapResponse>("bootstrap-static/")).events))
+      : null;
+    const rankingData = await getRankingData(paramsFromRequest(request), { liveGameweek });
     if (!rankingData.season || !rankingData.currentGameweek) {
       return NextResponse.json(
         { error: "Rankings are unavailable until FPL data has been hydrated." },
@@ -77,6 +86,7 @@ export async function GET(
       },
       season: rankingData.season,
       currentGameweek: rankingData.currentGameweek,
+      includesLiveGameweek: rankingData.includesLiveGameweek ?? false,
       ...buildTeamAnalysis(rankingData, picks.picks),
     });
   } catch (error) {

@@ -216,7 +216,7 @@ export function RankingsDashboard() {
         </button>
       </div>
 
-      {activeTab === "team" ? <div className="mt-6"><TeamAnalysisPanel params={params} /></div> : <section className="mt-6 grid gap-5 xl:grid-cols-[285px_1fr]">
+      {activeTab === "team" ? <div className="mt-6"><TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /></div> : <section className="mt-6 grid gap-5 xl:grid-cols-[285px_1fr]">
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-cyan-200" /> Formula controls</CardTitle>
