@@ -11,6 +11,12 @@ export type LiveGameweekStatus = {
   latestFinishedGameweek: number;
 };
 
+export function liveGameweekForRankings(liveGameweek: LiveGameweekStatus | null) {
+  return liveGameweek?.currentGameweekStatus === "in_progress"
+    ? liveGameweek.currentGameweek
+    : null;
+}
+
 export function summarizeGameweeks(events: FplEvent[]): LiveGameweekStatus | null {
   if (!events.length) return null;
 

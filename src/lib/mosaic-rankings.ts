@@ -14,6 +14,7 @@ type Vgplot = typeof import("@uwdata/vgplot");
 export type MosaicRankingData = {
   season: string | null;
   currentGameweek: number | null;
+  includesLiveGameweek: boolean;
   syncedAt: string | null;
   availableTeams: string[];
   count: number;
@@ -83,12 +84,26 @@ function escapedSqlString(value: string) {
   return value.replaceAll("'", "''");
 }
 
+function gameweekSql(liveGameweek?: number | null) {
+  if (Number.isInteger(liveGameweek) && liveGameweek && liveGameweek > 0) {
+    return String(liveGameweek);
+  }
+
+  return `coalesce((
+    SELECT max(event)
+    FROM fixtures
+    WHERE fixtures.season = current_sync.season AND finished = true
+  ), 0)`;
+}
+
 function rankingQuery(
   params: RankingParams,
   position: Position | "ALL",
   team: string,
+  liveGameweek?: number | null,
 ) {
   const startGameweek = `greatest(1, current_gameweek - ${params.formWindow - 1})`;
+  const currentGameweek = gameweekSql(liveGameweek);
   const finalFilters = [
     position !== "ALL" ? `position = '${position}'` : null,
     team !== "ALL" ? `team_name = '${escapedSqlString(team)}'` : null,
@@ -111,11 +126,7 @@ function rankingQuery(
       SELECT
         season,
         concat(cast(cast(substr(season, 1, 4) AS INTEGER) - 1 AS VARCHAR), '-', substr(season, 3, 2)) AS prior_season,
-        coalesce((
-          SELECT max(event)
-          FROM fixtures
-          WHERE fixtures.season = current_sync.season AND finished = true
-        ), 0) AS current_gameweek
+        ${currentGameweek} AS current_gameweek
       FROM current_sync
     ),
     player_features AS (
@@ -291,11 +302,16 @@ export async function calculateMosaicRankings(
   params: RankingParams,
   position: Position | "ALL",
   team: string,
-  refreshDataset = false,
+  options: {
+    refreshDataset?: boolean;
+    liveGameweek?: number | null;
+  } = {},
 ): Promise<MosaicRankingData> {
+  const { refreshDataset = false, liveGameweek } = options;
+  const includesLiveGameweek = Number.isInteger(liveGameweek) && Boolean(liveGameweek && liveGameweek > 0);
   const vg = await (refreshDataset ? reloadDataset() : loadDataset());
   const coordinator = vg.coordinator();
-  const query = rankingQuery(params, position, team);
+  const query = rankingQuery(params, position, team, includesLiveGameweek ? liveGameweek : null);
 
   const update = databaseUpdate.then(async () => {
     coordinator.clear({ clients: false });
@@ -313,16 +329,16 @@ export async function calculateMosaicRankings(
          GROUP BY season
          ORDER BY synced_at DESC NULLS LAST
          LIMIT 1
+       ),
+       context AS (
+         SELECT season, ${gameweekSql(includesLiveGameweek ? liveGameweek : null)} AS current_gameweek, synced_at
+         FROM current_sync
        )
        SELECT
          season,
-         coalesce((
-           SELECT max(event)
-           FROM fixtures
-           WHERE fixtures.season = current_sync.season AND finished = true
-         ), 0) AS current_gameweek,
+         current_gameweek,
          synced_at
-       FROM current_sync`,
+       FROM context`,
       { type: "json", cache: false },
     ),
     coordinator.query(
@@ -350,6 +366,7 @@ export async function calculateMosaicRankings(
   return {
     season: current?.season ?? null,
     currentGameweek: Number(current?.current_gameweek ?? 0) || 0,
+    includesLiveGameweek,
     syncedAt: current?.synced_at ? new Date(current.synced_at).toISOString() : null,
     availableTeams: teams.map((entry) => entry.name),
     count: Number(count[0]?.count ?? 0),
