@@ -58,9 +58,6 @@ export function paintScoreColumn(root: HTMLElement, columnIndex: number) {
       const badge = document.createElement("span");
       badge.className = "score-badge";
       badge.dataset.tone = style.tone;
-      badge.style.color = style.color;
-      badge.style.backgroundColor = style.background;
-      badge.style.borderColor = style.border;
       badge.textContent = cell.textContent?.trim() ?? "";
 
       cell.dataset.scorePainted = "1";

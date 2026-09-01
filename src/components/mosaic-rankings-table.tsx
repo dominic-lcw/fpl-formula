@@ -157,7 +157,7 @@ export function MosaicRankingsTable({
         aria-label="Player rankings table"
         className="mosaic-rankings-table"
       />
-      {error && <p className="py-12 text-center text-rose-200">Unable to prepare the scrollable table.</p>}
+      {error && <p className="py-12 text-center text-destructive">Unable to prepare the scrollable table.</p>}
     </>
   );
 }
