@@ -3,7 +3,9 @@
 import { ChevronDown, GitBranch, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
+import { PlayerRankSearch } from "@/components/player-rank-search";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { ScoreFormula } from "@/components/score-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
@@ -41,10 +43,10 @@ function ParameterSlider({
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="grid gap-2 text-sm text-slate-300">
-      <span className="flex justify-between"><span>{label}</span><strong className="text-slate-100">{value}</strong></span>
+    <label className="grid gap-2 text-sm">
+      <span className="flex justify-between"><span>{label}</span><strong>{value}</strong></span>
       <input
-        className="accent-cyan-300"
+        className="accent-primary"
         type="range"
         min={min}
         max={max}
@@ -62,6 +64,7 @@ export function RankingsDashboard() {
   const [team, setTeam] = useState("ALL");
   const [activeTab, setActiveTab] = useState<"rankings" | "team">("rankings");
   const [tableVersion, setTableVersion] = useState(0);
+  const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveGameweek, setLiveGameweek] = useState<LiveGameweekStatus | null>(null);
@@ -97,6 +100,7 @@ export function RankingsDashboard() {
       const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam, options);
       if (requestId === latestRequest.current) {
         setData(payload);
+        setSelectedRank(null);
         setTableVersion((version) => version + 1);
       }
     } catch (reason) {
@@ -172,45 +176,46 @@ export function RankingsDashboard() {
 
   return (
     <main className="mx-auto min-h-screen max-w-7xl px-4 py-8 sm:px-8">
-      <header className="flex flex-col justify-between gap-5 border-b border-white/10 pb-8 md:flex-row md:items-end">
+      <header className="flex flex-col justify-between gap-5 border-b pb-8 md:flex-row md:items-end">
         <div>
-          <div className="mb-3 flex items-center gap-2 text-sm text-cyan-200">
-            <span className="h-2 w-2 rounded-full bg-cyan-300" /> FPL Formula Lab
+          <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <span className="size-2 rounded-full bg-foreground" /> FPL Formula Lab
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Player rankings, explained.</h1>
-          <p className="mt-2 max-w-2xl text-slate-400">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Player rankings, explained.</h1>
+          <p className="mt-2 max-w-2xl text-muted-foreground">
             FPL-only scores built from individual form, team form, and fixtures with home advantage included.
           </p>
         </div>
-        <div className="flex items-start gap-3">
-          <div className="rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm">
-            <p className="text-slate-400">Dataset</p>
-            <p className="mt-1 font-medium text-slate-100">
+        <div className="flex items-start gap-2">
+          <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm">
+            <p className="text-muted-foreground">Dataset</p>
+            <p className="mt-1 font-medium">
               {data?.season
                 ? `${data.season} · ${data.includesLiveGameweek ? `live through GW${data.currentGameweek ?? "?"}` : `after GW${data.currentGameweek ?? "?"}`}`
                 : "Awaiting first hydration"}
             </p>
-            {liveGameweek ? <p aria-live="polite" className="mt-1 text-xs text-cyan-200">{liveGameweekLabel(liveGameweek)}</p> : null}
+            {liveGameweek ? <p aria-live="polite" className="mt-1 text-xs text-muted-foreground">{liveGameweekLabel(liveGameweek)}</p> : null}
           </div>
           <a
             href="https://github.com/dominic-lcw/fpl-formula"
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 hover:text-white"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             <GitBranch size={16} />
             GitHub
           </a>
+          <ThemeToggle />
         </div>
       </header>
 
-      <div className="mt-6 flex gap-2 border-b border-white/10" role="tablist" aria-label="Dashboard views">
+      <div className="mt-6 flex gap-2 border-b" role="tablist" aria-label="Dashboard views">
         <button
           type="button"
           role="tab"
           aria-selected={activeTab === "rankings"}
           onClick={() => setActiveTab("rankings")}
-          className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "rankings" ? "border-cyan-300 text-cyan-200" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+          className={`border-b-2 px-4 py-3 text-sm font-medium transition-colors ${activeTab === "rankings" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
         >
           Rankings
         </button>
@@ -219,7 +224,7 @@ export function RankingsDashboard() {
           role="tab"
           aria-selected={activeTab === "team"}
           onClick={() => setActiveTab("team")}
-          className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "team" ? "border-cyan-300 text-cyan-200" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+          className={`border-b-2 px-4 py-3 text-sm font-medium transition-colors ${activeTab === "team" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
         >
           My team
         </button>
@@ -228,8 +233,8 @@ export function RankingsDashboard() {
       {activeTab === "team" ? <div className="mt-6"><TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /></div> : <section className="mt-6 grid gap-5 xl:grid-cols-[285px_1fr]">
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-cyan-200" /> Formula controls</CardTitle>
-            <p className="text-sm text-slate-400">Rankings update and settings save as you adjust each control.</p>
+            <CardTitle className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-muted-foreground" /> Formula controls</CardTitle>
+            <p className="text-sm text-muted-foreground">Rankings update and settings save as you adjust each control.</p>
           </CardHeader>
           <CardContent className="grid gap-5">
             <div className="grid gap-3">
@@ -251,23 +256,23 @@ export function RankingsDashboard() {
             <ParameterSlider label="Form window (GWs)" value={params.formWindow} min={1} max={10} onChange={(value) => updateParams({ ...params, formWindow: value })} />
             <ParameterSlider label="Fixture horizon (GWs)" value={params.fixtureHorizon} min={1} max={8} onChange={(value) => updateParams({ ...params, fixtureHorizon: value })} />
             <ParameterSlider label="Minimum minutes" value={params.minMinutes} min={0} max={900} onChange={(value) => updateParams({ ...params, minMinutes: value })} />
-            <div className="grid gap-3 border-t border-white/10 pt-4">
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Score weights</p>
+            <div className="grid gap-3 border-t pt-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Score weights</p>
               <ParameterSlider label="Individual" value={params.weights.individual} min={0} max={100} onChange={(value) => updateWeight("individual", value)} />
               <ParameterSlider label="Team" value={params.weights.team} min={0} max={100} onChange={(value) => updateWeight("team", value)} />
               <ParameterSlider label="Fixtures" value={params.weights.fixtures} min={0} max={100} onChange={(value) => updateWeight("fixtures", value)} />
             </div>
-            <label className="flex cursor-pointer items-start gap-3 border-t border-white/10 pt-4 text-sm text-slate-300">
+            <label className="flex cursor-pointer items-start gap-3 border-t pt-4 text-sm">
               <input
                 type="checkbox"
                 checked={showLiveData}
                 disabled={isLoading}
                 onChange={(event) => updateLiveData(event.target.checked)}
-                className="mt-0.5 accent-cyan-300"
+                className="mt-0.5 accent-primary"
               />
               <span>
-                <span className="block font-medium text-slate-100">Show live GW data</span>
-                <span className="block text-xs text-slate-400">Includes available partial player stats from the current in-progress gameweek.</span>
+                <span className="block font-medium">Show live GW data</span>
+                <span className="block text-xs text-muted-foreground">Includes available partial player stats from the current in-progress gameweek.</span>
               </span>
             </label>
           </CardContent>
@@ -284,10 +289,10 @@ export function RankingsDashboard() {
                   void loadRankings(params, nextPosition, team, {
                     liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
                   });
-                }} className="appearance-none rounded-lg border border-white/10 bg-slate-900 px-3 py-2 pr-8 text-sm text-slate-200 outline-none focus:border-cyan-300">
+                }} className="h-9 appearance-none rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {positionOptions.map((option) => <option key={option} value={option}>{option === "ALL" ? "All positions" : option}</option>)}
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-slate-500" size={15} />
+                <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-muted-foreground" size={15} />
               </label>
               <label className="relative">
                 <span className="sr-only">Club</span>
@@ -297,18 +302,19 @@ export function RankingsDashboard() {
                   void loadRankings(params, position, nextTeam, {
                     liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
                   });
-                }} className="appearance-none rounded-lg border border-white/10 bg-slate-900 px-3 py-2 pr-8 text-sm text-slate-200 outline-none focus:border-cyan-300">
+                }} className="h-9 appearance-none rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <option value="ALL">All clubs</option>
                   {data?.availableTeams.map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-slate-500" size={15} />
+                <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-muted-foreground" size={15} />
               </label>
+              {data?.season ? <PlayerRankSearch key={tableVersion} onSelectRank={setSelectedRank} /> : null}
             </div>
             <button
               type="button"
               onClick={refreshRankings}
               disabled={isLoading}
-              className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
             >
               <RefreshCw size={15} /> Refresh
             </button>
@@ -324,16 +330,16 @@ export function RankingsDashboard() {
             <CardHeader aria-busy={isLoading} className="flex-row items-center justify-between">
               <div>
                 <CardTitle>Expected ranking</CardTitle>
-                <p aria-live="polite" className="text-sm text-slate-400">
+                <p aria-live="polite" className="text-sm text-muted-foreground">
                   {isLoading && data ? "Updating rankings…" : `${data?.count ?? 0} eligible players`}
                 </p>
               </div>
-              <Settings2 size={18} className="text-slate-500" />
+              <Settings2 size={18} className="text-muted-foreground" />
             </CardHeader>
             <CardContent className={isLoading && data ? "opacity-60 transition-opacity" : "transition-opacity"}>
-              {isLoading && !data ? <p className="py-12 text-center text-slate-400">Calculating the player pool…</p> : error && !data ? <p className="py-12 text-center text-rose-200">{error}</p> : !data?.season ? (
-                <div className="py-12 text-center"><p className="font-medium text-slate-100">No FPL data has been hydrated yet.</p><p className="mt-2 text-sm text-slate-400">Run <code className="rounded bg-slate-800 px-1.5 py-0.5">pnpm hydrate</code> to download the archive and current season.</p></div>
-              ) : data.count ? <MosaicRankingsTable version={tableVersion} /> : <p className="py-12 text-center text-slate-400">No players match these filters.</p>}
+              {isLoading && !data ? <p className="py-12 text-center text-muted-foreground">Calculating the player pool…</p> : error && !data ? <p className="py-12 text-center text-destructive">{error}</p> : !data?.season ? (
+                <div className="py-12 text-center"><p className="font-medium">No FPL data has been hydrated yet.</p><p className="mt-2 text-sm text-muted-foreground">Run <code className="rounded bg-muted px-1.5 py-0.5">pnpm hydrate</code> to download the archive and current season.</p></div>
+              ) : data.count ? <MosaicRankingsTable version={tableVersion} selectedRank={selectedRank} /> : <p className="py-12 text-center text-muted-foreground">No players match these filters.</p>}
             </CardContent>
           </Card>
         </div>

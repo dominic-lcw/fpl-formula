@@ -4,6 +4,7 @@ import { Save, Sparkles, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Position, RankedPlayer, RankingParams } from "@/lib/fpl-types";
+import { scoreTone } from "@/lib/score-style";
 import type { TeamAnalysis } from "@/lib/team-analysis";
 
 const storageKey = "fpl-team-id";
@@ -36,10 +37,10 @@ function Suggestion({ player }: { player: RankedPlayer }) {
   return (
     <li className="flex items-center justify-between gap-3 py-2 text-sm">
       <div className="min-w-0">
-        <p className="truncate font-medium text-slate-100">{player.name}</p>
-        <p className="text-xs text-slate-400">{player.teamShortName} · £{player.cost.toFixed(1)}m</p>
+        <p className="truncate font-medium">{player.name}</p>
+        <p className="text-xs text-muted-foreground">{player.teamShortName} · £{player.cost.toFixed(1)}m</p>
       </div>
-      <span className="score-badge border-cyan-300/40 bg-cyan-300/10 text-cyan-100">{player.score.toFixed(1)}</span>
+      <span className="score-badge" data-tone={scoreTone(player.score)}>{player.score.toFixed(1)}</span>
     </li>
   );
 }
@@ -106,12 +107,12 @@ export function TeamAnalysisPanel({
     <section className="grid gap-5">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><UsersRound size={17} className="text-cyan-200" /> My FPL team</CardTitle>
-          <p className="text-sm text-slate-400">Save your public FPL entry ID in this browser and compare its squad with the current formula.</p>
+          <CardTitle className="flex items-center gap-2"><UsersRound size={17} className="text-muted-foreground" /> My FPL team</CardTitle>
+          <p className="text-sm text-muted-foreground">Save your public FPL entry ID in this browser and compare its squad with the current formula.</p>
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-3 sm:flex-row" onSubmit={handleSubmit}>
-            <label className="grid flex-1 gap-1.5 text-sm text-slate-300">
+            <label className="grid flex-1 gap-1.5 text-sm font-medium">
               <span>FPL team ID</span>
               <input
                 value={teamId}
@@ -119,31 +120,31 @@ export function TeamAnalysisPanel({
                 inputMode="numeric"
                 pattern="[1-9][0-9]*"
                 placeholder="e.g. 123456"
-                className="rounded-lg border border-white/10 bg-slate-950/50 px-3 py-2 text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-300"
+                className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               />
             </label>
             <button
               type="submit"
               disabled={isLoading}
-              className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-wait disabled:opacity-70"
+              className="mt-auto inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
             >
               <Save size={16} /> {isLoading ? "Analysing…" : "Save & analyse"}
             </button>
           </form>
-          <label className="mt-4 flex cursor-pointer items-start gap-3 border-t border-white/10 pt-4 text-sm text-slate-300">
+          <label className="mt-4 flex cursor-pointer items-start gap-3 border-t pt-4 text-sm">
             <input
               type="checkbox"
               checked={showLiveData}
               disabled={isLoading}
               onChange={(event) => onShowLiveDataChange(event.target.checked)}
-              className="mt-0.5 accent-cyan-300"
+              className="mt-0.5 accent-primary"
             />
             <span>
-              <span className="block font-medium text-slate-100">Show live GW data</span>
-              <span className="block text-xs text-slate-400">Updates this team&apos;s score and recommendations with available in-progress GW data.</span>
+              <span className="block font-medium">Show live GW data</span>
+              <span className="block text-xs text-muted-foreground">Updates this team&apos;s score and recommendations with available in-progress GW data.</span>
             </span>
           </label>
-          {error && <p className="mt-3 text-sm text-rose-200">{error}</p>}
+          {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
         </CardContent>
       </Card>
 
@@ -152,25 +153,25 @@ export function TeamAnalysisPanel({
           <div className="grid gap-4 sm:grid-cols-3">
             <Card>
               <CardContent>
-                <p className="text-sm text-slate-400">Team</p>
-                <p className="mt-1 truncate text-lg font-semibold text-slate-50">{analysis.team.name}</p>
-                <p className="text-sm text-slate-400">{analysis.team.manager}</p>
+                <p className="text-sm text-muted-foreground">Team</p>
+                <p className="mt-1 truncate text-lg font-semibold">{analysis.team.name}</p>
+                <p className="text-sm text-muted-foreground">{analysis.team.manager}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent>
-                <p className="text-sm text-slate-400">Squad average</p>
-                <p className="mt-1 text-2xl font-semibold text-cyan-200">{analysis.averageScore?.toFixed(1) ?? "—"}</p>
-                <p className="text-sm text-slate-400">Formula score · 0–100</p>
+                <p className="text-sm text-muted-foreground">Squad average</p>
+                <p className="mt-1 text-2xl font-semibold">{analysis.averageScore?.toFixed(1) ?? "—"}</p>
+                <p className="text-sm text-muted-foreground">Formula score · 0–100</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent>
-                <p className="text-sm text-slate-400">Data context</p>
-                <p className="mt-1 text-lg font-semibold text-slate-50">
+                <p className="text-sm text-muted-foreground">Data context</p>
+                <p className="mt-1 text-lg font-semibold">
                   {analysis.season} · {analysis.includesLiveGameweek ? `live through GW${analysis.currentGameweek}` : `after GW${analysis.currentGameweek}`}
                 </p>
-                <p className="text-sm text-slate-400">{analysis.members.length} scored squad members</p>
+                <p className="text-sm text-muted-foreground">{analysis.members.length} scored squad members</p>
               </CardContent>
             </Card>
           </div>
@@ -178,23 +179,23 @@ export function TeamAnalysisPanel({
           <Card>
             <CardHeader>
               <CardTitle>Squad member scores</CardTitle>
-              <p className="text-sm text-slate-400">Scores use the formula controls selected in Rankings.</p>
+              <p className="text-sm text-muted-foreground">Scores use the formula controls selected in Rankings.</p>
             </CardHeader>
             <CardContent className="overflow-x-auto">
               <table className="w-full min-w-[560px] text-left text-sm">
-                <thead className="border-b border-white/10 text-xs uppercase tracking-wider text-slate-500">
+                <thead className="border-b text-xs uppercase tracking-wider text-muted-foreground">
                   <tr><th className="pb-3 font-medium">Player</th><th className="pb-3 font-medium">Position</th><th className="pb-3 font-medium">Club</th><th className="pb-3 text-right font-medium">Score</th><th className="pb-3 text-right font-medium">Rank</th></tr>
                 </thead>
                 <tbody>
                   {analysis.members.map((player) => (
-                    <tr key={player.playerId} className="border-b border-white/5 last:border-0">
-                      <td className="py-3 font-medium text-slate-100">
-                        {player.name} {player.isCaptain && <span className="ml-1 text-xs text-cyan-200">(C)</span>}{player.isViceCaptain && <span className="ml-1 text-xs text-slate-400">(VC)</span>}
+                    <tr key={player.playerId} className="border-b last:border-0">
+                      <td className="py-3 font-medium">
+                        {player.name} {player.isCaptain && <span className="ml-1 text-xs text-foreground">(C)</span>}{player.isViceCaptain && <span className="ml-1 text-xs text-muted-foreground">(VC)</span>}
                       </td>
-                      <td className="py-3 text-slate-300">{player.position}</td>
-                      <td className="py-3 text-slate-300">{player.teamShortName}</td>
-                      <td className="py-3 text-right"><span className="score-badge border-cyan-300/40 bg-cyan-300/10 text-cyan-100">{player.score.toFixed(1)}</span></td>
-                      <td className="py-3 text-right text-slate-300">#{player.rank}</td>
+                      <td className="py-3 text-muted-foreground">{player.position}</td>
+                      <td className="py-3 text-muted-foreground">{player.teamShortName}</td>
+                      <td className="py-3 text-right"><span className="score-badge" data-tone={scoreTone(player.score)}>{player.score.toFixed(1)}</span></td>
+                      <td className="py-3 text-right text-muted-foreground">#{player.rank}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -203,15 +204,15 @@ export function TeamAnalysisPanel({
           </Card>
 
           <div>
-            <div className="mb-3 flex items-center gap-2"><Sparkles size={17} className="text-cyan-200" /><h2 className="text-base font-semibold">Position recommendations</h2></div>
+            <div className="mb-3 flex items-center gap-2"><Sparkles size={17} className="text-muted-foreground" /><h2 className="text-base font-semibold">Position recommendations</h2></div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {positions.map((position) => (
                 <Card key={position}>
                   <CardHeader><CardTitle>{position}</CardTitle></CardHeader>
                   <CardContent>
-                    <ol className="divide-y divide-white/5">
+                    <ol className="divide-y">
                       {analysis.suggestions[position].map((player) => <Suggestion key={player.playerId} player={player} />)}
-                      {!analysis.suggestions[position].length && <li className="py-2 text-sm text-slate-400">No eligible suggestions.</li>}
+                      {!analysis.suggestions[position].length && <li className="py-2 text-sm text-muted-foreground">No eligible suggestions.</li>}
                     </ol>
                   </CardContent>
                 </Card>

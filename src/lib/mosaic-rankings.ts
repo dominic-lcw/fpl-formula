@@ -30,6 +30,14 @@ type CountRow = {
   count: number;
 };
 
+export type RankedPlayerSuggestion = {
+  rank: number;
+  player: string;
+  club: string;
+  position: Position;
+  score: number;
+};
+
 let vgplotPromise: Promise<Vgplot> | undefined;
 let datasetPromise: Promise<Vgplot> | undefined;
 let databaseUpdate: Promise<void> = Promise.resolve();
@@ -82,6 +90,10 @@ async function reloadDataset() {
 
 function escapedSqlString(value: string) {
   return value.replaceAll("'", "''");
+}
+
+function escapedLikePattern(value: string) {
+  return escapedSqlString(value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_"));
 }
 
 function gameweekSql(liveGameweek?: number | null) {
@@ -367,4 +379,32 @@ export async function calculateMosaicRankings(
     availableTeams: teams.map((entry) => entry.name),
     count: Number(count[0]?.count ?? 0),
   };
+}
+
+export async function searchRankedPlayers(searchTerm: string): Promise<RankedPlayerSuggestion[]> {
+  const term = searchTerm.trim();
+  if (!term) return [];
+
+  await databaseUpdate;
+  const escapedTerm = escapedLikePattern(term);
+  const results = await (await getMosaic()).coordinator().query(
+    `SELECT rank, player, club, position, score
+     FROM ranked_players
+     WHERE player ILIKE '%${escapedTerm}%' ESCAPE '\\'
+     ORDER BY
+       CASE
+         WHEN player ILIKE '${escapedTerm}' ESCAPE '\\' THEN 0
+         WHEN player ILIKE '${escapedTerm}%' ESCAPE '\\' THEN 1
+         ELSE 2
+       END,
+       rank
+     LIMIT 8`,
+    { type: "json", cache: false },
+  ) as RankedPlayerSuggestion[];
+
+  return results.map((result) => ({
+    ...result,
+    rank: Number(result.rank),
+    score: Number(result.score),
+  }));
 }
