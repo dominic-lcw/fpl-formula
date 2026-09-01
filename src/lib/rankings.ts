@@ -42,7 +42,10 @@ type FixtureRow = {
   team_a_difficulty: number;
 };
 
-export async function getRankingData(params: RankingParams): Promise<RankingResponse> {
+export async function getRankingData(
+  params: RankingParams,
+  options: { liveGameweek?: number | null } = {},
+): Promise<RankingResponse> {
   const sync = await query<{ season: string; synced_at: Date | string }>(
     `SELECT season, max(completed_at) AS synced_at
      FROM sync_runs WHERE status = 'complete' AND source = 'official-fpl-api'
@@ -59,7 +62,9 @@ export async function getRankingData(params: RankingParams): Promise<RankingResp
     `SELECT max(event) AS current_gameweek FROM fixtures WHERE season = ? AND finished = true`,
     [season],
   );
-  const currentGameweek = gameweekRows[0]?.current_gameweek ?? 0;
+  const completedGameweek = gameweekRows[0]?.current_gameweek ?? 0;
+  const includesLiveGameweek = Number.isInteger(options.liveGameweek) && Boolean(options.liveGameweek && options.liveGameweek > 0);
+  const currentGameweek = includesLiveGameweek ? options.liveGameweek! : completedGameweek;
   const startGameweek = Math.max(1, currentGameweek - params.formWindow + 1);
 
   const [players, teamForm, upcoming, teams] = await Promise.all([
@@ -180,6 +185,7 @@ export async function getRankingData(params: RankingParams): Promise<RankingResp
   return {
     season,
     currentGameweek,
+    includesLiveGameweek,
     syncedAt:
       current.synced_at instanceof Date ? current.synced_at.toISOString() : String(current.synced_at),
     rankings: scorePlayers(playerFeatures, params),
