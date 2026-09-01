@@ -24,7 +24,7 @@ function player(id: number, position: RankedPlayer["position"], score: number): 
     fixtures: [],
     rank: id,
     score,
-    breakdown: { individual: score, team: score, fixtures: score, venue: score },
+    breakdown: { individual: score, team: score, fixtures: score },
   };
 }
 

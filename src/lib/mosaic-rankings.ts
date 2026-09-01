@@ -122,7 +122,7 @@ function rankingQuery(
   ].filter(Boolean);
   const where = finalFilters.length ? `WHERE ${finalFilters.join(" AND ")}` : "";
   const totalWeight =
-    params.weights.individual + params.weights.team + params.weights.fixtures + params.weights.venue || 1;
+    params.weights.individual + params.weights.team + params.weights.fixtures || 1;
 
   return `
     CREATE OR REPLACE TEMP TABLE ranked_players AS
@@ -239,8 +239,7 @@ function rankingQuery(
     fixture_metrics AS (
       SELECT
         u.team_id,
-        avg((6 - u.difficulty) * 20) AS fixture_raw,
-        avg(CASE WHEN u.was_home THEN 1 ELSE -1 END) AS venue_raw,
+        avg((6 - u.difficulty + CASE WHEN u.was_home THEN 0.5 ELSE -0.5 END) * 20) AS fixture_raw,
         string_agg(concat(upper(left(t.short_name, 3)), ' ', CASE WHEN u.was_home THEN 'H' ELSE 'A' END), ' · ' ORDER BY u.event, u.kickoff_time) AS next_fixtures
       FROM upcoming u
       JOIN teams t ON t.team_id = u.opponent_id
@@ -258,7 +257,6 @@ function rankingQuery(
         coalesce(tf.attack, 0) * CASE WHEN p.position IN ('GKP', 'DEF') THEN 0.4 ELSE 0.8 END
           + coalesce(tf.defence, 0) * CASE WHEN p.position IN ('GKP', 'DEF') THEN 0.6 ELSE 0.2 END AS team_raw,
         coalesce(fm.fixture_raw, 0) AS fixture_raw,
-        coalesce(fm.venue_raw, 0) AS venue_raw,
         coalesce(fm.next_fixtures, '—') AS next_fixtures
       FROM player_features p
       LEFT JOIN team_form tf ON tf.team_id = p.team_id
@@ -269,8 +267,7 @@ function rankingQuery(
         *,
         CASE WHEN max(individual_raw) OVER () = min(individual_raw) OVER () THEN 50 ELSE (individual_raw - min(individual_raw) OVER ()) * 100 / (max(individual_raw) OVER () - min(individual_raw) OVER ()) END AS individual_score,
         CASE WHEN max(team_raw) OVER () = min(team_raw) OVER () THEN 50 ELSE (team_raw - min(team_raw) OVER ()) * 100 / (max(team_raw) OVER () - min(team_raw) OVER ()) END AS team_score,
-        CASE WHEN max(fixture_raw) OVER () = min(fixture_raw) OVER () THEN 50 ELSE (fixture_raw - min(fixture_raw) OVER ()) * 100 / (max(fixture_raw) OVER () - min(fixture_raw) OVER ()) END AS fixture_score,
-        CASE WHEN max(venue_raw) OVER () = min(venue_raw) OVER () THEN 50 ELSE (venue_raw - min(venue_raw) OVER ()) * 100 / (max(venue_raw) OVER () - min(venue_raw) OVER ()) END AS venue_score
+        CASE WHEN max(fixture_raw) OVER () = min(fixture_raw) OVER () THEN 50 ELSE (fixture_raw - min(fixture_raw) OVER ()) * 100 / (max(fixture_raw) OVER () - min(fixture_raw) OVER ()) END AS fixture_score
       FROM raw_scores
     ),
     weighted_scores AS (
@@ -280,7 +277,6 @@ function rankingQuery(
           individual_score * ${params.weights.individual}
           + team_score * ${params.weights.team}
           + fixture_score * ${params.weights.fixtures}
-          + venue_score * ${params.weights.venue}
         ) / ${totalWeight}, 1) AS score
       FROM scaled_scores
     ),

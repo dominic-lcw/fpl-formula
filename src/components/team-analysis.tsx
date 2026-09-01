@@ -28,7 +28,6 @@ function queryFor(params: RankingParams, showLiveData: boolean) {
     individual: String(params.weights.individual),
     team: String(params.weights.team),
     fixtures: String(params.weights.fixtures),
-    venue: String(params.weights.venue),
     includeLive: String(showLiveData),
   });
   return query.toString();

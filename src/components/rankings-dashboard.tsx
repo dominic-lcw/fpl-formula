@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { Position, RankingParams } from "@/lib/fpl-types";
 import { calculateMosaicRankings, type MosaicRankingData } from "@/lib/mosaic-rankings";
-import { DEFAULT_PARAMS } from "@/lib/scoring";
+import { DEFAULT_PARAMS, FORMULA_PRESETS, sanitiseParams } from "@/lib/scoring";
 
 const positionOptions: Array<Position | "ALL"> = ["ALL", "GKP", "DEF", "MID", "FWD"];
 
@@ -117,7 +117,7 @@ export function RankingsDashboard() {
     const saved = window.localStorage.getItem("fpl-ranking-preset");
     if (saved) {
       try {
-        savedParams = JSON.parse(saved) as RankingParams;
+        savedParams = sanitiseParams(JSON.parse(saved) as RankingParams);
       } catch {
         window.localStorage.removeItem("fpl-ranking-preset");
       }
@@ -140,6 +140,15 @@ export function RankingsDashboard() {
 
   function updateWeight(key: keyof RankingParams["weights"], value: number) {
     updateParams({ ...params, weights: { ...params.weights, [key]: value } });
+  }
+
+  function applyPreset(preset: (typeof FORMULA_PRESETS)[number]) {
+    updateParams({
+      ...params,
+      formWindow: preset.formWindow,
+      fixtureHorizon: preset.fixtureHorizon,
+      weights: { ...preset.weights },
+    });
   }
 
   function updateLiveData(enabled: boolean) {
@@ -174,7 +183,7 @@ export function RankingsDashboard() {
           </div>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Player rankings, explained.</h1>
           <p className="mt-2 max-w-2xl text-muted-foreground">
-            FPL-only scores built from individual form, team form, fixture difficulty, and venue.
+            FPL-only scores built from individual form, team form, and fixtures with home advantage included.
           </p>
         </div>
         <div className="flex items-start gap-2">
@@ -228,6 +237,22 @@ export function RankingsDashboard() {
             <p className="text-sm text-muted-foreground">Rankings update and settings save as you adjust each control.</p>
           </CardHeader>
           <CardContent className="grid gap-5">
+            <div className="grid gap-3">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Formula presets</p>
+              <div className="grid gap-2">
+                {FORMULA_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => applyPreset(preset)}
+                    className="rounded-lg border border-white/10 bg-slate-950/20 px-3 py-2 text-left transition hover:border-cyan-300/40 hover:bg-cyan-300/5"
+                  >
+                    <span className="block text-sm font-medium text-slate-100">{preset.name}</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-slate-400">{preset.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             <ParameterSlider label="Form window (GWs)" value={params.formWindow} min={1} max={10} onChange={(value) => updateParams({ ...params, formWindow: value })} />
             <ParameterSlider label="Fixture horizon (GWs)" value={params.fixtureHorizon} min={1} max={8} onChange={(value) => updateParams({ ...params, fixtureHorizon: value })} />
             <ParameterSlider label="Minimum minutes" value={params.minMinutes} min={0} max={900} onChange={(value) => updateParams({ ...params, minMinutes: value })} />
@@ -236,7 +261,6 @@ export function RankingsDashboard() {
               <ParameterSlider label="Individual" value={params.weights.individual} min={0} max={100} onChange={(value) => updateWeight("individual", value)} />
               <ParameterSlider label="Team" value={params.weights.team} min={0} max={100} onChange={(value) => updateWeight("team", value)} />
               <ParameterSlider label="Fixtures" value={params.weights.fixtures} min={0} max={100} onChange={(value) => updateWeight("fixtures", value)} />
-              <ParameterSlider label="Home / away" value={params.weights.venue} min={0} max={100} onChange={(value) => updateWeight("venue", value)} />
             </div>
             <label className="flex cursor-pointer items-start gap-3 border-t pt-4 text-sm">
               <input

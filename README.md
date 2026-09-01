@@ -1,6 +1,6 @@
 # FPL Formula Lab
 
-An explainable Fantasy Premier League player-ranking dashboard. It only uses FPL-provided statistics and FPL fixture difficulty: individual form (points, xG, xA, defensive contribution and minutes), team form, future fixtures, and home/away context.
+An explainable Fantasy Premier League player-ranking dashboard. It only uses FPL-provided statistics and FPL fixture difficulty: individual form (points, xG, xA, defensive contribution and minutes), team form, and future fixtures with home advantage included.
 
 ## Start
 
@@ -24,17 +24,16 @@ The official FPL API is current-season only. The app intentionally does not impo
 Default total score:
 
 ```text
-45% individual form + 20% team form + 25% fixture outlook + 10% home/away
+45% individual form + 20% team form + 35% fixture outlook
 ```
 
 Each component is normalized against the eligible player pool (0–100), so the table represents a relative expected ranking rather than projected FPL points.
 
 - **Individual:** rolling xG + xA, FPL points, defensive contribution (position-aware), a previous-season per-90 reference, and a minutes eligibility threshold.
 - **Team:** recent FPL match points/goals plus player xG/xA and defensive-contribution aggregates.
-- **Fixtures:** next 3 Gameweeks’ FPL fixture difficulty, including doubles and blanks.
-- **Venue:** the home/away balance in that same fixture horizon.
+- **Fixtures:** next 3 Gameweeks’ FPL fixture difficulty, including doubles and blanks. Home fixtures receive a +0.5 FDR adjustment and away fixtures a −0.5 adjustment.
 
-Use the dashboard controls to change the rolling window, horizon, minutes threshold, and all weights. Rankings recalculate and settings save locally in the browser as each control changes.
+Choose from Balanced, Form first, Fixture led, or Steady presets, or tune the rolling window, horizon, minutes threshold, and weights directly. Rankings recalculate and settings save locally in the browser as each control changes.
 
 ## Commands
 
