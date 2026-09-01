@@ -6,24 +6,66 @@ import type {
   ScoreWeights,
 } from "@/lib/fpl-types";
 
+type RankingParamInput = Omit<Partial<RankingParams>, "weights"> & {
+  weights?: Partial<ScoreWeights> & { venue?: unknown };
+};
+
 export const DEFAULT_PARAMS: RankingParams = {
   formWindow: 5,
   fixtureHorizon: 3,
   minMinutes: 0,
-  weights: { individual: 45, team: 20, fixtures: 25, venue: 10 },
+  weights: { individual: 45, team: 20, fixtures: 35 },
 };
+
+export const FORMULA_PRESETS = [
+  {
+    id: "balanced",
+    name: "Balanced",
+    description: "Equal emphasis on recent form and the next three Gameweeks.",
+    formWindow: 5,
+    fixtureHorizon: 3,
+    weights: { individual: 45, team: 20, fixtures: 35 },
+  },
+  {
+    id: "form-first",
+    name: "Form first",
+    description: "Prioritises players and teams that are performing now.",
+    formWindow: 5,
+    fixtureHorizon: 3,
+    weights: { individual: 60, team: 25, fixtures: 15 },
+  },
+  {
+    id: "fixture-led",
+    name: "Fixture led",
+    description: "Looks further ahead and gives the schedule the most influence.",
+    formWindow: 3,
+    fixtureHorizon: 5,
+    weights: { individual: 25, team: 15, fixtures: 60 },
+  },
+  {
+    id: "steady",
+    name: "Steady",
+    description: "Uses a longer form sample to reduce week-to-week swings.",
+    formWindow: 8,
+    fixtureHorizon: 4,
+    weights: { individual: 50, team: 30, fixtures: 20 },
+  },
+] as const;
 
 export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-export function sanitiseParams(input: Partial<RankingParams> = {}): RankingParams {
+export function sanitiseParams(input: RankingParamInput = {}): RankingParams {
   const rawWeights = input.weights ?? DEFAULT_PARAMS.weights;
   const weights: ScoreWeights = {
     individual: clamp(Number(rawWeights.individual) || 0, 0, 100),
     team: clamp(Number(rawWeights.team) || 0, 0, 100),
-    fixtures: clamp(Number(rawWeights.fixtures) || 0, 0, 100),
-    venue: clamp(Number(rawWeights.venue) || 0, 0, 100),
+    fixtures: clamp(
+      (Number(rawWeights.fixtures) || 0) + (Number(rawWeights.venue) || 0),
+      0,
+      100,
+    ),
   };
 
   return {
@@ -66,15 +108,11 @@ function teamRaw(player: PlayerFeature) {
 function fixtureRaw(player: PlayerFeature) {
   if (!player.fixtures.length) return 0;
   return (
-    player.fixtures.reduce((sum, fixture) => sum + (6 - fixture.difficulty) * 20, 0) /
-    player.fixtures.length
-  );
-}
-
-function venueRaw(player: PlayerFeature) {
-  if (!player.fixtures.length) return 0;
-  return (
-    player.fixtures.reduce((sum, fixture) => sum + (fixture.wasHome ? 1 : -1), 0) /
+    player.fixtures.reduce(
+      (sum, fixture) =>
+        sum + (6 - fixture.difficulty + (fixture.wasHome ? 0.5 : -0.5)) * 20,
+      0,
+    ) /
     player.fixtures.length
   );
 }
@@ -87,7 +125,6 @@ export function scorePlayers(
   const individualScale = scale(players.map(individualRaw));
   const teamScale = scale(players.map(teamRaw));
   const fixtureScale = scale(players.map(fixtureRaw));
-  const venueScale = scale(players.map(venueRaw));
   const totalWeight = Object.values(safeParams.weights).reduce((sum, weight) => sum + weight, 0) || 1;
 
   return players
@@ -97,13 +134,11 @@ export function scorePlayers(
         individual: individualScale(individualRaw(player)),
         team: teamScale(teamRaw(player)),
         fixtures: fixtureScale(fixtureRaw(player)),
-        venue: venueScale(venueRaw(player)),
       };
       const score =
         (breakdown.individual * safeParams.weights.individual +
           breakdown.team * safeParams.weights.team +
-          breakdown.fixtures * safeParams.weights.fixtures +
-          breakdown.venue * safeParams.weights.venue) /
+          breakdown.fixtures * safeParams.weights.fixtures) /
         totalWeight;
 
       return { ...player, score: Number(score.toFixed(1)), breakdown };

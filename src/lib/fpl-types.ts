@@ -6,7 +6,6 @@ export type ScoreWeights = {
   individual: number;
   team: number;
   fixtures: number;
-  venue: number;
 };
 
 export type RankingParams = {
@@ -49,7 +48,6 @@ export type ScoreBreakdown = {
   individual: number;
   team: number;
   fixtures: number;
-  venue: number;
 };
 
 export type RankedPlayer = PlayerFeature & {

@@ -5,21 +5,17 @@ const weightLabels = [
   { key: "individual", label: "Individual form", symbol: "I" },
   { key: "team", label: "Team form", symbol: "T" },
   { key: "fixtures", label: "Fixture outlook", symbol: "F" },
-  { key: "venue", label: "Home / away", symbol: "V" },
 ] as const;
 
 export function ScoreFormula({ params }: { params: RankingParams }) {
   const totalWeight =
     params.weights.individual +
       params.weights.team +
-      params.weights.fixtures +
-      params.weights.venue || 1;
+      params.weights.fixtures || 1;
   const isZeroWeighting =
     params.weights.individual +
       params.weights.team +
-      params.weights.fixtures +
-      params.weights.venue ===
-    0;
+      params.weights.fixtures === 0;
 
   return (
     <details className="group">
@@ -40,16 +36,16 @@ export function ScoreFormula({ params }: { params: RankingParams }) {
           <p className="text-xs font-medium uppercase tracking-wider text-cyan-100">Current weighted score</p>
           <p className="mt-2 overflow-x-auto font-mono text-sm leading-6 text-slate-100">
             score = (I × {params.weights.individual} + T × {params.weights.team} + F ×{" "}
-            {params.weights.fixtures} + V × {params.weights.venue}) ÷ {totalWeight}
+            {params.weights.fixtures}) ÷ {totalWeight}
           </p>
           <p className="mt-2 text-xs leading-5 text-slate-400">
-            I, T, F, and V are each normalised to a 0–100 score before their relative weights
+            I, T, and F are each normalised to a 0–100 score before their relative weights
             are applied.
             {isZeroWeighting ? " All weights are zero, so the denominator falls back to 1." : ""}
           </p>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-3">
           {weightLabels.map(({ key, label, symbol }) => {
             const weight = params.weights[key];
             return (
@@ -71,7 +67,7 @@ export function ScoreFormula({ params }: { params: RankingParams }) {
             <h3 className="font-medium text-slate-100">Scoring window and eligibility</h3>
             <ul className="mt-2 grid gap-1.5 leading-6 text-slate-400">
               <li>Recent player and team form: the last {params.formWindow} completed Gameweek{params.formWindow === 1 ? "" : "s"}.</li>
-              <li>Fixture and venue outlook: the next {params.fixtureHorizon} Gameweek{params.fixtureHorizon === 1 ? "" : "s"}.</li>
+              <li>Fixture outlook, including home advantage: the next {params.fixtureHorizon} Gameweek{params.fixtureHorizon === 1 ? "" : "s"}.</li>
               <li>Only players with at least {params.minMinutes} minutes in the form window are ranked.</li>
             </ul>
           </section>
@@ -103,14 +99,8 @@ export function ScoreFormula({ params }: { params: RankingParams }) {
             <FormulaDefinition
               symbol="F"
               title="Fixture outlook"
-              formula="average of (6 − FDR) × 20 for every upcoming fixture"
-              note="Includes double Gameweeks; a team with no fixture gets a raw score of 0."
-            />
-            <FormulaDefinition
-              symbol="V"
-              title="Home / away"
-              formula="average of 1 for home fixtures and −1 for away fixtures"
-              note="Calculated over the same upcoming-fixture horizon."
+              formula="average of (6 − FDR + venue adjustment) × 20 for every upcoming fixture"
+              note="Venue adjustment is +0.5 at home and −0.5 away, equivalent to one FDR step between the same opponent at home and away. Includes double Gameweeks; a team with no fixture gets a raw score of 0."
             />
           </div>
         </div>

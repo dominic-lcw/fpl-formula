@@ -35,7 +35,7 @@ function paramsFromRequest(request: NextRequest): RankingParams {
       individual: numberParam(searchParams.get("individual")) ?? DEFAULT_PARAMS.weights.individual,
       team: numberParam(searchParams.get("team")) ?? DEFAULT_PARAMS.weights.team,
       fixtures: numberParam(searchParams.get("fixtures")) ?? DEFAULT_PARAMS.weights.fixtures,
-      venue: numberParam(searchParams.get("venue")) ?? DEFAULT_PARAMS.weights.venue,
+      venue: numberParam(searchParams.get("venue")) ?? 0,
     },
   });
 }
