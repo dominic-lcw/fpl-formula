@@ -182,9 +182,12 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
         </CardHeader>
         <CardContent className="grid gap-5">
           <div className="rounded-md border bg-muted/40 p-4 text-sm">
-            <p className="font-medium">No forward-looking player data</p>
+            <p className="font-medium">Performance signals use a strict cutoff</p>
             <p className="mt-1 leading-6 text-muted-foreground">
               For each Gameweek, form and team signals stop at the previous completed Gameweek. The selected 15 are then scored only on their points in that Gameweek.
+            </p>
+            <p className="mt-2 leading-6 text-muted-foreground">
+              The current dataset keeps one roster snapshot, so historic player availability and transfers cannot yet be reconstructed. No target-Gameweek player performance is used to rank its picks.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
