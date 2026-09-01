@@ -28,14 +28,14 @@ function readSavedStrategies(): FormulaStrategy[] {
     }
     const parsed = JSON.parse(saved) as Array<Omit<FormulaStrategy, "source">>;
     if (!Array.isArray(parsed)) return emptyStrategies;
-    const strategies = parsed
+    const strategies: FormulaStrategy[] = parsed
       .filter((strategy) => typeof strategy.id === "string" && typeof strategy.name === "string" && strategy.params)
       .map((strategy) => ({
         ...strategy,
         name: strategy.name.slice(0, 48),
         description: strategy.description || "Saved from the Formula Lab controls.",
         params: sanitiseParams(strategy.params),
-        source: "saved",
+        source: "saved" as const,
       }));
     savedStrategiesCache = { value: saved, strategies };
     return strategies;
