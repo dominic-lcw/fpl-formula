@@ -1,7 +1,7 @@
 "use client";
 
 import { BookmarkPlus, Database, LoaderCircle, Play, Trash2, Trophy } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   calculateFormulaBacktests,
@@ -57,7 +57,7 @@ function StrategyTrend({ report }: { report?: StrategyBacktest }) {
 }
 
 export function FormulaTracker({ currentParams }: { currentParams: RankingParams }) {
-  const [savedStrategies, setSavedStrategies] = useState<FormulaStrategy[]>(readSavedStrategies);
+  const [savedStrategies, setSavedStrategies] = useState<FormulaStrategy[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>(() => STARTER_STRATEGIES.map((strategy) => strategy.id));
   const [formulaName, setFormulaName] = useState("");
   const [reports, setReports] = useState<StrategyBacktest[]>([]);
@@ -89,6 +89,10 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
     }
     return winners;
   }, [reports]);
+
+  useEffect(() => {
+    setSavedStrategies(readSavedStrategies());
+  }, []);
 
   function toggleStrategy(strategyId: string) {
     setSelectedIds((current) =>
