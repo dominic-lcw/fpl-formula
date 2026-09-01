@@ -60,7 +60,7 @@ function escapedSqlString(value: string) {
   return value.replaceAll("'", "''");
 }
 
-function backtestQuery(strategy: FormulaStrategy) {
+export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
   const params = sanitiseParams(strategy.params);
   const totalWeight =
     params.weights.individual + params.weights.team + params.weights.fixtures || 1;
@@ -101,7 +101,7 @@ function backtestQuery(strategy: FormulaStrategy) {
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_year_xgi_per_90,
         coalesce(
           arg_max(CASE WHEN history.was_home THEN played_fixture.team_h ELSE played_fixture.team_a END, history.event),
-          p.team_id
+          any_value(p.team_id)
         ) AS team_id
       FROM players p
       CROSS JOIN context c
@@ -244,7 +244,7 @@ export async function calculateFormulaBacktests(
 
   const reports: StrategyBacktest[] = [];
   for (const strategy of strategies) {
-    const rows = await coordinator.query(backtestQuery(strategy), {
+    const rows = await coordinator.query(buildFormulaBacktestQuery(strategy), {
       type: "json",
       cache: false,
     }) as BacktestRow[];

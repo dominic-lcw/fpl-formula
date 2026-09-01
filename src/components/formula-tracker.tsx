@@ -62,24 +62,6 @@ function formatParams(params: RankingParams) {
   return `${params.formWindow} GW form · ${params.fixtureHorizon} GW fixtures · ${params.weights.individual}/${params.weights.team}/${params.weights.fixtures}`;
 }
 
-function StrategyTrend({ report }: { report?: StrategyBacktest }) {
-  const highest = Math.max(...(report?.rounds.map((round) => round.points) ?? []), 1);
-  if (!report?.rounds.length) return <p className="text-sm text-muted-foreground">Run the tracker to see round scores.</p>;
-
-  return (
-    <div className="mt-4 flex h-12 items-end gap-px" aria-label={`${report.rounds.length} gameweek scores`}>
-      {report.rounds.map((round) => (
-        <span
-          key={round.gameweek}
-          title={`GW${round.gameweek}: ${round.points} points from ${round.pickedPlayers} players`}
-          className="min-w-1 flex-1 rounded-t-sm bg-foreground/70"
-          style={{ height: `${Math.max(8, (round.points / highest) * 100)}%` }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export function FormulaTracker({ currentParams }: { currentParams: RankingParams }) {
   const savedStrategies = useSyncExternalStore(
     subscribeToSavedStrategies,
@@ -228,47 +210,41 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
         </button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-2">
         {strategies.map((strategy) => {
           const report = reportByStrategy.get(strategy.id);
           const selected = selectedIds.includes(strategy.id);
           return (
             <Card key={strategy.id} className={selected ? "ring-1 ring-foreground/20" : "opacity-75"}>
-              <CardContent className="p-5">
-                <div className="flex items-start gap-3">
-                  <input
-                    id={`strategy-${strategy.id}`}
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => toggleStrategy(strategy.id)}
-                    className="mt-1 accent-primary"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <label htmlFor={`strategy-${strategy.id}`} className="cursor-pointer font-medium">{strategy.name}</label>
-                      {strategy.source === "saved" && (
-                        <button
-                          type="button"
-                          onClick={() => deleteFormula(strategy.id)}
-                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
-                          aria-label={`Delete ${strategy.name}`}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      )}
-                    </div>
-                    <p className="mt-1 text-sm leading-5 text-muted-foreground">{strategy.description}</p>
-                    <p className="mt-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">{formatParams(strategy.params)}</p>
-                    {report && (
-                      <div className="mt-4 grid grid-cols-3 gap-2 border-t pt-4 text-sm">
-                        <div><p className="text-xs text-muted-foreground">Total</p><p className="mt-0.5 font-semibold">{report.totalPoints.toFixed(0)}</p></div>
-                        <div><p className="text-xs text-muted-foreground">Per GW</p><p className="mt-0.5 font-semibold">{report.averagePoints.toFixed(1)}</p></div>
-                        <div><p className="text-xs text-muted-foreground">Full 15</p><p className="mt-0.5 font-semibold">{report.completeSelections}</p></div>
-                      </div>
-                    )}
-                    <StrategyTrend report={report} />
+              <CardContent className="flex items-center gap-3 px-3 py-2.5">
+                <input
+                  id={`strategy-${strategy.id}`}
+                  type="checkbox"
+                  checked={selected}
+                  onChange={() => toggleStrategy(strategy.id)}
+                  className="shrink-0 accent-primary"
+                />
+                <label htmlFor={`strategy-${strategy.id}`} title={strategy.description} className="min-w-0 flex-1 cursor-pointer">
+                  <span className="block truncate font-medium">{strategy.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{formatParams(strategy.params)}</span>
+                </label>
+                {report && (
+                  <div className="flex shrink-0 items-center gap-3 text-sm tabular-nums">
+                    <span><span className="text-xs text-muted-foreground">Total </span><span className="font-semibold">{report.totalPoints.toFixed(0)}</span></span>
+                    <span className="hidden sm:inline"><span className="text-xs text-muted-foreground">Per GW </span>{report.averagePoints.toFixed(1)}</span>
+                    <span className="hidden md:inline"><span className="text-xs text-muted-foreground">Full 15 </span>{report.completeSelections}</span>
                   </div>
-                </div>
+                )}
+                {strategy.source === "saved" && (
+                  <button
+                    type="button"
+                    onClick={() => deleteFormula(strategy.id)}
+                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+                    aria-label={`Delete ${strategy.name}`}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </CardContent>
             </Card>
           );
