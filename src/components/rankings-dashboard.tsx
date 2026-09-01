@@ -5,11 +5,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
 import { ScoreFormula } from "@/components/score-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { Position, RankingParams } from "@/lib/fpl-types";
 import { calculateMosaicRankings, type MosaicRankingData } from "@/lib/mosaic-rankings";
 import { DEFAULT_PARAMS } from "@/lib/scoring";
 
 const positionOptions: Array<Position | "ALL"> = ["ALL", "GKP", "DEF", "MID", "FWD"];
+
+type StatusResponse = {
+  liveGameweek: LiveGameweekStatus | null;
+};
+
+function liveGameweekLabel(liveGameweek: LiveGameweekStatus) {
+  if (liveGameweek.currentGameweekStatus === "in_progress") {
+    return `Live FPL: GW${liveGameweek.currentGameweek} in progress`;
+  }
+  if (liveGameweek.currentGameweekStatus === "upcoming") {
+    return `Live FPL: GW${liveGameweek.currentGameweek} next`;
+  }
+  return `Live FPL: GW${liveGameweek.currentGameweek} complete`;
+}
 
 function ParameterSlider({
   label,
@@ -47,7 +62,19 @@ export function RankingsDashboard() {
   const [tableVersion, setTableVersion] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [liveGameweek, setLiveGameweek] = useState<LiveGameweekStatus | null>(null);
   const latestRequest = useRef(0);
+
+  const loadLiveGameweek = useCallback(async () => {
+    try {
+      const response = await fetch("/api/status", { cache: "no-store" });
+      if (!response.ok) return;
+      const payload = await response.json() as StatusResponse;
+      setLiveGameweek(payload.liveGameweek);
+    } catch {
+      setLiveGameweek(null);
+    }
+  }, []);
 
   const loadRankings = useCallback(async (
     nextParams: RankingParams,
@@ -90,6 +117,10 @@ export function RankingsDashboard() {
     return () => window.clearTimeout(timeout);
   }, [loadRankings]);
 
+  useEffect(() => {
+    void loadLiveGameweek();
+  }, [loadLiveGameweek]);
+
   function updateParams(nextParams: RankingParams) {
     setParams(nextParams);
     window.localStorage.setItem("fpl-ranking-preset", JSON.stringify(nextParams));
@@ -117,6 +148,7 @@ export function RankingsDashboard() {
           <p className="mt-1 font-medium text-slate-100">
             {data?.season ? `${data.season} · after GW${data.currentGameweek ?? "?"}` : "Awaiting first hydration"}
           </p>
+          {liveGameweek ? <p aria-live="polite" className="mt-1 text-xs text-cyan-200">{liveGameweekLabel(liveGameweek)}</p> : null}
         </div>
       </header>
 
@@ -169,7 +201,10 @@ export function RankingsDashboard() {
             </div>
             <button
               type="button"
-              onClick={() => void loadRankings(params, position, team, true)}
+              onClick={() => {
+                void loadLiveGameweek();
+                void loadRankings(params, position, team, true);
+              }}
               disabled={isLoading}
               className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
