@@ -47,7 +47,13 @@ async function loadDataset() {
   if (!datasetPromise) {
     datasetPromise = getMosaic().then(async (vg) => {
       await vg.coordinator().exec(
-        parquetTables.map((table) => vg.loadParquet(table, `${typeof window !== 'undefined' ? window.location.origin : ''}/api/parquet/${table}`)),
+        parquetTables.map((table) =>
+          vg.loadParquet(
+            table,
+            `${typeof window !== "undefined" ? window.location.origin : ""}/api/parquet/${table}`,
+            { replace: true },
+          ),
+        ),
       );
       return vg;
     });
@@ -56,6 +62,21 @@ async function loadDataset() {
     });
   }
   return datasetPromise;
+}
+
+let reloadPromise: Promise<Vgplot> | undefined;
+
+async function reloadDataset() {
+  if (!reloadPromise) {
+    reloadPromise = databaseUpdate.then(async () => {
+      datasetPromise = undefined;
+      return loadDataset();
+    });
+    reloadPromise.finally(() => {
+      reloadPromise = undefined;
+    }).catch(() => undefined);
+  }
+  return reloadPromise;
 }
 
 function escapedSqlString(value: string) {
@@ -270,8 +291,9 @@ export async function calculateMosaicRankings(
   params: RankingParams,
   position: Position | "ALL",
   team: string,
+  refreshDataset = false,
 ): Promise<MosaicRankingData> {
-  const vg = await loadDataset();
+  const vg = await (refreshDataset ? reloadDataset() : loadDataset());
   const coordinator = vg.coordinator();
   const query = rankingQuery(params, position, team);
 
@@ -284,13 +306,23 @@ export async function calculateMosaicRankings(
 
   const [metadataResult, teamsResult, countResult] = await Promise.all([
     coordinator.query(
-      `SELECT sync_runs.season, max(event) AS current_gameweek, max(completed_at) AS synced_at
-       FROM sync_runs
-       LEFT JOIN fixtures USING (season)
-       WHERE status = 'complete' AND source = 'official-fpl-api' AND finished = true
-       GROUP BY sync_runs.season
-       ORDER BY synced_at DESC NULLS LAST
-       LIMIT 1`,
+      `WITH current_sync AS (
+         SELECT season, max(completed_at) AS synced_at
+         FROM sync_runs
+         WHERE status = 'complete' AND source = 'official-fpl-api'
+         GROUP BY season
+         ORDER BY synced_at DESC NULLS LAST
+         LIMIT 1
+       )
+       SELECT
+         season,
+         coalesce((
+           SELECT max(event)
+           FROM fixtures
+           WHERE fixtures.season = current_sync.season AND finished = true
+         ), 0) AS current_gameweek,
+         synced_at
+       FROM current_sync`,
       { type: "json", cache: false },
     ),
     coordinator.query(
