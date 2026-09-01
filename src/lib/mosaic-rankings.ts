@@ -73,6 +73,10 @@ async function loadDataset() {
   return datasetPromise;
 }
 
+export async function loadMosaicDataset() {
+  return loadDataset();
+}
+
 let reloadPromise: Promise<Vgplot> | undefined;
 
 async function reloadDataset() {

@@ -7,6 +7,7 @@ import { PlayerRankSearch } from "@/components/player-rank-search";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ScoreFormula } from "@/components/score-formula";
+import { FormulaTracker } from "@/components/formula-tracker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { Position, RankingParams } from "@/lib/fpl-types";
@@ -62,7 +63,7 @@ export function RankingsDashboard() {
   const [data, setData] = useState<MosaicRankingData | null>(null);
   const [position, setPosition] = useState<Position | "ALL">("ALL");
   const [team, setTeam] = useState("ALL");
-  const [activeTab, setActiveTab] = useState<"rankings" | "team">("rankings");
+  const [activeTab, setActiveTab] = useState<"rankings" | "team" | "tracker">("rankings");
   const [tableVersion, setTableVersion] = useState(0);
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -228,9 +229,18 @@ export function RankingsDashboard() {
         >
           My team
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "tracker"}
+          onClick={() => setActiveTab("tracker")}
+          className={`border-b-2 px-4 py-3 text-sm font-medium transition-colors ${activeTab === "tracker" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+        >
+          Formula tracker
+        </button>
       </div>
 
-      {activeTab === "team" ? <div className="mt-6"><TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /></div> : <section className="mt-6 grid gap-5 xl:grid-cols-[285px_1fr]">
+      {activeTab === "team" ? <div className="mt-6"><TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /></div> : activeTab === "tracker" ? <div className="mt-6"><FormulaTracker currentParams={params} /></div> : <section className="mt-6 grid gap-5 xl:grid-cols-[285px_1fr]">
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-muted-foreground" /> Formula controls</CardTitle>
