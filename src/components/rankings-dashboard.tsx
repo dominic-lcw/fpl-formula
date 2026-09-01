@@ -3,6 +3,7 @@
 import { ChevronDown, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
+import { ScoreFormula } from "@/components/score-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Position, RankingParams } from "@/lib/fpl-types";
 import { calculateMosaicRankings, type MosaicRankingData } from "@/lib/mosaic-rankings";
@@ -169,6 +170,12 @@ export function RankingsDashboard() {
               <RefreshCw size={15} /> Refresh
             </button>
           </div>
+
+          <Card className="mb-4">
+            <CardContent>
+              <ScoreFormula params={params} />
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader aria-busy={isLoading} className="flex-row items-center justify-between">
