@@ -14,6 +14,7 @@ type PlayerRankSearchProps = {
 export function PlayerRankSearch({ onSelectRank }: PlayerRankSearchProps) {
   const listboxId = useId();
   const requestId = useRef(0);
+  const skipNextSearch = useRef(false);
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<RankedPlayerSuggestion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -21,11 +22,13 @@ export function PlayerRankSearch({ onSelectRank }: PlayerRankSearchProps) {
 
   useEffect(() => {
     const trimmedQuery = query.trim();
-    if (!trimmedQuery) return;
+    if (!trimmedQuery || skipNextSearch.current) {
+      skipNextSearch.current = false;
+      return;
+    }
 
     const currentRequest = ++requestId.current;
     let cancelled = false;
-    setIsSearching(true);
     void searchRankedPlayers(trimmedQuery).then(
       (nextSuggestions) => {
         if (cancelled || currentRequest !== requestId.current) return;
@@ -46,6 +49,7 @@ export function PlayerRankSearch({ onSelectRank }: PlayerRankSearchProps) {
   }, [query]);
 
   function selectSuggestion(suggestion: RankedPlayerSuggestion) {
+    skipNextSearch.current = true;
     setQuery(suggestion.player);
     setIsOpen(false);
     onSelectRank(suggestion.rank);
@@ -65,7 +69,10 @@ export function PlayerRankSearch({ onSelectRank }: PlayerRankSearchProps) {
             const nextQuery = event.target.value;
             setQuery(nextQuery);
             onSelectRank(null);
-            if (!nextQuery.trim()) {
+            if (nextQuery.trim()) {
+              setIsSearching(true);
+              setIsOpen(true);
+            } else {
               requestId.current += 1;
               setSuggestions([]);
               setIsSearching(false);
