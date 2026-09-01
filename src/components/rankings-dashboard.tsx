@@ -113,13 +113,10 @@ export function RankingsDashboard() {
     const timeout = window.setTimeout(() => {
       setParams(savedParams);
       void loadRankings(savedParams, "ALL", "ALL");
+      void loadLiveGameweek();
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, [loadRankings]);
-
-  useEffect(() => {
-    void loadLiveGameweek();
-  }, [loadLiveGameweek]);
+  }, [loadLiveGameweek, loadRankings]);
 
   function updateParams(nextParams: RankingParams) {
     setParams(nextParams);
