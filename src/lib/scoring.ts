@@ -57,7 +57,9 @@ export function clamp(value: number, min: number, max: number) {
 }
 
 export function sanitiseParams(input: RankingParamInput = {}): RankingParams {
-  const rawWeights = input.weights ?? DEFAULT_PARAMS.weights;
+  const rawWeights = (input.weights ?? DEFAULT_PARAMS.weights) as Partial<ScoreWeights> & {
+    venue?: unknown;
+  };
   const weights: ScoreWeights = {
     individual: clamp(Number(rawWeights.individual) || 0, 0, 100),
     team: clamp(Number(rawWeights.team) || 0, 0, 100),
