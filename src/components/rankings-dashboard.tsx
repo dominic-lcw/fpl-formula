@@ -6,7 +6,7 @@ import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { ScoreFormula } from "@/components/score-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { LiveGameweekStatus } from "@/lib/fpl-gameweeks";
+import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { Position, RankingParams } from "@/lib/fpl-types";
 import { calculateMosaicRankings, type MosaicRankingData } from "@/lib/mosaic-rankings";
 import { DEFAULT_PARAMS } from "@/lib/scoring";
@@ -65,16 +65,19 @@ export function RankingsDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveGameweek, setLiveGameweek] = useState<LiveGameweekStatus | null>(null);
+  const [showLiveData, setShowLiveData] = useState(false);
   const latestRequest = useRef(0);
 
-  const loadLiveGameweek = useCallback(async () => {
+  const loadLiveGameweek = useCallback(async (): Promise<LiveGameweekStatus | null> => {
     try {
       const response = await fetch("/api/status", { cache: "no-store" });
-      if (!response.ok) return;
+      if (!response.ok) return null;
       const payload = await response.json() as StatusResponse;
       setLiveGameweek(payload.liveGameweek);
+      return payload.liveGameweek;
     } catch {
       setLiveGameweek(null);
+      return null;
     }
   }, []);
 
@@ -82,13 +85,16 @@ export function RankingsDashboard() {
     nextParams: RankingParams,
     nextPosition: Position | "ALL",
     nextTeam: string,
-    refreshDataset = false,
+    options: {
+      refreshDataset?: boolean;
+      liveGameweek?: number | null;
+    } = {},
   ) => {
     const requestId = ++latestRequest.current;
     setIsLoading(true);
     setError(null);
     try {
-      const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam, refreshDataset);
+      const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam, options);
       if (requestId === latestRequest.current) {
         setData(payload);
         setTableVersion((version) => version + 1);
@@ -123,11 +129,36 @@ export function RankingsDashboard() {
   function updateParams(nextParams: RankingParams) {
     setParams(nextParams);
     window.localStorage.setItem("fpl-ranking-preset", JSON.stringify(nextParams));
-    void loadRankings(nextParams, position, team);
+    void loadRankings(nextParams, position, team, {
+      liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
+    });
   }
 
   function updateWeight(key: keyof RankingParams["weights"], value: number) {
     updateParams({ ...params, weights: { ...params.weights, [key]: value } });
+  }
+
+  function updateLiveData(enabled: boolean) {
+    setShowLiveData(enabled);
+    if (!enabled) {
+      void loadRankings(params, position, team);
+      return;
+    }
+
+    void loadLiveGameweek().then((nextLiveGameweek) => {
+      void loadRankings(params, position, team, {
+        liveGameweek: liveGameweekForRankings(nextLiveGameweek),
+      });
+    });
+  }
+
+  function refreshRankings() {
+    void loadLiveGameweek().then((nextLiveGameweek) => {
+      void loadRankings(params, position, team, {
+        refreshDataset: true,
+        liveGameweek: showLiveData ? liveGameweekForRankings(nextLiveGameweek) : null,
+      });
+    });
   }
 
   return (
@@ -146,7 +177,9 @@ export function RankingsDashboard() {
           <div className="rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm">
             <p className="text-slate-400">Dataset</p>
             <p className="mt-1 font-medium text-slate-100">
-              {data?.season ? `${data.season} · after GW${data.currentGameweek ?? "?"}` : "Awaiting first hydration"}
+              {data?.season
+                ? `${data.season} · ${data.includesLiveGameweek ? `live through GW${data.currentGameweek ?? "?"}` : `after GW${data.currentGameweek ?? "?"}`}`
+                : "Awaiting first hydration"}
             </p>
             {liveGameweek ? <p aria-live="polite" className="mt-1 text-xs text-cyan-200">{liveGameweekLabel(liveGameweek)}</p> : null}
           </div>
@@ -200,6 +233,19 @@ export function RankingsDashboard() {
               <ParameterSlider label="Fixtures" value={params.weights.fixtures} min={0} max={100} onChange={(value) => updateWeight("fixtures", value)} />
               <ParameterSlider label="Home / away" value={params.weights.venue} min={0} max={100} onChange={(value) => updateWeight("venue", value)} />
             </div>
+            <label className="flex cursor-pointer items-start gap-3 border-t border-white/10 pt-4 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={showLiveData}
+                disabled={isLoading}
+                onChange={(event) => updateLiveData(event.target.checked)}
+                className="mt-0.5 accent-cyan-300"
+              />
+              <span>
+                <span className="block font-medium text-slate-100">Show live GW data</span>
+                <span className="block text-xs text-slate-400">Includes available partial player stats from the current in-progress gameweek.</span>
+              </span>
+            </label>
           </CardContent>
         </Card>
 
@@ -211,7 +257,9 @@ export function RankingsDashboard() {
                 <select value={position} onChange={(event) => {
                   const nextPosition = event.target.value as Position | "ALL";
                   setPosition(nextPosition);
-                  void loadRankings(params, nextPosition, team);
+                  void loadRankings(params, nextPosition, team, {
+                    liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
+                  });
                 }} className="appearance-none rounded-lg border border-white/10 bg-slate-900 px-3 py-2 pr-8 text-sm text-slate-200 outline-none focus:border-cyan-300">
                   {positionOptions.map((option) => <option key={option} value={option}>{option === "ALL" ? "All positions" : option}</option>)}
                 </select>
@@ -222,7 +270,9 @@ export function RankingsDashboard() {
                 <select value={team} onChange={(event) => {
                   const nextTeam = event.target.value;
                   setTeam(nextTeam);
-                  void loadRankings(params, position, nextTeam);
+                  void loadRankings(params, position, nextTeam, {
+                    liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
+                  });
                 }} className="appearance-none rounded-lg border border-white/10 bg-slate-900 px-3 py-2 pr-8 text-sm text-slate-200 outline-none focus:border-cyan-300">
                   <option value="ALL">All clubs</option>
                   {data?.availableTeams.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -232,10 +282,7 @@ export function RankingsDashboard() {
             </div>
             <button
               type="button"
-              onClick={() => {
-                void loadLiveGameweek();
-                void loadRankings(params, position, team, true);
-              }}
+              onClick={refreshRankings}
               disabled={isLoading}
               className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
             >

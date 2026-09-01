@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeGameweeks } from "../src/lib/fpl-gameweeks";
+import { liveGameweekForRankings, summarizeGameweeks } from "../src/lib/fpl-gameweeks";
 
 describe("summarizeGameweeks", () => {
   it("distinguishes the active gameweek from the latest completed one", () => {
@@ -24,5 +24,18 @@ describe("summarizeGameweeks", () => {
       currentGameweekStatus: "upcoming",
       latestFinishedGameweek: 2,
     });
+  });
+
+  it("only includes an in-progress gameweek in live rankings", () => {
+    expect(liveGameweekForRankings({
+      currentGameweek: 2,
+      currentGameweekStatus: "in_progress",
+      latestFinishedGameweek: 1,
+    })).toBe(2);
+    expect(liveGameweekForRankings({
+      currentGameweek: 3,
+      currentGameweekStatus: "upcoming",
+      latestFinishedGameweek: 2,
+    })).toBeNull();
   });
 });
