@@ -1,7 +1,7 @@
 "use client";
 
 import { BookmarkPlus, Database, LoaderCircle, Play, Trash2, Trophy } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   calculateFormulaBacktests,
@@ -13,14 +13,22 @@ import { sanitiseParams } from "@/lib/scoring";
 import type { RankingParams } from "@/lib/fpl-types";
 
 const storageKey = "fpl-saved-formulas-v1";
+const formulaStorageEvent = "fpl-formulas-updated";
+const emptyStrategies: FormulaStrategy[] = [];
+let savedStrategiesCache = { value: null as string | null, strategies: emptyStrategies };
 
 function readSavedStrategies(): FormulaStrategy[] {
   try {
+    if (typeof window === "undefined") return emptyStrategies;
     const saved = window.localStorage.getItem(storageKey);
-    if (!saved) return [];
+    if (saved === savedStrategiesCache.value) return savedStrategiesCache.strategies;
+    if (!saved) {
+      savedStrategiesCache = { value: saved, strategies: emptyStrategies };
+      return emptyStrategies;
+    }
     const parsed = JSON.parse(saved) as Array<Omit<FormulaStrategy, "source">>;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
+    if (!Array.isArray(parsed)) return emptyStrategies;
+    const strategies = parsed
       .filter((strategy) => typeof strategy.id === "string" && typeof strategy.name === "string" && strategy.params)
       .map((strategy) => ({
         ...strategy,
@@ -29,9 +37,25 @@ function readSavedStrategies(): FormulaStrategy[] {
         params: sanitiseParams(strategy.params),
         source: "saved",
       }));
+    savedStrategiesCache = { value: saved, strategies };
+    return strategies;
   } catch {
-    return [];
+    return emptyStrategies;
   }
+}
+
+function subscribeToSavedStrategies(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(formulaStorageEvent, onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(formulaStorageEvent, onStoreChange);
+  };
+}
+
+function persistSavedStrategies(strategies: FormulaStrategy[]) {
+  window.localStorage.setItem(storageKey, JSON.stringify(strategies));
+  window.dispatchEvent(new Event(formulaStorageEvent));
 }
 
 function formatParams(params: RankingParams) {
@@ -57,7 +81,11 @@ function StrategyTrend({ report }: { report?: StrategyBacktest }) {
 }
 
 export function FormulaTracker({ currentParams }: { currentParams: RankingParams }) {
-  const [savedStrategies, setSavedStrategies] = useState<FormulaStrategy[]>([]);
+  const savedStrategies = useSyncExternalStore(
+    subscribeToSavedStrategies,
+    readSavedStrategies,
+    () => emptyStrategies,
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>(() => STARTER_STRATEGIES.map((strategy) => strategy.id));
   const [formulaName, setFormulaName] = useState("");
   const [reports, setReports] = useState<StrategyBacktest[]>([]);
@@ -90,10 +118,6 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
     return winners;
   }, [reports]);
 
-  useEffect(() => {
-    setSavedStrategies(readSavedStrategies());
-  }, []);
-
   function toggleStrategy(strategyId: string) {
     setSelectedIds((current) =>
       current.includes(strategyId)
@@ -116,8 +140,7 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
       source: "saved",
     };
     const nextStrategies = [...savedStrategies, saved];
-    window.localStorage.setItem(storageKey, JSON.stringify(nextStrategies));
-    setSavedStrategies(nextStrategies);
+    persistSavedStrategies(nextStrategies);
     setSelectedIds((current) => [...current, saved.id]);
     setFormulaName("");
     setError(null);
@@ -125,8 +148,7 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
 
   function deleteFormula(strategyId: string) {
     const nextStrategies = savedStrategies.filter((strategy) => strategy.id !== strategyId);
-    window.localStorage.setItem(storageKey, JSON.stringify(nextStrategies));
-    setSavedStrategies(nextStrategies);
+    persistSavedStrategies(nextStrategies);
     setSelectedIds((current) => current.filter((id) => id !== strategyId));
     setReports((current) => current.filter((report) => report.strategyId !== strategyId));
   }
