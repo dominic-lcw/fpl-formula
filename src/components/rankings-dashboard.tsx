@@ -29,7 +29,7 @@ const viewMeta: Record<DashboardView, { title: string; description: string }> = 
   },
   tracker: {
     title: "Formula tracker",
-    description: "Backtest saved strategies from GW1 with no forward-looking performance signals.",
+    description: "Backtest strategies from GW1, then apply any result to Rankings.",
   },
 };
 
@@ -169,6 +169,11 @@ export function RankingsDashboard() {
     });
   }
 
+  function applyTrackerParams(nextParams: RankingParams) {
+    updateParams(sanitiseParams(nextParams));
+    setActiveTab("rankings");
+  }
+
   function updateLiveData(enabled: boolean) {
     setShowLiveData(enabled);
     if (!enabled) {
@@ -215,7 +220,7 @@ export function RankingsDashboard() {
         </header>
 
         <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 p-4 sm:p-6">
-          {activeTab === "team" ? <TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /> : activeTab === "tracker" ? <FormulaTracker currentParams={params} /> : <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
+          {activeTab === "team" ? <TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /> : activeTab === "tracker" ? <FormulaTracker currentParams={params} onApplyParams={applyTrackerParams} /> : <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-muted-foreground" /> Formula controls</CardTitle>

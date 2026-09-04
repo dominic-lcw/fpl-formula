@@ -1,6 +1,6 @@
 "use client";
 
-import { BookmarkPlus, Database, LoaderCircle, Play, Trash2, Trophy } from "lucide-react";
+import { BookmarkPlus, Database, LoaderCircle, Play, SlidersHorizontal, Trash2, Trophy } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -62,7 +62,13 @@ function formatParams(params: RankingParams) {
   return `${params.formWindow} GW form · ${params.fixtureHorizon} GW fixtures · ${params.weights.individual}/${params.weights.team}/${params.weights.fixtures}`;
 }
 
-export function FormulaTracker({ currentParams }: { currentParams: RankingParams }) {
+export function FormulaTracker({
+  currentParams,
+  onApplyParams,
+}: {
+  currentParams: RankingParams;
+  onApplyParams: (params: RankingParams) => void;
+}) {
   const savedStrategies = useSyncExternalStore(
     subscribeToSavedStrategies,
     readSavedStrategies,
@@ -73,6 +79,11 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
   const [reports, setReports] = useState<StrategyBacktest[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function applyStrategy(strategy: FormulaStrategy) {
+    onApplyParams(sanitiseParams(strategy.params));
+    setError(null);
+  }
 
   const strategies = useMemo(
     () => [...STARTER_STRATEGIES, ...savedStrategies],
@@ -159,7 +170,7 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
           <CardTitle className="flex items-center gap-2"><Database size={17} className="text-muted-foreground" /> Formula tracker</CardTitle>
           <p className="text-sm text-muted-foreground">
             Backtest the top 15 ranked players for every completed Gameweek, from GW1 onward.
-            The tracker runs in this browser against the local Parquet snapshot.
+            Apply any formula — strong or weak on the leaderboard — to Rankings when you want to use it live.
           </p>
         </CardHeader>
         <CardContent className="grid gap-5">
@@ -235,6 +246,15 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
                     <span className="hidden md:inline"><span className="text-xs text-muted-foreground">Full 15 </span>{report.completeSelections}</span>
                   </div>
                 )}
+                <button
+                  type="button"
+                  onClick={() => applyStrategy(strategy)}
+                  className="shrink-0 inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                  aria-label={`Apply ${strategy.name} to rankings`}
+                >
+                  <SlidersHorizontal size={14} />
+                  <span className="hidden sm:inline">Apply</span>
+                </button>
                 {strategy.source === "saved" && (
                   <button
                     type="button"
@@ -260,9 +280,16 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
             <p className="text-sm text-muted-foreground">Points are the combined actual returns of each Gameweek&apos;s top 15 picks. Captaincy, prices, transfers, and formation rules are not simulated.</p>
           </CardHeader>
           <CardContent className="overflow-x-auto">
-            <table className="w-full min-w-[620px] text-left text-sm">
+            <table className="w-full min-w-[700px] text-left text-sm">
               <thead className="border-b text-xs uppercase tracking-wider text-muted-foreground">
-                <tr><th className="pb-3 font-medium">Formula</th><th className="pb-3 text-right font-medium">Total points</th><th className="pb-3 text-right font-medium">Avg / GW</th><th className="pb-3 text-right font-medium">Best GWs</th><th className="pb-3 text-right font-medium">Full selections</th></tr>
+                <tr>
+                  <th className="pb-3 font-medium">Formula</th>
+                  <th className="pb-3 text-right font-medium">Total points</th>
+                  <th className="pb-3 text-right font-medium">Avg / GW</th>
+                  <th className="pb-3 text-right font-medium">Best GWs</th>
+                  <th className="pb-3 text-right font-medium">Full selections</th>
+                  <th className="pb-3 text-right font-medium">Rankings</th>
+                </tr>
               </thead>
               <tbody>
                 {sortedStrategies.map((strategy, index) => {
@@ -275,6 +302,15 @@ export function FormulaTracker({ currentParams }: { currentParams: RankingParams
                       <td className="py-3 text-right">{report.averagePoints.toFixed(1)}</td>
                       <td className="py-3 text-right">{winningRounds.get(strategy.id) ?? 0}</td>
                       <td className="py-3 text-right">{report.completeSelections}/{report.rounds.length}</td>
+                      <td className="py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => applyStrategy(strategy)}
+                          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                        >
+                          Apply
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
