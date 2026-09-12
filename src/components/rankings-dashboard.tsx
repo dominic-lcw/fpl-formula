@@ -8,6 +8,7 @@ import { PlayerRankSearch } from "@/components/player-rank-search";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { ScoreFormula } from "@/components/score-formula";
 import { FormulaTracker } from "@/components/formula-tracker";
+import { MatchForecastPanel } from "@/components/match-forecast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -30,6 +31,10 @@ const viewMeta: Record<DashboardView, { title: string; description: string }> = 
   tracker: {
     title: "Formula tracker",
     description: "Backtest strategies from GW1, then apply any result to Rankings.",
+  },
+  forecast: {
+    title: "Match forecast",
+    description: "Derive team attack/defence strength, run bivariate Poisson Monte Carlo, and log bets with odds.",
   },
 };
 
@@ -220,7 +225,7 @@ export function RankingsDashboard() {
         </header>
 
         <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 p-4 sm:p-6">
-          {activeTab === "team" ? <TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /> : activeTab === "tracker" ? <FormulaTracker currentParams={params} onApplyParams={applyTrackerParams} /> : <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
+          {activeTab === "team" ? <TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /> : activeTab === "tracker" ? <FormulaTracker currentParams={params} onApplyParams={applyTrackerParams} /> : activeTab === "forecast" ? <MatchForecastPanel /> : <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-muted-foreground" /> Formula controls</CardTitle>
