@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, GitBranch, LineChart, UsersRound } from "lucide-react";
+import { BarChart3, GitBranch, LineChart, Target, UsersRound } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Sidebar,
@@ -17,7 +17,7 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 
-export type DashboardView = "rankings" | "team" | "tracker";
+export type DashboardView = "rankings" | "team" | "tracker" | "forecast";
 
 const navItems = [
   {
@@ -34,6 +34,11 @@ const navItems = [
     id: "tracker" as const,
     title: "Formula tracker",
     icon: LineChart,
+  },
+  {
+    id: "forecast" as const,
+    title: "Match forecast",
+    icon: Target,
   },
 ];
 
