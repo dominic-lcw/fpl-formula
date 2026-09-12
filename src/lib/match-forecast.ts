@@ -66,6 +66,7 @@ export async function getForecastData(params: ForecastParams = DEFAULT_FORECAST_
       homeAdvantage: params.homeAdvantage,
       teamStrengths: [] as TeamStrength[],
       upcomingFixtures: [] as FixtureForecast[],
+      availableGameweeks: [] as number[],
     };
   }
 
@@ -144,6 +145,10 @@ export async function getForecastData(params: ForecastParams = DEFAULT_FORECAST_
     );
   });
 
+  const availableGameweeks = [...new Set(
+    forecasts.map((fixture) => fixture.event).filter((event): event is number => Number.isInteger(event)),
+  )].sort((left, right) => left - right);
+
   return {
     season: meta.season,
     currentGameweek: meta.currentGameweek,
@@ -151,6 +156,7 @@ export async function getForecastData(params: ForecastParams = DEFAULT_FORECAST_
     homeAdvantage,
     teamStrengths: strengths,
     upcomingFixtures: forecasts,
+    availableGameweeks,
   };
 }
 

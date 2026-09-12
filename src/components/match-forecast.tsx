@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   Calculator,
+  ChevronDown,
   ChevronRight,
   LoaderCircle,
   Plus,
@@ -25,9 +26,12 @@ type ForecastResponse = {
   homeAdvantage: number;
   teamStrengths: TeamStrength[];
   upcomingFixtures: FixtureForecast[];
+  availableGameweeks: number[];
 };
 
 type ForecastSubView = "fixtures" | "strengths" | "detail";
+
+const DEFAULT_GAMEWEEK = 4;
 
 const marketOptions: Array<{ value: BetMarket; label: string }> = [
   { value: "1X2", label: "Match result (1X2)" },
@@ -142,6 +146,32 @@ function StrengthBar({ value, tone }: { value: number; tone: "attack" | "defence
         style={{ width: `${width}%` }}
       />
     </div>
+  );
+}
+
+function GameweekSelect({
+  gameweeks,
+  value,
+  onChange,
+}: {
+  gameweeks: number[];
+  value: number;
+  onChange: (gameweek: number) => void;
+}) {
+  return (
+    <label className="relative">
+      <span className="sr-only">Gameweek</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="h-9 appearance-none rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {gameweeks.map((gameweek) => (
+          <option key={gameweek} value={gameweek}>Gameweek {gameweek}</option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-muted-foreground" size={15} />
+    </label>
   );
 }
 
@@ -576,6 +606,7 @@ export function MatchForecastPanel() {
   const [params, setParams] = useState<ForecastParams>(DEFAULT_FORECAST_PARAMS);
   const [data, setData] = useState<ForecastResponse | null>(null);
   const [subView, setSubView] = useState<ForecastSubView>("fixtures");
+  const [selectedGameweek, setSelectedGameweek] = useState(DEFAULT_GAMEWEEK);
   const [selectedFixtureId, setSelectedFixtureId] = useState<number | null>(null);
   const [bets, setBets] = useState<BetRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -604,6 +635,19 @@ export function MatchForecastPanel() {
   }, [bets]);
 
   const fixtureBets = selectedFixtureId ? (betsByFixture.get(selectedFixtureId) ?? []) : [];
+
+  const resolvedGameweek = useMemo(() => {
+    const gameweeks = data?.availableGameweeks ?? [];
+    if (!gameweeks.length) return selectedGameweek;
+    if (gameweeks.includes(selectedGameweek)) return selectedGameweek;
+    if (gameweeks.includes(DEFAULT_GAMEWEEK)) return DEFAULT_GAMEWEEK;
+    return gameweeks[0]!;
+  }, [data?.availableGameweeks, selectedGameweek]);
+
+  const gameweekFixtures = useMemo(
+    () => data?.upcomingFixtures.filter((fixture) => fixture.event === resolvedGameweek) ?? [],
+    [data?.upcomingFixtures, resolvedGameweek],
+  );
 
   const loadBets = useCallback(async (season?: string | null) => {
     const query = season ? `?season=${encodeURIComponent(season)}` : "";
@@ -780,12 +824,23 @@ export function MatchForecastPanel() {
 
       <div className="grid gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <SubViewNav
-            activeView={subView === "strengths" ? "strengths" : "fixtures"}
-            onNavigate={setSubView}
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <SubViewNav
+              activeView={subView === "strengths" ? "strengths" : "fixtures"}
+              onNavigate={setSubView}
+            />
+            {subView !== "strengths" && data.availableGameweeks.length > 0 ? (
+              <GameweekSelect
+                gameweeks={data.availableGameweeks}
+                value={resolvedGameweek}
+                onChange={setSelectedGameweek}
+              />
+            ) : null}
+          </div>
           <p className="text-sm text-muted-foreground">
-            {data.season} · GW{data.currentGameweek ?? "?"} · {data.upcomingFixtures.length} upcoming fixtures
+            {data.season} · {subView === "strengths"
+              ? `completed through GW${data.currentGameweek ?? "?"}`
+              : `GW${resolvedGameweek} · ${gameweekFixtures.length} fixtures`}
           </p>
         </div>
 
@@ -793,9 +848,14 @@ export function MatchForecastPanel() {
 
         {subView === "strengths" ? (
           <TeamStrengthsPanel data={data} />
+        ) : gameweekFixtures.length === 0 ? (
+          <div className="rounded-xl border border-dashed py-16 text-center">
+            <p className="font-medium">No fixtures for Gameweek {resolvedGameweek}</p>
+            <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
+          </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {data.upcomingFixtures.map((fixture) => (
+            {gameweekFixtures.map((fixture) => (
               <FixtureForecastCard
                 key={fixture.fixtureId}
                 fixture={fixture}
