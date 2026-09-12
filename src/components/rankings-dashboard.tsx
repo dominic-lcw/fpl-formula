@@ -34,7 +34,7 @@ const viewMeta: Record<DashboardView, { title: string; description: string }> = 
   },
   forecast: {
     title: "Match forecast",
-    description: "Derive team attack/defence strength, run bivariate Poisson Monte Carlo, and log bets with odds.",
+    description: "Fixture cards with predicted winners and likely scorelines — click through to log bets.",
   },
 };
 
