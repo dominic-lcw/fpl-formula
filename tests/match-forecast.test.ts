@@ -71,6 +71,25 @@ describe("match forecast model", () => {
     expect(rates.lambdaHome).toBeGreaterThan(rates.lambdaAway);
   });
 
+  it("recomputes expected goals when formula params change", () => {
+    const baseline = deriveAttackDefenceRatings(fixtures, teams, {
+      ...DEFAULT_FORECAST_PARAMS,
+      homeAdvantage: 1.05,
+      fplStrengthBlend: 0,
+    });
+    const boosted = deriveAttackDefenceRatings(fixtures, teams, {
+      ...DEFAULT_FORECAST_PARAMS,
+      homeAdvantage: 1.3,
+      fplStrengthBlend: 0,
+    });
+    const home = baseline.strengths.find((team) => team.teamId === 1)!;
+    const away = baseline.strengths.find((team) => team.teamId === 2)!;
+    const lowHomeAdv = expectedGoalsForFixture(home, away, baseline.leagueAverageGoals, baseline.homeAdvantage);
+    const highHomeAdv = expectedGoalsForFixture(home, away, boosted.leagueAverageGoals, boosted.homeAdvantage);
+    expect(highHomeAdv.lambdaHome).toBeGreaterThan(lowHomeAdv.lambdaHome);
+    expect(highHomeAdv.lambdaAway).toBeCloseTo(lowHomeAdv.lambdaAway, 5);
+  });
+
   it("runs bivariate Poisson Monte Carlo with probabilities summing to ~1 for 1X2", () => {
     let seed = 42;
     const random = () => {
