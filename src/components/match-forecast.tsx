@@ -281,10 +281,12 @@ function FixtureForecastCard({
 
 function ModelControls({
   params,
+  isRecomputing = false,
   onChange,
 }: {
   params: ForecastParams;
-  onChange: (params: ForecastParams) => void;
+  isRecomputing?: boolean;
+  onChange: (updater: (current: ForecastParams) => ForecastParams) => void;
 }) {
   return (
     <Card className="h-fit">
@@ -293,6 +295,10 @@ function ModelControls({
           <Calculator className="size-4 text-muted-foreground" />
           Model controls
         </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Predictions recompute as you adjust each control.
+          {isRecomputing ? " Updating…" : ""}
+        </p>
       </CardHeader>
       <CardContent className="grid gap-4">
         <ParameterSlider
@@ -300,7 +306,7 @@ function ModelControls({
           value={params.lookbackGameweeks}
           min={3}
           max={20}
-          onChange={(value) => onChange({ ...params, lookbackGameweeks: value })}
+          onChange={(value) => onChange((current) => ({ ...current, lookbackGameweeks: value }))}
         />
         <ParameterSlider
           label="Home advantage"
@@ -308,7 +314,7 @@ function ModelControls({
           min={1}
           max={1.35}
           step={0.01}
-          onChange={(value) => onChange({ ...params, homeAdvantage: value })}
+          onChange={(value) => onChange((current) => ({ ...current, homeAdvantage: value }))}
         />
         <ParameterSlider
           label="Bivariate correlation (λ₃)"
@@ -316,7 +322,7 @@ function ModelControls({
           min={0}
           max={0.25}
           step={0.01}
-          onChange={(value) => onChange({ ...params, correlation: value })}
+          onChange={(value) => onChange((current) => ({ ...current, correlation: value }))}
         />
         <ParameterSlider
           label="FPL strength blend"
@@ -324,7 +330,7 @@ function ModelControls({
           min={0}
           max={1}
           step={0.05}
-          onChange={(value) => onChange({ ...params, fplStrengthBlend: value })}
+          onChange={(value) => onChange((current) => ({ ...current, fplStrengthBlend: value }))}
         />
         <ParameterSlider
           label="Monte Carlo runs"
@@ -332,7 +338,7 @@ function ModelControls({
           min={1000}
           max={25000}
           step={1000}
-          onChange={(value) => onChange({ ...params, simulations: value })}
+          onChange={(value) => onChange((current) => ({ ...current, simulations: value }))}
         />
       </CardContent>
     </Card>
@@ -687,12 +693,27 @@ export function MatchForecastPanel() {
     }
   }, [loadBets]);
 
+  // Depend on each control value so formula tweaks always retrigger a fetch.
+  // Debounce so slider drags coalesce into one recompute.
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      void loadForecast(params);
-    }, 0);
+      void loadForecast({
+        lookbackGameweeks: params.lookbackGameweeks,
+        homeAdvantage: params.homeAdvantage,
+        correlation: params.correlation,
+        simulations: params.simulations,
+        fplStrengthBlend: params.fplStrengthBlend,
+      });
+    }, 250);
     return () => window.clearTimeout(timeout);
-  }, [loadForecast, params]);
+  }, [
+    loadForecast,
+    params.lookbackGameweeks,
+    params.homeAdvantage,
+    params.correlation,
+    params.simulations,
+    params.fplStrengthBlend,
+  ]);
 
   function openFixtureDetail(fixtureId: number) {
     setSelectedFixtureId(fixtureId);
@@ -731,6 +752,11 @@ export function MatchForecastPanel() {
           stake: Number(stake),
           odds: Number(odds),
           notes: notes.trim() || undefined,
+          lookback: params.lookbackGameweeks,
+          homeAdvantage: params.homeAdvantage,
+          correlation: params.correlation,
+          simulations: params.simulations,
+          fplBlend: params.fplStrengthBlend,
         }),
       });
       const payload = await response.json() as { bet?: BetRecord; error?: string };
@@ -772,55 +798,60 @@ export function MatchForecastPanel() {
 
   if (subView === "detail" && selectedFixture) {
     return (
-      <div className="grid gap-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={goBackToFixtures}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
-          >
-            <ArrowLeft className="size-4" />
-            All fixtures
-          </button>
-          <div>
-            <h2 className="text-lg font-semibold">{selectedFixture.homeTeam} vs {selectedFixture.awayTeam}</h2>
-            <p className="text-sm text-muted-foreground">
-              GW{selectedFixture.event ?? "?"}{selectedFixture.kickoffTime ? ` · ${formatKickoff(selectedFixture.kickoffTime)}` : ""}
-            </p>
+      <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
+        <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
+
+        <div className="grid gap-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={goBackToFixtures}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
+            >
+              <ArrowLeft className="size-4" />
+              All fixtures
+            </button>
+            <div>
+              <h2 className="text-lg font-semibold">{selectedFixture.homeTeam} vs {selectedFixture.awayTeam}</h2>
+              <p className="text-sm text-muted-foreground">
+                GW{selectedFixture.event ?? "?"}{selectedFixture.kickoffTime ? ` · ${formatKickoff(selectedFixture.kickoffTime)}` : ""}
+                {isLoading ? " · recomputing…" : ""}
+              </p>
+            </div>
           </div>
+
+          {error ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
+
+          <FixtureBetDetail
+            fixture={selectedFixture}
+            params={params}
+            bets={fixtureBets}
+            market={market}
+            selection={selection}
+            stake={stake}
+            odds={odds}
+            notes={notes}
+            isSavingBet={isSavingBet}
+            onMarketChange={(nextMarket) => {
+              setMarket(nextMarket);
+              const nextOptions = selectionOptions(nextMarket, selectedFixture);
+              setSelection(nextOptions[0]?.value ?? "");
+            }}
+            onSelectionChange={setSelection}
+            onStakeChange={setStake}
+            onOddsChange={setOdds}
+            onNotesChange={setNotes}
+            onSaveBet={() => void saveBet()}
+            onRemoveBet={(id) => void removeBet(id)}
+          />
         </div>
-
-        {error ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
-
-        <FixtureBetDetail
-          fixture={selectedFixture}
-          params={params}
-          bets={fixtureBets}
-          market={market}
-          selection={selection}
-          stake={stake}
-          odds={odds}
-          notes={notes}
-          isSavingBet={isSavingBet}
-          onMarketChange={(nextMarket) => {
-            setMarket(nextMarket);
-            const nextOptions = selectionOptions(nextMarket, selectedFixture);
-            setSelection(nextOptions[0]?.value ?? "");
-          }}
-          onSelectionChange={setSelection}
-          onStakeChange={setStake}
-          onOddsChange={setOdds}
-          onNotesChange={setNotes}
-          onSaveBet={() => void saveBet()}
-          onRemoveBet={(id) => void removeBet(id)}
-        />
-      </div>
+      </section>
     );
   }
 
   return (
     <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
-      <ModelControls params={params} onChange={setParams} />
+      <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
 
       <div className="grid gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -841,6 +872,7 @@ export function MatchForecastPanel() {
             {data.season} · {subView === "strengths"
               ? `completed through GW${data.currentGameweek ?? "?"}`
               : `GW${resolvedGameweek} · ${gameweekFixtures.length} fixtures`}
+            {isLoading ? " · recomputing…" : ""}
           </p>
         </div>
 
