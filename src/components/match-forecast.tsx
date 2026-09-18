@@ -1,22 +1,18 @@
 "use client";
 
 import {
-  ArrowLeft,
   Calculator,
   ChevronDown,
-  ChevronRight,
   LoaderCircle,
-  Plus,
   Receipt,
   Target,
   Trash2,
   TrendingUp,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
+import { highestMatchOutcome, type BookingMarket, type BookingRecord } from "@/lib/booking-settlement";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
 
@@ -30,44 +26,9 @@ type ForecastResponse = {
   availableGameweeks: number[];
 };
 
-type ForecastSubView = "fixtures" | "strengths" | "bookings" | "detail";
+type ForecastSubView = "fixtures" | "strengths" | "bookings";
 
 const DEFAULT_GAMEWEEK = 4;
-
-const marketOptions: Array<{ value: BookingMarket; label: string }> = [
-  { value: "1X2", label: "Match result (1X2)" },
-  { value: "over_under", label: "Over / under 2.5" },
-  { value: "btts", label: "Both teams to score" },
-  { value: "correct_score", label: "Correct score" },
-];
-
-function selectionOptions(market: BookingMarket, forecast: FixtureForecast | null) {
-  switch (market) {
-    case "1X2":
-      return [
-        { value: "home", label: `${forecast?.homeShortName ?? "Home"} win` },
-        { value: "draw", label: "Draw" },
-        { value: "away", label: `${forecast?.awayShortName ?? "Away"} win` },
-      ];
-    case "over_under":
-      return [
-        { value: "over_2.5", label: "Over 2.5 goals" },
-        { value: "under_2.5", label: "Under 2.5 goals" },
-      ];
-    case "btts":
-      return [
-        { value: "yes", label: "Yes" },
-        { value: "no", label: "No" },
-      ];
-    case "correct_score":
-      return (forecast?.topScorelines ?? []).map((line) => ({
-        value: `${line.home}-${line.away}`,
-        label: `${line.home}-${line.away} (${(line.prob * 100).toFixed(1)}%)`,
-      }));
-    default:
-      return [];
-  }
-}
 
 function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
@@ -125,19 +86,6 @@ function formatKickoff(kickoffTime: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function predictedWinner(fixture: FixtureForecast) {
-  const outcomes = [
-    { label: `${fixture.homeShortName} win`, prob: fixture.homeWinProb },
-    { label: "Draw", prob: fixture.drawProb },
-    { label: `${fixture.awayShortName} win`, prob: fixture.awayWinProb },
-  ];
-  return outcomes.sort((left, right) => right.prob - left.prob)[0]!;
-}
-
-function mostLikelyScoreline(fixture: FixtureForecast) {
-  return fixture.topScorelines[0] ?? null;
 }
 
 function ParameterSlider({
@@ -216,10 +164,10 @@ function SubViewNav({
   activeView,
   onNavigate,
 }: {
-  activeView: Exclude<ForecastSubView, "detail">;
-  onNavigate: (view: Exclude<ForecastSubView, "detail">) => void;
+  activeView: ForecastSubView;
+  onNavigate: (view: ForecastSubView) => void;
 }) {
-  const tabs: Array<{ id: Exclude<ForecastSubView, "detail">; label: string; icon: typeof Target }> = [
+  const tabs: Array<{ id: ForecastSubView; label: string; icon: typeof Target }> = [
     { id: "fixtures", label: "Fixtures", icon: Target },
     { id: "bookings", label: "Bookings", icon: Receipt },
     { id: "strengths", label: "Team strength", icon: TrendingUp },
@@ -243,77 +191,6 @@ function SubViewNav({
         </button>
       ))}
     </div>
-  );
-}
-
-function FixtureForecastCard({
-  fixture,
-  betCount,
-  onSelect,
-}: {
-  fixture: FixtureForecast;
-  betCount: number;
-  onSelect: () => void;
-}) {
-  const winner = predictedWinner(fixture);
-  const scoreline = mostLikelyScoreline(fixture);
-  const kickoff = formatKickoff(fixture.kickoffTime);
-
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="group flex h-full flex-col rounded-xl border border-border bg-card p-5 text-left shadow-xs transition hover:border-primary/40 hover:bg-accent/20"
-    >
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            GW{fixture.event ?? "?"}{kickoff ? ` · ${kickoff}` : ""}
-          </p>
-        </div>
-        {betCount > 0 ? (
-          <Badge className="bg-primary/10 text-primary">{betCount} booked</Badge>
-        ) : null}
-      </div>
-
-      <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-        <div className="text-center">
-          <p className="text-lg font-semibold tracking-tight">{fixture.homeShortName}</p>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{fixture.homeTeam}</p>
-        </div>
-        <span className="rounded-full border px-2.5 py-1 text-xs font-medium text-muted-foreground">vs</span>
-        <div className="text-center">
-          <p className="text-lg font-semibold tracking-tight">{fixture.awayShortName}</p>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{fixture.awayTeam}</p>
-        </div>
-      </div>
-
-      <div className="mt-auto grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border bg-muted/20 p-3">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Predicted winner</p>
-          <p className="mt-1 text-sm font-semibold">{winner.label}</p>
-          <p className="text-xs text-muted-foreground">{formatPercent(winner.prob)}</p>
-        </div>
-        <div className="rounded-lg border bg-muted/20 p-3">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Most likely score</p>
-          {scoreline ? (
-            <>
-              <p className="mt-1 text-sm font-semibold">{scoreline.home}-{scoreline.away}</p>
-              <p className="text-xs text-muted-foreground">{formatPercent(scoreline.prob)}</p>
-            </>
-          ) : (
-            <p className="mt-1 text-sm text-muted-foreground">—</p>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
-        <span>Expected {fixture.expectedHomeGoals.toFixed(2)}–{fixture.expectedAwayGoals.toFixed(2)}</span>
-        <span className="inline-flex items-center gap-1 font-medium text-primary opacity-0 transition group-hover:opacity-100">
-          Book <ChevronRight className="size-3.5" />
-        </span>
-      </div>
-    </button>
   );
 }
 
@@ -554,167 +431,120 @@ function BookingLedger({
   );
 }
 
-function FixtureBetDetail({
-  fixture,
-  params,
+function resultLabel(fixture: FixtureForecast, selection: "home" | "draw" | "away") {
+  if (selection === "home") return `${fixture.homeShortName} win`;
+  if (selection === "away") return `${fixture.awayShortName} win`;
+  return "Draw";
+}
+
+function GameweekBookingTable({
+  gameweek,
+  fixtures,
   bookings,
-  market,
-  selection,
   stake,
-  odds,
-  notes,
-  isSavingBet,
-  onMarketChange,
-  onSelectionChange,
+  defaultOdds,
+  rowOdds,
+  isBooking,
   onStakeChange,
-  onOddsChange,
-  onNotesChange,
-  onSaveBet,
-  onRemoveBet,
+  onDefaultOddsChange,
+  onRowOddsChange,
+  onBookAll,
 }: {
-  fixture: FixtureForecast;
-  params: ForecastParams;
+  gameweek: number;
+  fixtures: FixtureForecast[];
   bookings: BookingRecord[];
-  market: BookingMarket;
-  selection: string;
   stake: string;
-  odds: string;
-  notes: string;
-  isSavingBet: boolean;
-  onMarketChange: (market: BookingMarket) => void;
-  onSelectionChange: (selection: string) => void;
+  defaultOdds: string;
+  rowOdds: Record<number, string>;
+  isBooking: boolean;
   onStakeChange: (stake: string) => void;
-  onOddsChange: (odds: string) => void;
-  onNotesChange: (notes: string) => void;
-  onSaveBet: () => void;
-  onRemoveBet: (id: string) => void;
+  onDefaultOddsChange: (odds: string) => void;
+  onRowOddsChange: (fixtureId: number, odds: string) => void;
+  onBookAll: () => void;
 }) {
-  const winner = predictedWinner(fixture);
-  const scoreline = mostLikelyScoreline(fixture);
-  const selectionChoices = selectionOptions(market, fixture);
-  const activeSelection = selectionChoices.some((option) => option.value === selection)
-    ? selection
-    : (selectionChoices[0]?.value ?? "");
+  const openByFixture = new Map(
+    bookings.filter((booking) => booking.status === "open").map((booking) => [booking.fixtureId, booking]),
+  );
+  const pending = fixtures.filter((fixture) => !openByFixture.has(fixture.fixtureId));
 
   return (
-    <div className="grid gap-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Predicted winner</p>
-          <p className="mt-2 text-xl font-semibold">{winner.label}</p>
-          <p className="text-sm text-muted-foreground">{formatPercent(winner.prob)}</p>
-        </div>
-        <div className="rounded-xl border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Most likely score</p>
-          <p className="mt-2 text-xl font-semibold">{scoreline ? `${scoreline.home}-${scoreline.away}` : "—"}</p>
-          <p className="text-sm text-muted-foreground">{scoreline ? formatPercent(scoreline.prob) : ""}</p>
-        </div>
-        <div className="rounded-xl border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Expected score</p>
-          <p className="mt-2 text-xl font-semibold">
-            {fixture.expectedHomeGoals.toFixed(2)} – {fixture.expectedAwayGoals.toFixed(2)}
-          </p>
-        </div>
-        <div className="rounded-xl border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Other markets</p>
-          <p className="mt-2 text-sm">
-            O2.5 {formatPercent(fixture.over25Prob)} · BTTS {formatPercent(fixture.bttsProb)}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            H/D/A {formatPercent(fixture.homeWinProb)}/{formatPercent(fixture.drawProb)}/{formatPercent(fixture.awayWinProb)}
-          </p>
-        </div>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Scoreline distribution</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            From {params.simulations.toLocaleString()} bivariate Poisson simulations
-          </p>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {fixture.topScorelines.map((line) => (
-              <Badge key={`${line.home}-${line.away}`}>
-                {line.home}-{line.away} · {formatPercent(line.prob)}
-              </Badge>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Bookings for this fixture</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {bookings.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">Nothing booked on this match yet.</p>
-            ) : (
-              <BookingRows bookings={bookings} onCancel={onRemoveBet} />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle>Book a selection</CardTitle>
+    <Card>
+      <CardHeader className="gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Gameweek {gameweek}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              The stake stays open. PnL is filled in from the final score after the match is hydrated.
+              Each row is the most likely result. One click books every match that is still open.
             </p>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            <label className="grid gap-1 text-sm">
-              Market
-              <select
-                value={market}
-                onChange={(event) => onMarketChange(event.target.value as BookingMarket)}
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                {marketOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-1 text-sm">
-              Selection
-              <select
-                value={activeSelection}
-                onChange={(event) => onSelectionChange(event.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-              >
-                {selectionChoices.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-1 text-sm">
-              Stake (£)
-              <Input value={stake} onChange={(event) => onStakeChange(event.target.value)} inputMode="decimal" />
-            </label>
-            <label className="grid gap-1 text-sm">
-              Odds (decimal)
-              <Input value={odds} onChange={(event) => onOddsChange(event.target.value)} inputMode="decimal" />
-            </label>
-            <label className="grid gap-1 text-sm">
-              Notes
-              <Input value={notes} onChange={(event) => onNotesChange(event.target.value)} placeholder="Optional bookmaker or rationale" />
-            </label>
-            <button
-              type="button"
-              disabled={isSavingBet}
-              onClick={onSaveBet}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-            >
-              {isSavingBet ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
-              Book selection
-            </button>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+          </div>
+          <button
+            type="button"
+            disabled={isBooking || pending.length === 0}
+            onClick={onBookAll}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+          >
+            {isBooking ? <LoaderCircle className="size-4 animate-spin" /> : null}
+            {pending.length === 0 ? "All booked" : `Book ${pending.length} match${pending.length === 1 ? "" : "es"}`}
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <label className="grid gap-1 text-sm">
+            Stake (£)
+            <Input value={stake} onChange={(event) => onStakeChange(event.target.value)} inputMode="decimal" className="w-28" />
+          </label>
+          <label className="grid gap-1 text-sm">
+            Odds for every match
+            <Input value={defaultOdds} onChange={(event) => onDefaultOddsChange(event.target.value)} inputMode="decimal" className="w-28" />
+          </label>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="py-2 pr-3">Match</th>
+                <th className="py-2 pr-3">Top result</th>
+                <th className="py-2 pr-3">Prob</th>
+                <th className="py-2 pr-3">Odds</th>
+                <th className="py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fixtures.map((fixture) => {
+                const pick = highestMatchOutcome(fixture);
+                const open = openByFixture.get(fixture.fixtureId);
+                const kickoff = formatKickoff(fixture.kickoffTime);
+                return (
+                  <tr key={fixture.fixtureId} className="border-b border-border/60">
+                    <td className="py-2 pr-3">
+                      <p className="font-medium">{fixture.homeShortName} vs {fixture.awayShortName}</p>
+                      <p className="text-xs text-muted-foreground">{kickoff ?? fixture.homeTeam}</p>
+                    </td>
+                    <td className="py-2 pr-3">{open ? selectionLabel(open.market, open.selection) : resultLabel(fixture, pick.selection)}</td>
+                    <td className="py-2 pr-3">{formatPercent(open?.modelProb ?? pick.probability)}</td>
+                    <td className="py-2 pr-3">
+                      {open ? (
+                        open.odds.toFixed(2)
+                      ) : (
+                        <Input
+                          value={rowOdds[fixture.fixtureId] ?? defaultOdds}
+                          onChange={(event) => onRowOddsChange(fixture.fixtureId, event.target.value)}
+                          inputMode="decimal"
+                          aria-label={`Odds for ${fixture.homeShortName} vs ${fixture.awayShortName}`}
+                          className="h-8 w-24"
+                        />
+                      )}
+                    </td>
+                    <td className="py-2">{open ? "Open" : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -723,34 +553,14 @@ export function MatchForecastPanel() {
   const [data, setData] = useState<ForecastResponse | null>(null);
   const [subView, setSubView] = useState<ForecastSubView>("fixtures");
   const [selectedGameweek, setSelectedGameweek] = useState(DEFAULT_GAMEWEEK);
-  const [selectedFixtureId, setSelectedFixtureId] = useState<number | null>(null);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSavingBet, setIsSavingBet] = useState(false);
+  const [isBooking, setIsBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [market, setMarket] = useState<BookingMarket>("1X2");
-  const [selection, setSelection] = useState("home");
   const [stake, setStake] = useState("10");
-  const [odds, setOdds] = useState("2.10");
-  const [notes, setNotes] = useState("");
+  const [defaultOdds, setDefaultOdds] = useState("2.10");
+  const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
   const latestRequest = useRef(0);
-
-  const selectedFixture = useMemo(
-    () => data?.upcomingFixtures.find((fixture) => fixture.fixtureId === selectedFixtureId) ?? null,
-    [data?.upcomingFixtures, selectedFixtureId],
-  );
-
-  const bookingsByFixture = useMemo(() => {
-    const map = new Map<number, BookingRecord[]>();
-    for (const booking of bookings) {
-      const existing = map.get(booking.fixtureId) ?? [];
-      existing.push(booking);
-      map.set(booking.fixtureId, existing);
-    }
-    return map;
-  }, [bookings]);
-
-  const fixtureBookings = selectedFixtureId ? (bookingsByFixture.get(selectedFixtureId) ?? []) : [];
 
   const resolvedGameweek = useMemo(() => {
     const gameweeks = data?.availableGameweeks ?? [];
@@ -825,43 +635,41 @@ export function MatchForecastPanel() {
     params.fplStrengthBlend,
   ]);
 
-  function openFixtureDetail(fixtureId: number) {
-    setSelectedFixtureId(fixtureId);
-    setSubView("detail");
-    setMarket("1X2");
-    setSelection("home");
-    setNotes("");
-  }
+  async function bookGameweek() {
+    if (!data?.season) return;
+    const stakeValue = Number(stake);
+    const pending = gameweekFixtures.filter((fixture) => !bookings.some(
+      (booking) => booking.fixtureId === fixture.fixtureId && booking.status === "open",
+    ));
+    if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
+      setError("Stake must be positive.");
+      return;
+    }
 
-  function goBackToFixtures() {
-    setSubView("fixtures");
-    setSelectedFixtureId(null);
-  }
+    const rows = pending.map((fixture) => {
+      const pick = highestMatchOutcome(fixture);
+      return {
+        fixtureId: fixture.fixtureId,
+        market: pick.market,
+        selection: pick.selection,
+        stake: stakeValue,
+        odds: Number(rowOdds[fixture.fixtureId] ?? defaultOdds),
+      };
+    });
+    if (rows.some((row) => !Number.isFinite(row.odds) || row.odds <= 1)) {
+      setError("Decimal odds must be greater than 1.");
+      return;
+    }
+    if (rows.length === 0) return;
 
-  async function saveBet() {
-    if (!selectedFixture || !data?.season) return;
-    setIsSavingBet(true);
+    setIsBooking(true);
     setError(null);
-
-    const selectionChoices = selectionOptions(market, selectedFixture);
-    const activeSelection = selectionChoices.some((option) => option.value === selection)
-      ? selection
-      : (selectionChoices[0]?.value ?? "");
-
     try {
       const response = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fixtureId: selectedFixture.fixtureId,
-          season: data.season,
-          homeTeam: selectedFixture.homeTeam,
-          awayTeam: selectedFixture.awayTeam,
-          market,
-          selection: activeSelection,
-          stake: Number(stake),
-          odds: Number(odds),
-          notes: notes.trim() || undefined,
+          bookings: rows,
           lookback: params.lookbackGameweeks,
           homeAdvantage: params.homeAdvantage,
           correlation: params.correlation,
@@ -869,14 +677,13 @@ export function MatchForecastPanel() {
           fplBlend: params.fplStrengthBlend,
         }),
       });
-      const payload = await response.json() as { booking?: BookingRecord; error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to book selection.");
-      setNotes("");
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to book the gameweek.");
       await loadBookings(data.season);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to book selection.");
+      setError(reason instanceof Error ? reason.message : "Unable to book the gameweek.");
     } finally {
-      setIsSavingBet(false);
+      setIsBooking(false);
     }
   }
 
@@ -910,70 +717,6 @@ export function MatchForecastPanel() {
     );
   }
 
-  if (subView === "detail" && selectedFixture) {
-    return (
-      <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
-        <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
-
-        <div className="grid gap-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={goBackToFixtures}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
-            >
-              <ArrowLeft className="size-4" />
-              All fixtures
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedFixtureId(null);
-                setSubView("bookings");
-              }}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
-            >
-              <Receipt className="size-4" />
-              Ledger
-            </button>
-            <div>
-              <h2 className="text-lg font-semibold">{selectedFixture.homeTeam} vs {selectedFixture.awayTeam}</h2>
-              <p className="text-sm text-muted-foreground">
-                GW{selectedFixture.event ?? "?"}{selectedFixture.kickoffTime ? ` · ${formatKickoff(selectedFixture.kickoffTime)}` : ""}
-                {isLoading ? " · recomputing…" : ""}
-              </p>
-            </div>
-          </div>
-
-          {error ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
-
-          <FixtureBetDetail
-            fixture={selectedFixture}
-            params={params}
-            bookings={fixtureBookings}
-            market={market}
-            selection={selection}
-            stake={stake}
-            odds={odds}
-            notes={notes}
-            isSavingBet={isSavingBet}
-            onMarketChange={(nextMarket) => {
-              setMarket(nextMarket);
-              const nextOptions = selectionOptions(nextMarket, selectedFixture);
-              setSelection(nextOptions[0]?.value ?? "");
-            }}
-            onSelectionChange={setSelection}
-            onStakeChange={setStake}
-            onOddsChange={setOdds}
-            onNotesChange={setNotes}
-            onSaveBet={() => void saveBet()}
-            onRemoveBet={(id) => void removeBet(id)}
-          />
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
       <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
@@ -982,7 +725,7 @@ export function MatchForecastPanel() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <SubViewNav
-              activeView={subView === "detail" ? "fixtures" : subView}
+              activeView={subView}
               onNavigate={setSubView}
             />
             {subView === "fixtures" && data.availableGameweeks.length > 0 ? (
@@ -1015,16 +758,22 @@ export function MatchForecastPanel() {
             <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {gameweekFixtures.map((fixture) => (
-              <FixtureForecastCard
-                key={fixture.fixtureId}
-                fixture={fixture}
-                betCount={bookingsByFixture.get(fixture.fixtureId)?.length ?? 0}
-                onSelect={() => openFixtureDetail(fixture.fixtureId)}
-              />
-            ))}
-          </div>
+          <GameweekBookingTable
+            gameweek={resolvedGameweek}
+            fixtures={gameweekFixtures}
+            bookings={bookings}
+            stake={stake}
+            defaultOdds={defaultOdds}
+            rowOdds={rowOdds}
+            isBooking={isBooking}
+            onStakeChange={setStake}
+            onDefaultOddsChange={(value) => {
+              setDefaultOdds(value);
+              setRowOdds({});
+            }}
+            onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
+            onBookAll={() => void bookGameweek()}
+          />
         )}
       </div>
     </section>

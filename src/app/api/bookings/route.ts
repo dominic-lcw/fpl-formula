@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   BookingRequestError,
   bookSelection,
+  bookSelections,
   cancelBooking,
   listBookings,
   type BookingInput,
@@ -10,6 +11,7 @@ import { isBookableSelection, isBookingMarket } from "@/lib/booking-settlement";
 import {
   DEFAULT_FORECAST_PARAMS,
   getFixtureForecast,
+  getForecastData,
   type ForecastParams,
 } from "@/lib/match-forecast";
 
@@ -49,65 +51,138 @@ export async function GET(request: NextRequest) {
   }
 }
 
+type BookingRequestBody = Partial<BookingInput> & {
+  fixtureId?: number;
+  season?: string;
+  homeTeam?: string;
+  awayTeam?: string;
+  market?: string;
+  selection?: string;
+  stake?: number;
+  odds?: number;
+  notes?: string;
+  lookback?: number;
+  homeAdvantage?: number;
+  correlation?: number;
+  simulations?: number;
+  fplBlend?: number;
+  bookings?: Array<{
+    fixtureId?: number;
+    market?: string;
+    selection?: string;
+    stake?: number;
+    odds?: number;
+    notes?: string;
+  }>;
+};
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as Partial<BookingInput> & {
-      fixtureId?: number;
-      season?: string;
-      homeTeam?: string;
-      awayTeam?: string;
-      market?: string;
-      selection?: string;
-      stake?: number;
-      odds?: number;
-      notes?: string;
-      lookback?: number;
-      homeAdvantage?: number;
-      correlation?: number;
-      simulations?: number;
-      fplBlend?: number;
-    };
-
-    if (
-      !body.fixtureId ||
-      !body.season ||
-      !body.homeTeam ||
-      !body.awayTeam ||
-      !body.market ||
-      !body.selection ||
-      !Number.isFinite(body.stake) ||
-      !Number.isFinite(body.odds)
-    ) {
-      return NextResponse.json({ error: "Missing required booking fields." }, { status: 400 });
+    const body = await request.json() as BookingRequestBody;
+    if (Array.isArray(body.bookings)) {
+      return bookGameweek(body);
     }
-
-    if (!isBookingMarket(body.market) || !isBookableSelection(body.market, body.selection)) {
-      return NextResponse.json({ error: "That market or selection cannot be booked." }, { status: 400 });
-    }
-
-    const forecastPayload = await getFixtureForecast(body.fixtureId, forecastParamsFromBody(body));
-    const forecast = forecastPayload.forecast;
-    if (!forecast) {
-      return NextResponse.json({ error: "Fixture forecast not found." }, { status: 404 });
-    }
-
-    const booking = await bookSelection({
-      fixtureId: body.fixtureId,
-      season: body.season,
-      homeTeam: body.homeTeam,
-      awayTeam: body.awayTeam,
-      market: body.market,
-      selection: body.selection,
-      stake: body.stake!,
-      odds: body.odds!,
-      notes: body.notes,
-      forecast,
-    });
-
-    return NextResponse.json({ booking });
+    return bookOne(body);
   } catch (error) {
     return errorResponse(error, "Unable to book selection.");
   }
+}
+
+async function bookGameweek(body: BookingRequestBody) {
+  const items = body.bookings ?? [];
+  if (items.length === 0) {
+    return NextResponse.json({ error: "Choose at least one match to book." }, { status: 400 });
+  }
+
+  const forecastData = await getForecastData(forecastParamsFromBody(body));
+  if (!forecastData.season) {
+    return NextResponse.json({ error: "No forecast is available." }, { status: 404 });
+  }
+
+  const forecastById = new Map(forecastData.upcomingFixtures.map((fixture) => [fixture.fixtureId, fixture]));
+  const inputs: BookingInput[] = [];
+  const missing: number[] = [];
+
+  for (const item of items) {
+    if (
+      !item.fixtureId ||
+      !item.market ||
+      !item.selection ||
+      !Number.isFinite(item.stake) ||
+      !Number.isFinite(item.odds)
+    ) {
+      return NextResponse.json({ error: "Missing required booking fields." }, { status: 400 });
+    }
+    if (!isBookingMarket(item.market) || !isBookableSelection(item.market, item.selection)) {
+      return NextResponse.json({ error: "That market or selection cannot be booked." }, { status: 400 });
+    }
+
+    const forecast = forecastById.get(item.fixtureId);
+    if (!forecast) {
+      missing.push(item.fixtureId);
+      continue;
+    }
+
+    inputs.push({
+      fixtureId: item.fixtureId,
+      season: forecastData.season,
+      homeTeam: forecast.homeTeam,
+      awayTeam: forecast.awayTeam,
+      market: item.market,
+      selection: item.selection,
+      stake: item.stake!,
+      odds: item.odds!,
+      notes: item.notes,
+      forecast,
+    });
+  }
+
+  if (inputs.length === 0) {
+    return NextResponse.json({ error: "None of those fixtures are in the current forecast.", missing }, { status: 404 });
+  }
+
+  const bookings = await bookSelections(inputs);
+  return NextResponse.json({ bookings, missing });
+}
+
+async function bookOne(body: BookingRequestBody) {
+  if (
+    !body.fixtureId ||
+    !body.season ||
+    !body.homeTeam ||
+    !body.awayTeam ||
+    !body.market ||
+    !body.selection ||
+    !Number.isFinite(body.stake) ||
+    !Number.isFinite(body.odds)
+  ) {
+    return NextResponse.json({ error: "Missing required booking fields." }, { status: 400 });
+  }
+
+  if (!isBookingMarket(body.market) || !isBookableSelection(body.market, body.selection)) {
+    return NextResponse.json({ error: "That market or selection cannot be booked." }, { status: 400 });
+  }
+
+  const forecastPayload = await getFixtureForecast(body.fixtureId, forecastParamsFromBody(body));
+  const forecast = forecastPayload.forecast;
+  if (!forecast) {
+    return NextResponse.json({ error: "Fixture forecast not found." }, { status: 404 });
+  }
+
+  const booking = await bookSelection({
+    fixtureId: body.fixtureId,
+    season: body.season,
+    homeTeam: body.homeTeam,
+    awayTeam: body.awayTeam,
+    market: body.market,
+    selection: body.selection,
+    stake: body.stake!,
+    odds: body.odds!,
+    notes: body.notes,
+    forecast,
+  });
+
+  return NextResponse.json({ booking });
 }
 
 export async function DELETE(request: NextRequest) {
