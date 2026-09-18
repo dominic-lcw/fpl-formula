@@ -3,6 +3,7 @@ node_modules/
 .next/
 coverage/
 data/parquet/
+data/user/
 data/.parquet-staging-*/
 data/*.duckdb
 .env*

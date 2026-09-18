@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, rename, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 
 const parquetDirectory = process.env.FPL_PARQUET_DIR ?? path.join(process.cwd(), "data", "parquet");
+// App Service mounts a persistent disk at /home. wwwroot is read-only when the app runs from a package.
+const userDataDirectory = process.env.FPL_USER_DATA_DIR
+  ?? (process.env.WEBSITE_SITE_NAME ? "/home/fpl-formula" : path.join(process.cwd(), "data", "user"));
 const dataTables = [
   "seasons",
   "teams",
@@ -13,7 +17,7 @@ const dataTables = [
   "player_fixture_stats",
   "sync_runs",
 ] as const;
-const userTables = ["bets"] as const;
+const userTables = ["bookings"] as const;
 let readConnectionPromise: Promise<DuckDBConnection> | undefined;
 
 const schema = `
@@ -53,15 +57,6 @@ const schema = `
     records_loaded INTEGER NOT NULL DEFAULT 0, details VARCHAR, started_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
     completed_at TIMESTAMP
   );
-  CREATE TABLE IF NOT EXISTS bets (
-    id UUID PRIMARY KEY, fixture_id INTEGER NOT NULL, season VARCHAR NOT NULL,
-    home_team VARCHAR NOT NULL, away_team VARCHAR NOT NULL,
-    market VARCHAR NOT NULL, selection VARCHAR NOT NULL,
-    stake DOUBLE NOT NULL, odds DOUBLE NOT NULL,
-    expected_home_goals DOUBLE NOT NULL, expected_away_goals DOUBLE NOT NULL,
-    model_prob DOUBLE NOT NULL, expected_value DOUBLE NOT NULL,
-    notes VARCHAR, created_at TIMESTAMP NOT NULL, settled BOOLEAN NOT NULL DEFAULT false, result VARCHAR
-  );
 `;
 
 async function createMemoryConnection() {
@@ -83,7 +78,7 @@ function datasetFiles() {
 }
 
 function userTableFile(table: (typeof userTables)[number]) {
-  return path.join(parquetDirectory, `${table}.parquet`);
+  return path.join(userDataDirectory, `${table}.parquet`);
 }
 
 async function hasParquetDataset() {
@@ -91,14 +86,15 @@ async function hasParquetDataset() {
 }
 
 const userTableSchema = `
-  CREATE TABLE IF NOT EXISTS bets (
+  CREATE TABLE IF NOT EXISTS bookings (
     id UUID PRIMARY KEY, fixture_id INTEGER NOT NULL, season VARCHAR NOT NULL,
     home_team VARCHAR NOT NULL, away_team VARCHAR NOT NULL,
     market VARCHAR NOT NULL, selection VARCHAR NOT NULL,
     stake DOUBLE NOT NULL, odds DOUBLE NOT NULL,
     expected_home_goals DOUBLE NOT NULL, expected_away_goals DOUBLE NOT NULL,
     model_prob DOUBLE NOT NULL, expected_value DOUBLE NOT NULL,
-    notes VARCHAR, created_at TIMESTAMP NOT NULL, settled BOOLEAN NOT NULL DEFAULT false, result VARCHAR
+    notes VARCHAR, booked_at TIMESTAMP NOT NULL, status VARCHAR NOT NULL,
+    home_score INTEGER, away_score INTEGER, outcome VARCHAR, pnl DOUBLE, settled_at TIMESTAMP
   );
 `;
 
@@ -159,13 +155,6 @@ export async function exportParquetDataset(connection: DuckDBConnection) {
       const filePath = path.join(stagingDirectory, `${table}.parquet`).replaceAll("'", "''");
       await connection.run(`COPY ${table} TO '${filePath}' (FORMAT PARQUET, COMPRESSION ZSTD)`);
     }
-    for (const table of userTables) {
-      const sourcePath = userTableFile(table);
-      if (await fileExists(sourcePath)) {
-        const filePath = path.join(stagingDirectory, `${table}.parquet`);
-        await copyFile(sourcePath, filePath);
-      }
-    }
     await rm(parquetDirectory, { recursive: true, force: true });
     await rename(stagingDirectory, parquetDirectory);
   } catch (error) {
@@ -175,9 +164,15 @@ export async function exportParquetDataset(connection: DuckDBConnection) {
 }
 
 export async function persistUserTable(connection: DuckDBConnection, table: (typeof userTables)[number]) {
-  await mkdir(parquetDirectory, { recursive: true });
-  const filePath = userTableFile(table).replaceAll("'", "''");
-  await connection.run(`COPY ${table} TO '${filePath}' (FORMAT PARQUET, COMPRESSION ZSTD)`);
+  await mkdir(userDataDirectory, { recursive: true });
+  const stagingPath = path.join(tmpdir(), `${table}-${randomUUID()}.parquet`);
+  const escaped = stagingPath.replaceAll("'", "''");
+  try {
+    await connection.run(`COPY ${table} TO '${escaped}' (FORMAT PARQUET, COMPRESSION ZSTD)`);
+    await copyFile(stagingPath, userTableFile(table));
+  } finally {
+    await rm(stagingPath, { force: true });
+  }
 }
 
 export function resetReadConnection() {
@@ -193,4 +188,4 @@ export async function query<T extends Record<string, unknown>>(
   return reader.getRowObjectsJS() as T[];
 }
 
-export { parquetDirectory };
+export { parquetDirectory, userDataDirectory };

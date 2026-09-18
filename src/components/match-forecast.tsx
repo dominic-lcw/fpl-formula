@@ -7,6 +7,7 @@ import {
   ChevronRight,
   LoaderCircle,
   Plus,
+  Receipt,
   Target,
   Trash2,
   TrendingUp,
@@ -15,7 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { BetMarket, BetRecord } from "@/lib/bets";
+import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
 
@@ -29,18 +30,18 @@ type ForecastResponse = {
   availableGameweeks: number[];
 };
 
-type ForecastSubView = "fixtures" | "strengths" | "detail";
+type ForecastSubView = "fixtures" | "strengths" | "bookings" | "detail";
 
 const DEFAULT_GAMEWEEK = 4;
 
-const marketOptions: Array<{ value: BetMarket; label: string }> = [
+const marketOptions: Array<{ value: BookingMarket; label: string }> = [
   { value: "1X2", label: "Match result (1X2)" },
   { value: "over_under", label: "Over / under 2.5" },
   { value: "btts", label: "Both teams to score" },
   { value: "correct_score", label: "Correct score" },
 ];
 
-function selectionOptions(market: BetMarket, forecast: FixtureForecast | null) {
+function selectionOptions(market: BookingMarket, forecast: FixtureForecast | null) {
   switch (market) {
     case "1X2":
       return [
@@ -72,9 +73,45 @@ function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function formatEv(value: number) {
-  const pct = value * 100;
-  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+function formatPnl(value: number) {
+  const sign = value > 0 ? "+" : "";
+  return `${sign}£${value.toFixed(2)}`;
+}
+
+function selectionLabel(market: BookingMarket, selection: string) {
+  switch (market) {
+    case "1X2":
+      if (selection === "home") return "Home win";
+      if (selection === "draw") return "Draw";
+      if (selection === "away") return "Away win";
+      return selection;
+    case "over_under":
+      return selection === "over_2.5" ? "Over 2.5" : "Under 2.5";
+    case "btts":
+      return selection === "yes" ? "BTTS yes" : "BTTS no";
+    case "correct_score":
+      return selection;
+    default:
+      return selection;
+  }
+}
+
+function bookingTotals(bookings: BookingRecord[]) {
+  return bookings.reduce(
+    (totals, booking) => {
+      if (booking.status === "open") {
+        totals.openCount += 1;
+        totals.openStake += booking.stake;
+      } else {
+        totals.settledCount += 1;
+        totals.pnl += booking.pnl ?? 0;
+        if (booking.outcome === "won") totals.won += 1;
+        if (booking.outcome === "lost") totals.lost += 1;
+      }
+      return totals;
+    },
+    { openCount: 0, openStake: 0, settledCount: 0, pnl: 0, won: 0, lost: 0 },
+  );
 }
 
 function formatKickoff(kickoffTime: string | null) {
@@ -184,6 +221,7 @@ function SubViewNav({
 }) {
   const tabs: Array<{ id: Exclude<ForecastSubView, "detail">; label: string; icon: typeof Target }> = [
     { id: "fixtures", label: "Fixtures", icon: Target },
+    { id: "bookings", label: "Bookings", icon: Receipt },
     { id: "strengths", label: "Team strength", icon: TrendingUp },
   ];
 
@@ -234,7 +272,7 @@ function FixtureForecastCard({
           </p>
         </div>
         {betCount > 0 ? (
-          <Badge className="bg-primary/10 text-primary">{betCount} bet{betCount === 1 ? "" : "s"}</Badge>
+          <Badge className="bg-primary/10 text-primary">{betCount} booked</Badge>
         ) : null}
       </div>
 
@@ -272,7 +310,7 @@ function FixtureForecastCard({
       <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
         <span>Expected {fixture.expectedHomeGoals.toFixed(2)}–{fixture.expectedAwayGoals.toFixed(2)}</span>
         <span className="inline-flex items-center gap-1 font-medium text-primary opacity-0 transition group-hover:opacity-100">
-          View bets <ChevronRight className="size-3.5" />
+          Book <ChevronRight className="size-3.5" />
         </span>
       </div>
     </button>
@@ -408,10 +446,118 @@ function TeamStrengthsPanel({
   );
 }
 
+function BookingRows({
+  bookings,
+  onCancel,
+}: {
+  bookings: BookingRecord[];
+  onCancel: (id: string) => void;
+}) {
+  if (bookings.length === 0) {
+    return <p className="py-8 text-center text-sm text-muted-foreground">No bookings yet.</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-sm">
+        <thead>
+          <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th className="py-2 pr-3">Selection</th>
+            <th className="py-2 pr-3">Stake</th>
+            <th className="py-2 pr-3">Odds</th>
+            <th className="py-2 pr-3">Status</th>
+            <th className="py-2 pr-3">Score</th>
+            <th className="py-2 pr-3">PnL</th>
+            <th className="py-2" />
+          </tr>
+        </thead>
+        <tbody>
+          {bookings.map((booking) => (
+            <tr key={booking.id} className="border-b border-border/60">
+              <td className="py-2 pr-3">
+                <p className="font-medium">{selectionLabel(booking.market, booking.selection)}</p>
+                <p className="text-xs text-muted-foreground">{booking.homeTeam} vs {booking.awayTeam}</p>
+              </td>
+              <td className="py-2 pr-3">£{booking.stake.toFixed(2)}</td>
+              <td className="py-2 pr-3">{booking.odds.toFixed(2)}</td>
+              <td className="py-2 pr-3">
+                {booking.status === "open" ? "Open" : booking.outcome === "won" ? "Won" : "Lost"}
+              </td>
+              <td className="py-2 pr-3">
+                {booking.homeScore === null || booking.awayScore === null ? "—" : `${booking.homeScore}–${booking.awayScore}`}
+              </td>
+              <td className={`py-2 pr-3 ${booking.pnl === null ? "text-muted-foreground" : booking.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+                {booking.pnl === null ? "—" : formatPnl(booking.pnl)}
+              </td>
+              <td className="py-2 text-right">
+                {booking.status === "open" ? (
+                  <button
+                    type="button"
+                    onClick={() => onCancel(booking.id)}
+                    className="inline-flex size-8 items-center justify-center rounded-md border border-input hover:bg-accent"
+                    aria-label="Cancel booking"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                ) : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BookingLedger({
+  bookings,
+  onCancel,
+}: {
+  bookings: BookingRecord[];
+  onCancel: (id: string) => void;
+}) {
+  const totals = bookingTotals(bookings);
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Open stake</p>
+          <p className="mt-2 text-xl font-semibold">£{totals.openStake.toFixed(2)}</p>
+          <p className="text-sm text-muted-foreground">{totals.openCount} open</p>
+        </div>
+        <div className="rounded-xl border p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Settled PnL</p>
+          <p className={`mt-2 text-xl font-semibold ${totals.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+            {formatPnl(totals.pnl)}
+          </p>
+          <p className="text-sm text-muted-foreground">{totals.settledCount} settled</p>
+        </div>
+        <div className="rounded-xl border p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Record</p>
+          <p className="mt-2 text-xl font-semibold">{totals.won}–{totals.lost}</p>
+          <p className="text-sm text-muted-foreground">Won–lost</p>
+        </div>
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Booking ledger</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            A booking stays open until the match result is in the dataset. Profit and loss is then settled from the final score.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <BookingRows bookings={bookings} onCancel={onCancel} />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function FixtureBetDetail({
   fixture,
   params,
-  bets,
+  bookings,
   market,
   selection,
   stake,
@@ -428,14 +574,14 @@ function FixtureBetDetail({
 }: {
   fixture: FixtureForecast;
   params: ForecastParams;
-  bets: BetRecord[];
-  market: BetMarket;
+  bookings: BookingRecord[];
+  market: BookingMarket;
   selection: string;
   stake: string;
   odds: string;
   notes: string;
   isSavingBet: boolean;
-  onMarketChange: (market: BetMarket) => void;
+  onMarketChange: (market: BookingMarket) => void;
   onSelectionChange: (selection: string) => void;
   onStakeChange: (stake: string) => void;
   onOddsChange: (odds: string) => void;
@@ -501,66 +647,30 @@ function FixtureBetDetail({
       <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
         <Card>
           <CardHeader>
-            <CardTitle>Saved bets for this fixture</CardTitle>
+            <CardTitle>Bookings for this fixture</CardTitle>
           </CardHeader>
           <CardContent>
-            {bets.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">No bets logged for this match yet.</p>
+            {bookings.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">Nothing booked on this match yet.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      <th className="py-2 pr-3">Selection</th>
-                      <th className="py-2 pr-3">Stake</th>
-                      <th className="py-2 pr-3">Odds</th>
-                      <th className="py-2 pr-3">Model prob</th>
-                      <th className="py-2 pr-3">EV</th>
-                      <th className="py-2" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bets.map((bet) => (
-                      <tr key={bet.id} className="border-b border-border/60">
-                        <td className="py-2 pr-3">
-                          <p className="font-medium">{bet.market}</p>
-                          <p className="text-xs text-muted-foreground">{bet.selection}</p>
-                        </td>
-                        <td className="py-2 pr-3">£{bet.stake.toFixed(2)}</td>
-                        <td className="py-2 pr-3">{bet.odds.toFixed(2)}</td>
-                        <td className="py-2 pr-3">{formatPercent(bet.modelProb)}</td>
-                        <td className={`py-2 pr-3 ${bet.expectedValue >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
-                          {formatEv(bet.expectedValue)}
-                        </td>
-                        <td className="py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => onRemoveBet(bet.id)}
-                            className="inline-flex size-8 items-center justify-center rounded-md border border-input hover:bg-accent"
-                            aria-label="Delete bet"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <BookingRows bookings={bookings} onCancel={onRemoveBet} />
             )}
           </CardContent>
         </Card>
 
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle>Log a bet</CardTitle>
+            <CardTitle>Book a selection</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              The stake stays open. PnL is filled in from the final score after the match is hydrated.
+            </p>
           </CardHeader>
           <CardContent className="grid gap-3">
             <label className="grid gap-1 text-sm">
               Market
               <select
                 value={market}
-                onChange={(event) => onMarketChange(event.target.value as BetMarket)}
+                onChange={(event) => onMarketChange(event.target.value as BookingMarket)}
                 className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               >
                 {marketOptions.map((option) => (
@@ -599,7 +709,7 @@ function FixtureBetDetail({
               className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             >
               {isSavingBet ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
-              Save bet
+              Book selection
             </button>
           </CardContent>
         </Card>
@@ -614,11 +724,11 @@ export function MatchForecastPanel() {
   const [subView, setSubView] = useState<ForecastSubView>("fixtures");
   const [selectedGameweek, setSelectedGameweek] = useState(DEFAULT_GAMEWEEK);
   const [selectedFixtureId, setSelectedFixtureId] = useState<number | null>(null);
-  const [bets, setBets] = useState<BetRecord[]>([]);
+  const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingBet, setIsSavingBet] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [market, setMarket] = useState<BetMarket>("1X2");
+  const [market, setMarket] = useState<BookingMarket>("1X2");
   const [selection, setSelection] = useState("home");
   const [stake, setStake] = useState("10");
   const [odds, setOdds] = useState("2.10");
@@ -630,17 +740,17 @@ export function MatchForecastPanel() {
     [data?.upcomingFixtures, selectedFixtureId],
   );
 
-  const betsByFixture = useMemo(() => {
-    const map = new Map<number, BetRecord[]>();
-    for (const bet of bets) {
-      const existing = map.get(bet.fixtureId) ?? [];
-      existing.push(bet);
-      map.set(bet.fixtureId, existing);
+  const bookingsByFixture = useMemo(() => {
+    const map = new Map<number, BookingRecord[]>();
+    for (const booking of bookings) {
+      const existing = map.get(booking.fixtureId) ?? [];
+      existing.push(booking);
+      map.set(booking.fixtureId, existing);
     }
     return map;
-  }, [bets]);
+  }, [bookings]);
 
-  const fixtureBets = selectedFixtureId ? (betsByFixture.get(selectedFixtureId) ?? []) : [];
+  const fixtureBookings = selectedFixtureId ? (bookingsByFixture.get(selectedFixtureId) ?? []) : [];
 
   const resolvedGameweek = useMemo(() => {
     const gameweeks = data?.availableGameweeks ?? [];
@@ -655,12 +765,12 @@ export function MatchForecastPanel() {
     [data?.upcomingFixtures, resolvedGameweek],
   );
 
-  const loadBets = useCallback(async (season?: string | null) => {
+  const loadBookings = useCallback(async (season?: string | null) => {
     const query = season ? `?season=${encodeURIComponent(season)}` : "";
-    const response = await fetch(`/api/bets${query}`, { cache: "no-store" });
+    const response = await fetch(`/api/bookings${query}`, { cache: "no-store" });
     if (!response.ok) return;
-    const payload = await response.json() as { bets: BetRecord[] };
-    setBets(payload.bets);
+    const payload = await response.json() as { bookings: BookingRecord[] };
+    setBookings(payload.bookings);
   }, []);
 
   const loadForecast = useCallback(async (nextParams: ForecastParams) => {
@@ -682,7 +792,7 @@ export function MatchForecastPanel() {
 
       if (requestId === latestRequest.current) {
         setData(payload);
-        if (payload.season) await loadBets(payload.season);
+        if (payload.season) await loadBookings(payload.season);
       }
     } catch (reason) {
       if (requestId === latestRequest.current) {
@@ -691,7 +801,7 @@ export function MatchForecastPanel() {
     } finally {
       if (requestId === latestRequest.current) setIsLoading(false);
     }
-  }, [loadBets]);
+  }, [loadBookings]);
 
   // Depend on each control value so formula tweaks always retrigger a fetch.
   // Debounce so slider drags coalesce into one recompute.
@@ -739,7 +849,7 @@ export function MatchForecastPanel() {
       : (selectionChoices[0]?.value ?? "");
 
     try {
-      const response = await fetch("/api/bets", {
+      const response = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -759,21 +869,25 @@ export function MatchForecastPanel() {
           fplBlend: params.fplStrengthBlend,
         }),
       });
-      const payload = await response.json() as { bet?: BetRecord; error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to save bet.");
+      const payload = await response.json() as { booking?: BookingRecord; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to book selection.");
       setNotes("");
-      await loadBets(data.season);
+      await loadBookings(data.season);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to save bet.");
+      setError(reason instanceof Error ? reason.message : "Unable to book selection.");
     } finally {
       setIsSavingBet(false);
     }
   }
 
   async function removeBet(id: string) {
-    const response = await fetch(`/api/bets?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (!response.ok) return;
-    if (data?.season) await loadBets(data.season);
+    const response = await fetch(`/api/bookings?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!response.ok) {
+      const payload = await response.json() as { error?: string };
+      setError(payload.error ?? "Unable to cancel booking.");
+      return;
+    }
+    if (data?.season) await loadBookings(data.season);
   }
 
   if (isLoading && !data) {
@@ -811,6 +925,17 @@ export function MatchForecastPanel() {
               <ArrowLeft className="size-4" />
               All fixtures
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFixtureId(null);
+                setSubView("bookings");
+              }}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
+            >
+              <Receipt className="size-4" />
+              Ledger
+            </button>
             <div>
               <h2 className="text-lg font-semibold">{selectedFixture.homeTeam} vs {selectedFixture.awayTeam}</h2>
               <p className="text-sm text-muted-foreground">
@@ -825,7 +950,7 @@ export function MatchForecastPanel() {
           <FixtureBetDetail
             fixture={selectedFixture}
             params={params}
-            bets={fixtureBets}
+            bookings={fixtureBookings}
             market={market}
             selection={selection}
             stake={stake}
@@ -857,10 +982,10 @@ export function MatchForecastPanel() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <SubViewNav
-              activeView={subView === "strengths" ? "strengths" : "fixtures"}
+              activeView={subView === "detail" ? "fixtures" : subView}
               onNavigate={setSubView}
             />
-            {subView !== "strengths" && data.availableGameweeks.length > 0 ? (
+            {subView === "fixtures" && data.availableGameweeks.length > 0 ? (
               <GameweekSelect
                 gameweeks={data.availableGameweeks}
                 value={resolvedGameweek}
@@ -871,14 +996,18 @@ export function MatchForecastPanel() {
           <p className="text-sm text-muted-foreground">
             {data.season} · {subView === "strengths"
               ? `completed through GW${data.currentGameweek ?? "?"}`
-              : `GW${resolvedGameweek} · ${gameweekFixtures.length} fixtures`}
+              : subView === "bookings"
+                ? "booking ledger"
+                : `GW${resolvedGameweek} · ${gameweekFixtures.length} fixtures`}
             {isLoading ? " · recomputing…" : ""}
           </p>
         </div>
 
         {error ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
 
-        {subView === "strengths" ? (
+        {subView === "bookings" ? (
+          <BookingLedger bookings={bookings} onCancel={(id) => void removeBet(id)} />
+        ) : subView === "strengths" ? (
           <TeamStrengthsPanel data={data} />
         ) : gameweekFixtures.length === 0 ? (
           <div className="rounded-xl border border-dashed py-16 text-center">
@@ -891,7 +1020,7 @@ export function MatchForecastPanel() {
               <FixtureForecastCard
                 key={fixture.fixtureId}
                 fixture={fixture}
-                betCount={betsByFixture.get(fixture.fixtureId)?.length ?? 0}
+                betCount={bookingsByFixture.get(fixture.fixtureId)?.length ?? 0}
                 onSelect={() => openFixtureDetail(fixture.fixtureId)}
               />
             ))}

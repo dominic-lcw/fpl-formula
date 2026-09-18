@@ -34,7 +34,7 @@ const viewMeta: Record<DashboardView, { title: string; description: string }> = 
   },
   forecast: {
     title: "Match forecast",
-    description: "Fixture cards with predicted winners and likely scorelines — click through to log bets.",
+    description: "Fixture cards with predicted winners and likely scorelines — book a selection, then settle PnL from the result.",
   },
 };
 

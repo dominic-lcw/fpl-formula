@@ -12,6 +12,8 @@ pnpm dev
 
 Open `http://localhost:3000`. Re-run `pnpm hydrate:current` after a Gameweek to refresh current-season data. Hydration writes a normalized Parquet dataset to `data/parquet/`; the app loads those files into an in-memory DuckDB instance on startup. Override the dataset location with `FPL_PARQUET_DIR`.
 
+Match bookings are stored apart from that dataset, in `data/user/` locally. Override the location with `FPL_USER_DATA_DIR`. On App Service the path is `/home/fpl-formula`, on the persistent disk, because the deployed package at `wwwroot` is read-only. A booking stays open until the fixture result is hydrated; profit and loss is then settled from the final score.
+
 ## Data sources
 
 - **Live season:** the public official FPL API: `bootstrap-static`, `fixtures`, and one `element-summary` response per player. The hydration script imports every available player match record from Gameweek 1 to the latest response plus future fixtures.

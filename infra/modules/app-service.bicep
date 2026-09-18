@@ -91,6 +91,10 @@ resource webApp 'Microsoft.Web/sites@2026-07-15' = {
           value: '/home/site/wwwroot/data/parquet'
         }
         {
+          name: 'FPL_USER_DATA_DIR'
+          value: '/home/fpl-formula'
+        }
+        {
           name: 'NODE_ENV'
           value: 'production'
         }
