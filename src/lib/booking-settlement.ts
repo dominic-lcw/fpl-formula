@@ -81,3 +81,19 @@ export function gradeSelection(
 export function profitAndLoss(stake: number, odds: number, outcome: BookingOutcome) {
   return outcome === "won" ? stake * (odds - 1) : -stake;
 }
+
+export type MatchProbabilities = {
+  homeWinProb: number;
+  drawProb: number;
+  awayWinProb: number;
+};
+
+/** The 1X2 result with the highest model probability. Ties keep home, then draw, then away. */
+export function highestMatchOutcome(probabilities: MatchProbabilities) {
+  const options = [
+    { market: "1X2" as const, selection: "home" as const, probability: probabilities.homeWinProb },
+    { market: "1X2" as const, selection: "draw" as const, probability: probabilities.drawProb },
+    { market: "1X2" as const, selection: "away" as const, probability: probabilities.awayWinProb },
+  ];
+  return options.reduce((best, option) => (option.probability > best.probability ? option : best));
+}

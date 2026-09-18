@@ -194,9 +194,7 @@ export async function listBookings(season?: string) {
   return rows.map(mapBookingRow);
 }
 
-export async function bookSelection(input: BookingInput) {
-  const booking = buildBookingRecord(input);
-  const connection = await getConnection();
+async function insertBooking(connection: Awaited<ReturnType<typeof getConnection>>, booking: BookingRecord) {
   await connection.run(
     `INSERT INTO bookings (
       id, fixture_id, season, home_team, away_team, market, selection, stake, odds,
@@ -221,9 +219,36 @@ export async function bookSelection(input: BookingInput) {
       booking.bookedAt,
     ],
   );
+}
+
+export async function bookSelection(input: BookingInput) {
+  const booking = buildBookingRecord(input);
+  const connection = await getConnection();
+  await insertBooking(connection, booking);
   await persistUserTable(connection, "bookings");
   resetReadConnection();
   return booking;
+}
+
+export async function bookSelections(inputs: BookingInput[]) {
+  if (inputs.length === 0) return [];
+
+  const open = await query<Pick<BookingRow, "fixture_id" | "market" | "selection">>(
+    `SELECT fixture_id, market, selection FROM bookings WHERE status = 'open'`,
+  );
+  const taken = new Set(open.map((row) => `${row.fixture_id}:${row.market}:${row.selection}`));
+  const records = inputs
+    .filter((input) => !taken.has(`${input.fixtureId}:${input.market}:${input.selection}`))
+    .map((input) => buildBookingRecord(input));
+  if (records.length === 0) return [];
+
+  const connection = await getConnection();
+  for (const booking of records) {
+    await insertBooking(connection, booking);
+  }
+  await persistUserTable(connection, "bookings");
+  resetReadConnection();
+  return records;
 }
 
 export async function cancelBooking(id: string) {
