@@ -12,7 +12,7 @@ import {
   type BookingStatus,
 } from "@/lib/booking-settlement";
 import { expectedValue, modelProbabilityForMarket, type FixtureForecast } from "@/lib/match-forecast-model";
-import { getConnection, parquetDirectory, persistUserTable, query, resetReadConnection } from "@/lib/db";
+import { getConnection, parquetDirectory, persistUserTable, query } from "@/lib/db";
 
 export type { BookingMarket, BookingOutcome, BookingRecord, BookingStatus };
 export { gradeSelection, isBookableSelection, profitAndLoss };
@@ -178,7 +178,6 @@ export async function settleOpenBookings() {
 
   if (settled > 0) {
     await persistUserTable(connection, "bookings");
-    resetReadConnection();
   }
   return settled;
 }
@@ -226,7 +225,6 @@ export async function bookSelection(input: BookingInput) {
   const connection = await getConnection();
   await insertBooking(connection, booking);
   await persistUserTable(connection, "bookings");
-  resetReadConnection();
   return booking;
 }
 
@@ -247,7 +245,6 @@ export async function bookSelections(inputs: BookingInput[]) {
     await insertBooking(connection, booking);
   }
   await persistUserTable(connection, "bookings");
-  resetReadConnection();
   return records;
 }
 
@@ -262,5 +259,4 @@ export async function cancelBooking(id: string) {
   const connection = await getConnection();
   await connection.run(`DELETE FROM bookings WHERE id = ? AND status = 'open'`, [id]);
   await persistUserTable(connection, "bookings");
-  resetReadConnection();
 }

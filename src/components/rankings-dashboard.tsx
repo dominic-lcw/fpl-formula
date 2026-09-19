@@ -3,8 +3,8 @@
 import { ChevronDown, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppSidebar, type DashboardView } from "@/components/app-sidebar";
-import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
 import { PlayerRankSearch } from "@/components/player-rank-search";
+import { RankingsTable } from "@/components/rankings-table";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { ScoreFormula } from "@/components/score-formula";
 import { FormulaTracker } from "@/components/formula-tracker";
@@ -13,8 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
-import type { Position, RankingParams } from "@/lib/fpl-types";
-import { calculateMosaicRankings, type MosaicRankingData } from "@/lib/mosaic-rankings";
+import type { Position, RankingParams, RankingResponse } from "@/lib/fpl-types";
+import { fetchRankings, filterRankings } from "@/lib/rankings-client";
 import { DEFAULT_PARAMS, FORMULA_PRESETS, sanitiseParams } from "@/lib/scoring";
 
 const positionOptions: Array<Position | "ALL"> = ["ALL", "GKP", "DEF", "MID", "FWD"];
@@ -82,7 +82,7 @@ function ParameterSlider({
 
 export function RankingsDashboard() {
   const [params, setParams] = useState<RankingParams>(DEFAULT_PARAMS);
-  const [data, setData] = useState<MosaicRankingData | null>(null);
+  const [data, setData] = useState<RankingResponse | null>(null);
   const [position, setPosition] = useState<Position | "ALL">("ALL");
   const [team, setTeam] = useState("ALL");
   const [activeTab, setActiveTab] = useState<DashboardView>("rankings");
@@ -109,18 +109,16 @@ export function RankingsDashboard() {
 
   const loadRankings = useCallback(async (
     nextParams: RankingParams,
-    nextPosition: Position | "ALL",
-    nextTeam: string,
     options: {
-      refreshDataset?: boolean;
       liveGameweek?: number | null;
+      cache?: RequestCache;
     } = {},
   ) => {
     const requestId = ++latestRequest.current;
     setIsLoading(true);
     setError(null);
     try {
-      const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam, options);
+      const payload = await fetchRankings(nextParams, options);
       if (requestId === latestRequest.current) {
         setData(payload);
         setSelectedRank(null);
@@ -128,7 +126,7 @@ export function RankingsDashboard() {
       }
     } catch (reason) {
       if (requestId === latestRequest.current) {
-        setError(reason instanceof Error ? reason.message : "Unable to calculate rankings locally.");
+        setError(reason instanceof Error ? reason.message : "Unable to load rankings.");
       }
     } finally {
       if (requestId === latestRequest.current) setIsLoading(false);
@@ -147,7 +145,7 @@ export function RankingsDashboard() {
     }
     const timeout = window.setTimeout(() => {
       setParams(savedParams);
-      void loadRankings(savedParams, "ALL", "ALL");
+      void loadRankings(savedParams);
       void loadLiveGameweek();
     }, 0);
     return () => window.clearTimeout(timeout);
@@ -156,7 +154,7 @@ export function RankingsDashboard() {
   function updateParams(nextParams: RankingParams) {
     setParams(nextParams);
     window.localStorage.setItem("fpl-ranking-preset", JSON.stringify(nextParams));
-    void loadRankings(nextParams, position, team, {
+    void loadRankings(nextParams, {
       liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
     });
   }
@@ -182,12 +180,12 @@ export function RankingsDashboard() {
   function updateLiveData(enabled: boolean) {
     setShowLiveData(enabled);
     if (!enabled) {
-      void loadRankings(params, position, team);
+      void loadRankings(params);
       return;
     }
 
     void loadLiveGameweek().then((nextLiveGameweek) => {
-      void loadRankings(params, position, team, {
+      void loadRankings(params, {
         liveGameweek: liveGameweekForRankings(nextLiveGameweek),
       });
     });
@@ -195,13 +193,14 @@ export function RankingsDashboard() {
 
   function refreshRankings() {
     void loadLiveGameweek().then((nextLiveGameweek) => {
-      void loadRankings(params, position, team, {
-        refreshDataset: true,
+      void loadRankings(params, {
+        cache: "no-store",
         liveGameweek: showLiveData ? liveGameweekForRankings(nextLiveGameweek) : null,
       });
     });
   }
 
+  const filteredRankings = data ? filterRankings(data.rankings, position, team) : [];
   const seasonLabel = data?.season
     ? `${data.season} · ${data.includesLiveGameweek ? `live through GW${data.currentGameweek ?? "?"}` : `after GW${data.currentGameweek ?? "?"}`}`
     : "Awaiting first hydration";
@@ -279,11 +278,7 @@ export function RankingsDashboard() {
               <label className="relative">
                 <span className="sr-only">Position</span>
                 <select value={position} onChange={(event) => {
-                  const nextPosition = event.target.value as Position | "ALL";
-                  setPosition(nextPosition);
-                  void loadRankings(params, nextPosition, team, {
-                    liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
-                  });
+                  setPosition(event.target.value as Position | "ALL");
                 }} className="h-9 appearance-none rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   {positionOptions.map((option) => <option key={option} value={option}>{option === "ALL" ? "All positions" : option}</option>)}
                 </select>
@@ -292,18 +287,14 @@ export function RankingsDashboard() {
               <label className="relative">
                 <span className="sr-only">Club</span>
                 <select value={team} onChange={(event) => {
-                  const nextTeam = event.target.value;
-                  setTeam(nextTeam);
-                  void loadRankings(params, position, nextTeam, {
-                    liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
-                  });
+                  setTeam(event.target.value);
                 }} className="h-9 appearance-none rounded-md border border-input bg-background px-3 py-2 pr-8 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <option value="ALL">All clubs</option>
                   {data?.availableTeams.map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-muted-foreground" size={15} />
               </label>
-              {data?.season ? <PlayerRankSearch key={tableVersion} onSelectRank={setSelectedRank} /> : null}
+              {data?.season ? <PlayerRankSearch key={tableVersion} rankings={data.rankings} onSelectRank={setSelectedRank} /> : null}
             </div>
             <button
               type="button"
@@ -326,7 +317,7 @@ export function RankingsDashboard() {
               <div>
                 <CardTitle>Expected ranking</CardTitle>
                 <p aria-live="polite" className="text-sm text-muted-foreground">
-                  {isLoading && data ? "Updating rankings…" : `${data?.count ?? 0} eligible players`}
+                  {isLoading && data ? "Updating rankings…" : `${filteredRankings.length} eligible players`}
                 </p>
               </div>
               <Settings2 size={18} className="text-muted-foreground" />
@@ -334,7 +325,7 @@ export function RankingsDashboard() {
             <CardContent className={isLoading && data ? "opacity-60 transition-opacity" : "transition-opacity"}>
               {isLoading && !data ? <p className="py-12 text-center text-muted-foreground">Calculating the player pool…</p> : error && !data ? <p className="py-12 text-center text-destructive">{error}</p> : !data?.season ? (
                 <div className="py-12 text-center"><p className="font-medium">No FPL data has been hydrated yet.</p><p className="mt-2 text-sm text-muted-foreground">Run <code className="rounded bg-muted px-1.5 py-0.5">pnpm hydrate</code> to download the archive and current season.</p></div>
-              ) : data.count ? <MosaicRankingsTable version={tableVersion} selectedRank={selectedRank} /> : <p className="py-12 text-center text-muted-foreground">No players match these filters.</p>}
+              ) : filteredRankings.length ? <RankingsTable rankings={filteredRankings} selectedRank={selectedRank} /> : <p className="py-12 text-center text-muted-foreground">No players match these filters.</p>}
             </CardContent>
           </Card>
         </div>
