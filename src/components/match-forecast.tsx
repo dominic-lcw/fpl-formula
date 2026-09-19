@@ -12,8 +12,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
@@ -311,69 +313,110 @@ function SubViewNav({
   );
 }
 
-function ModelControls({
-  params,
+function forecastParamsEqual(left: ForecastParams, right: ForecastParams) {
+  return left.lookbackGameweeks === right.lookbackGameweeks
+    && left.homeAdvantage === right.homeAdvantage
+    && left.correlation === right.correlation
+    && left.simulations === right.simulations
+    && left.fplStrengthBlend === right.fplStrengthBlend;
+}
+
+function ModelControlsPopover({
+  draftParams,
+  appliedParams,
   isRecomputing = false,
-  onChange,
+  onDraftChange,
+  onApply,
 }: {
-  params: ForecastParams;
+  draftParams: ForecastParams;
+  appliedParams: ForecastParams;
   isRecomputing?: boolean;
-  onChange: (updater: (current: ForecastParams) => ForecastParams) => void;
+  onDraftChange: (updater: (current: ForecastParams) => ForecastParams) => void;
+  onApply: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const hasPendingChanges = !forecastParamsEqual(draftParams, appliedParams);
+
   return (
-    <Card className="h-fit">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Calculator className="size-4 text-muted-foreground" />
-          Model controls
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Predictions recompute as you adjust each control.
-          {isRecomputing ? " Updating…" : ""}
-        </p>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        <ParameterSlider
-          label="Lookback (GWs)"
-          value={params.lookbackGameweeks}
-          min={3}
-          max={20}
-          onChange={(value) => onChange((current) => ({ ...current, lookbackGameweeks: value }))}
-        />
-        <ParameterSlider
-          label="Home advantage"
-          value={params.homeAdvantage}
-          min={1}
-          max={1.35}
-          step={0.01}
-          onChange={(value) => onChange((current) => ({ ...current, homeAdvantage: value }))}
-        />
-        <ParameterSlider
-          label="Bivariate correlation (λ₃)"
-          value={params.correlation}
-          min={0}
-          max={0.25}
-          step={0.01}
-          onChange={(value) => onChange((current) => ({ ...current, correlation: value }))}
-        />
-        <ParameterSlider
-          label="FPL strength blend"
-          value={params.fplStrengthBlend}
-          min={0}
-          max={1}
-          step={0.05}
-          onChange={(value) => onChange((current) => ({ ...current, fplStrengthBlend: value }))}
-        />
-        <ParameterSlider
-          label="Monte Carlo runs"
-          value={params.simulations}
-          min={1000}
-          max={25000}
-          step={1000}
-          onChange={(value) => onChange((current) => ({ ...current, simulations: value }))}
-        />
-      </CardContent>
-    </Card>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) {
+          onDraftChange(() => appliedParams);
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="gap-2">
+          <Calculator className="size-4" />
+          Model
+          {hasPendingChanges ? (
+            <span className="size-2 rounded-full bg-amber-400" aria-label="Unapplied model changes" />
+          ) : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80" align="start">
+        <div className="grid gap-4">
+          <div>
+            <p className="text-sm font-medium">Model controls</p>
+            <p className="text-xs text-muted-foreground">
+              Adjust the sliders, then apply to recompute predictions.
+            </p>
+          </div>
+          <ParameterSlider
+            label="Lookback (GWs)"
+            value={draftParams.lookbackGameweeks}
+            min={3}
+            max={20}
+            onChange={(value) => onDraftChange((current) => ({ ...current, lookbackGameweeks: value }))}
+          />
+          <ParameterSlider
+            label="Home advantage"
+            value={draftParams.homeAdvantage}
+            min={1}
+            max={1.35}
+            step={0.01}
+            onChange={(value) => onDraftChange((current) => ({ ...current, homeAdvantage: value }))}
+          />
+          <ParameterSlider
+            label="Bivariate correlation (λ₃)"
+            value={draftParams.correlation}
+            min={0}
+            max={0.25}
+            step={0.01}
+            onChange={(value) => onDraftChange((current) => ({ ...current, correlation: value }))}
+          />
+          <ParameterSlider
+            label="FPL strength blend"
+            value={draftParams.fplStrengthBlend}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(value) => onDraftChange((current) => ({ ...current, fplStrengthBlend: value }))}
+          />
+          <ParameterSlider
+            label="Monte Carlo runs"
+            value={draftParams.simulations}
+            min={1000}
+            max={25000}
+            step={1000}
+            onChange={(value) => onDraftChange((current) => ({ ...current, simulations: value }))}
+          />
+          <Button
+            type="button"
+            className="w-full"
+            disabled={!hasPendingChanges || isRecomputing}
+            onClick={() => {
+              onApply();
+              setOpen(false);
+            }}
+          >
+            {isRecomputing ? "Recomputing…" : "Apply model"}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -728,7 +771,8 @@ function GameweekBookingTable({
 }
 
 export function MatchForecastPanel() {
-  const [params, setParams] = useState<ForecastParams>(DEFAULT_FORECAST_PARAMS);
+  const [appliedParams, setAppliedParams] = useState<ForecastParams>(DEFAULT_FORECAST_PARAMS);
+  const [draftParams, setDraftParams] = useState<ForecastParams>(DEFAULT_FORECAST_PARAMS);
   const [data, setData] = useState<ForecastResponse | null>(null);
   const [subView, setSubView] = useState<ForecastSubView>("fixtures");
   const [selectedGameweek, setSelectedGameweek] = useState<number | null>(null);
@@ -856,27 +900,14 @@ export function MatchForecastPanel() {
     }
   }, []);
 
-  // Depend on each control value so formula tweaks always retrigger a fetch.
-  // Debounce so slider drags coalesce into one recompute.
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      void loadForecast({
-        lookbackGameweeks: params.lookbackGameweeks,
-        homeAdvantage: params.homeAdvantage,
-        correlation: params.correlation,
-        simulations: params.simulations,
-        fplStrengthBlend: params.fplStrengthBlend,
-      });
-    }, 250);
-    return () => window.clearTimeout(timeout);
-  }, [
-    loadForecast,
-    params.lookbackGameweeks,
-    params.homeAdvantage,
-    params.correlation,
-    params.simulations,
-    params.fplStrengthBlend,
-  ]);
+    void loadForecast(appliedParams);
+  }, [loadForecast]);
+
+  const applyModelParams = useCallback(() => {
+    setAppliedParams(draftParams);
+    void loadForecast(draftParams);
+  }, [draftParams, loadForecast]);
 
   useEffect(() => {
     if (!data?.season) return;
@@ -885,8 +916,8 @@ export function MatchForecastPanel() {
 
   useEffect(() => {
     if (subView !== "bookings" || !data?.season || !resolvedGameweek) return;
-    void loadBookingsSlate(data.season, resolvedGameweek, params);
-  }, [subView, data?.season, resolvedGameweek, params, loadBookingsSlate]);
+    void loadBookingsSlate(data.season, resolvedGameweek, appliedParams);
+  }, [subView, data?.season, resolvedGameweek, appliedParams, loadBookingsSlate]);
 
   const navigateSubView = useCallback((next: ForecastSubView) => {
     setSubView(next);
@@ -926,17 +957,17 @@ export function MatchForecastPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bookings: rows,
-          lookback: params.lookbackGameweeks,
-          homeAdvantage: params.homeAdvantage,
-          correlation: params.correlation,
-          simulations: params.simulations,
-          fplBlend: params.fplStrengthBlend,
+          lookback: appliedParams.lookbackGameweeks,
+          homeAdvantage: appliedParams.homeAdvantage,
+          correlation: appliedParams.correlation,
+          simulations: appliedParams.simulations,
+          fplBlend: appliedParams.fplStrengthBlend,
         }),
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to book the gameweek.");
       if (subView === "bookings") {
-        await loadBookingsSlate(data.season, resolvedGameweek, params);
+        await loadBookingsSlate(data.season, resolvedGameweek, appliedParams);
       } else {
         await loadBookingSummary(data.season);
       }
@@ -956,7 +987,7 @@ export function MatchForecastPanel() {
     }
     if (!data?.season) return;
     if (subView === "bookings") {
-      await loadBookingsSlate(data.season, resolvedGameweek, params);
+      await loadBookingsSlate(data.season, resolvedGameweek, appliedParams);
     } else {
       await loadBookingSummary(data.season);
     }
@@ -979,7 +1010,7 @@ export function MatchForecastPanel() {
 
       if (data?.season) {
         if (subView === "bookings") {
-          await loadBookingsSlate(data.season, resolvedGameweek, params);
+          await loadBookingsSlate(data.season, resolvedGameweek, appliedParams);
         } else {
           await loadBookingSummary(data.season);
         }
@@ -1029,15 +1060,19 @@ export function MatchForecastPanel() {
   }
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
-      <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
-
-      <div className="grid gap-5">
+    <section className="grid gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <SubViewNav
               activeView={subView}
               onNavigate={navigateSubView}
+            />
+            <ModelControlsPopover
+              draftParams={draftParams}
+              appliedParams={appliedParams}
+              isRecomputing={isLoading}
+              onDraftChange={setDraftParams}
+              onApply={applyModelParams}
             />
             {(subView === "fixtures" || subView === "bookings") && (subView === "bookings" ? bookingGameweeks : fixtureGameweeks).length > 0 ? (
               <GameweekSelect
@@ -1110,7 +1145,6 @@ export function MatchForecastPanel() {
             ))}
           </div>
         )}
-      </div>
     </section>
   );
 }
