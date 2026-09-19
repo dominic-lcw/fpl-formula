@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
-import { dashboardRoutes } from "@/lib/dashboard-nav";
+import { DashboardShell } from "@/components/dashboard-shell";
 
 export default function Home() {
-  redirect(dashboardRoutes.rankings);
+  return <DashboardShell />;
 }
