@@ -9,6 +9,7 @@ import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { ScoreFormula } from "@/components/score-formula";
 import { FormulaTracker } from "@/components/formula-tracker";
 import { MatchForecastPanel } from "@/components/match-forecast";
+import { ManagerNewsPanel } from "@/components/manager-news";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -35,6 +36,10 @@ const viewMeta: Record<DashboardView, { title: string; description: string }> = 
   forecast: {
     title: "Match forecast",
     description: "One gameweek table. Book the most likely result on every match, then settle PnL from the scores.",
+  },
+  news: {
+    title: "Manager news",
+    description: "Pre-match manager quotes by gameweek and club. Review the fetched BBC press data before we wire it into rankings.",
   },
 };
 
@@ -225,7 +230,7 @@ export function RankingsDashboard() {
         </header>
 
         <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 p-4 sm:p-6">
-          {activeTab === "team" ? <TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /> : activeTab === "tracker" ? <FormulaTracker currentParams={params} onApplyParams={applyTrackerParams} /> : activeTab === "forecast" ? <MatchForecastPanel /> : <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
+          {activeTab === "team" ? <TeamAnalysisPanel params={params} showLiveData={showLiveData} onShowLiveDataChange={updateLiveData} /> : activeTab === "tracker" ? <FormulaTracker currentParams={params} onApplyParams={applyTrackerParams} /> : activeTab === "forecast" ? <MatchForecastPanel /> : activeTab === "news" ? <ManagerNewsPanel /> : <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-muted-foreground" /> Formula controls</CardTitle>

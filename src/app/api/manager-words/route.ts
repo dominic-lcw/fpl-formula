@@ -16,6 +16,13 @@ export async function GET(request: Request) {
   const gameweekParam = url.searchParams.get("gameweek");
   const teamParam = url.searchParams.get("team");
 
+  const availableGameweeks = [...new Set(
+    dataset.items.flatMap((item) => (item.gameweek == null ? [] : [item.gameweek])),
+  )].sort((left, right) => right - left);
+  const availableTeams = [...new Set(
+    dataset.items.flatMap((item) => (item.teamName ? [item.teamName] : [])),
+  )].sort((left, right) => left.localeCompare(right));
+
   let items = dataset.items;
 
   if (gameweekParam) {
@@ -40,6 +47,8 @@ export async function GET(request: Request) {
     fetchedAt: dataset.fetchedAt,
     sources: dataset.sources,
     count: items.length,
+    availableGameweeks,
+    availableTeams,
     items,
   });
 }
