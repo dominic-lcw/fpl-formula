@@ -15,7 +15,7 @@ export const viewMeta: Record<DashboardView, { title: string; description: strin
   },
   forecast: {
     title: "Match forecast",
-    description: "One gameweek table. Book the most likely result on every match, then settle PnL from the scores.",
+    description: "Fixture cards with predicted winners and likely scorelines — click a card for the top 3 simulated scores. Book from the Bookings tab.",
   },
 };
 
