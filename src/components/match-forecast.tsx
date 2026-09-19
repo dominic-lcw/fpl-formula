@@ -789,21 +789,27 @@ export function MatchForecastPanel() {
     return ids;
   }, [bookings]);
 
-  const loadBookings = useCallback(async (
-    season?: string | null,
-    gameweek?: number,
+  const loadBookingSummary = useCallback(async (season: string) => {
+    const response = await fetch(`/api/bookings?season=${encodeURIComponent(season)}`, { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json() as { bookings: BookingRecord[] };
+    setBookings(payload.bookings);
+  }, []);
+
+  const loadBookingsSlate = useCallback(async (
+    season: string,
+    gameweek: number,
     forecastParams: ForecastParams = DEFAULT_FORECAST_PARAMS,
   ) => {
-    if (!season) return;
     const query = new URLSearchParams({
       season,
+      gameweek: String(gameweek),
       lookback: String(forecastParams.lookbackGameweeks),
       homeAdvantage: String(forecastParams.homeAdvantage),
       correlation: String(forecastParams.correlation),
       simulations: String(forecastParams.simulations),
       fplBlend: String(forecastParams.fplStrengthBlend),
     });
-    if (gameweek) query.set("gameweek", String(gameweek));
 
     const response = await fetch(`/api/bookings?${query.toString()}`, { cache: "no-store" });
     if (!response.ok) return;
@@ -840,9 +846,6 @@ export function MatchForecastPanel() {
 
       if (requestId === latestRequest.current) {
         setData(payload);
-        if (payload.season) {
-          await loadBookings(payload.season, resolvedGameweek, nextParams);
-        }
       }
     } catch (reason) {
       if (requestId === latestRequest.current) {
@@ -851,7 +854,7 @@ export function MatchForecastPanel() {
     } finally {
       if (requestId === latestRequest.current) setIsLoading(false);
     }
-  }, [loadBookings, resolvedGameweek]);
+  }, []);
 
   // Depend on each control value so formula tweaks always retrigger a fetch.
   // Debounce so slider drags coalesce into one recompute.
@@ -875,19 +878,23 @@ export function MatchForecastPanel() {
     params.fplStrengthBlend,
   ]);
 
+  useEffect(() => {
+    if (!data?.season) return;
+    void loadBookingSummary(data.season);
+  }, [data?.season, loadBookingSummary]);
+
+  useEffect(() => {
+    if (subView !== "bookings" || !data?.season || !resolvedGameweek) return;
+    void loadBookingsSlate(data.season, resolvedGameweek, params);
+  }, [subView, data?.season, resolvedGameweek, params, loadBookingsSlate]);
+
   const navigateSubView = useCallback((next: ForecastSubView) => {
     setSubView(next);
-    if (next === "bookings" && data?.season) {
-      void loadBookings(data.season, resolvedGameweek, params);
-    }
-  }, [data, loadBookings, params, resolvedGameweek]);
+  }, []);
 
   const selectGameweek = useCallback((gameweek: number) => {
     setSelectedGameweek(gameweek);
-    if (subView === "bookings" && data?.season) {
-      void loadBookings(data.season, gameweek, params);
-    }
-  }, [data, loadBookings, params, subView]);
+  }, []);
 
   async function bookGameweek() {
     if (!data?.season) return;
@@ -928,7 +935,11 @@ export function MatchForecastPanel() {
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to book the gameweek.");
-      await loadBookings(data.season, resolvedGameweek, params);
+      if (subView === "bookings") {
+        await loadBookingsSlate(data.season, resolvedGameweek, params);
+      } else {
+        await loadBookingSummary(data.season);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to book the gameweek.");
     } finally {
@@ -943,7 +954,12 @@ export function MatchForecastPanel() {
       setError(payload.error ?? "Unable to cancel booking.");
       return;
     }
-    if (data?.season) await loadBookings(data.season, resolvedGameweek, params);
+    if (!data?.season) return;
+    if (subView === "bookings") {
+      await loadBookingsSlate(data.season, resolvedGameweek, params);
+    } else {
+      await loadBookingSummary(data.season);
+    }
   }
 
   async function resolveOpenBookings() {
@@ -962,7 +978,11 @@ export function MatchForecastPanel() {
       if (!response.ok) throw new Error(payload.error ?? "Unable to resolve open bookings.");
 
       if (data?.season) {
-        await loadBookings(data.season, resolvedGameweek, params);
+        if (subView === "bookings") {
+          await loadBookingsSlate(data.season, resolvedGameweek, params);
+        } else {
+          await loadBookingSummary(data.season);
+        }
       } else if (payload.bookings) {
         setBookings(payload.bookings);
       }

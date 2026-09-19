@@ -1,6 +1,7 @@
 import { highestMatchOutcome, type BookingMarket, type BookingRecord } from "@/lib/booking-settlement";
 import { listBookings } from "@/lib/bookings";
 import { query } from "@/lib/db";
+import { readBookings } from "@/lib/user-store";
 import { getForecastData, type ForecastParams } from "@/lib/match-forecast";
 
 export type GameweekSlateRow = {
@@ -68,18 +69,26 @@ function summarizeSlate(rows: GameweekSlateRow[]): GameweekSlateSummary {
 }
 
 export async function listBookingGameweeks(season: string) {
-  const rows = await query<{ event: number }>(
-    `SELECT DISTINCT f.event
+  const bookedFixtures = new Set(
+    (await readBookings())
+      .filter((booking) => booking.season === season)
+      .map((booking) => booking.fixtureId),
+  );
+  const rows = await query<{ event: number; fixture_id: number; finished: boolean }>(
+    `SELECT f.event, f.fixture_id, f.finished
      FROM fixtures f
      WHERE f.season = ?
-       AND (
-         f.finished = false
-         OR EXISTS (SELECT 1 FROM bookings b WHERE b.fixture_id = f.fixture_id AND b.season = f.season)
-       )
      ORDER BY f.event`,
     [season],
   );
-  return rows.map((row) => row.event);
+
+  const gameweeks = new Set<number>();
+  for (const row of rows) {
+    if (!row.finished || bookedFixtures.has(row.fixture_id)) {
+      gameweeks.add(row.event);
+    }
+  }
+  return [...gameweeks].sort((left, right) => left - right);
 }
 
 export async function getGameweekSlate(
@@ -88,7 +97,7 @@ export async function getGameweekSlate(
   params: ForecastParams,
   bookings?: BookingRecord[],
 ): Promise<{ rows: GameweekSlateRow[]; summary: GameweekSlateSummary; availableGameweeks: number[] }> {
-  const resolvedBookings = bookings ?? await listBookings(season);
+  const resolvedBookings = bookings ?? await listBookings(season, { settle: true });
   const [fixtures, forecast, availableGameweeks] = await Promise.all([
     query<FixtureRow>(
       `SELECT f.fixture_id, f.event, f.kickoff_time, f.team_h_score, f.team_a_score, f.finished,

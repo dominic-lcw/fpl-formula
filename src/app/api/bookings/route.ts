@@ -70,7 +70,8 @@ export async function GET(request: NextRequest) {
       );
       return NextResponse.json({ bookings, ...slate });
     }
-    return NextResponse.json({ bookings: await listBookings(season) });
+    const settle = request.nextUrl.searchParams.get("settle") === "1";
+    return NextResponse.json({ bookings: await listBookings(season, { settle }) });
   } catch (error) {
     return errorResponse(error, "Unable to load bookings.");
   }
@@ -229,7 +230,7 @@ export async function PATCH() {
     const result = await resolveOpenBookings();
     return NextResponse.json({
       ...result,
-      bookings: await listBookings(),
+      bookings: await listBookings(undefined, { settle: false }),
     });
   } catch (error) {
     return errorResponse(error, "Unable to resolve open bookings.");
