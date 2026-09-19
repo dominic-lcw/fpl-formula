@@ -31,11 +31,21 @@ type CountRow = {
 };
 
 export type RankedPlayerSuggestion = {
+  playerId: number;
   rank: number;
   player: string;
   club: string;
   position: Position;
   score: number;
+};
+
+export type PinnedPlayerRank = {
+  playerId: number;
+  rank: number;
+  score: number;
+  player: string;
+  club: string;
+  position: Position;
 };
 
 let vgplotPromise: Promise<Vgplot> | undefined;
@@ -128,8 +138,24 @@ function rankingQuery(
   const totalWeight =
     params.weights.individual + params.weights.team + params.weights.fixtures || 1;
 
+  const rankedColumns = `
+      rank,
+      score,
+      player_id,
+      player,
+      club,
+      position,
+      price,
+      form_points,
+      minutes,
+      xg,
+      xa,
+      last_year_per_90,
+      defcon,
+      next_fixtures`;
+
   return `
-    CREATE OR REPLACE TEMP TABLE ranked_players AS
+    CREATE OR REPLACE TEMP TABLE ranked_players_all AS
     WITH current_sync AS (
       SELECT season, max(completed_at) AS synced_at
       FROM sync_runs
@@ -291,22 +317,12 @@ function rankingQuery(
       FROM weighted_scores
       WHERE minutes >= ${params.minMinutes}
     )
-    SELECT
-      rank,
-      score,
-      player,
-      club,
-      position,
-      price,
-      form_points,
-      minutes,
-      xg,
-      xa,
-      last_year_per_90,
-      defcon,
-      next_fixtures
-    FROM ranked
-    ${where}
+    SELECT${rankedColumns}
+    FROM ranked;
+
+    CREATE OR REPLACE TEMP TABLE ranked_players AS
+    SELECT * FROM ranked_players_all
+    ${where};
   `;
 }
 
@@ -392,8 +408,8 @@ export async function searchRankedPlayers(searchTerm: string): Promise<RankedPla
   await databaseUpdate;
   const escapedTerm = escapedLikePattern(term);
   const results = await (await getMosaic()).coordinator().query(
-    `SELECT rank, player, club, position, score
-     FROM ranked_players
+    `SELECT player_id, rank, player, club, position, score
+     FROM ranked_players_all
      WHERE player ILIKE '%${escapedTerm}%' ESCAPE '\\'
      ORDER BY
        CASE
@@ -404,11 +420,39 @@ export async function searchRankedPlayers(searchTerm: string): Promise<RankedPla
        rank
      LIMIT 8`,
     { type: "json", cache: false },
-  ) as RankedPlayerSuggestion[];
+  ) as Array<RankedPlayerSuggestion & { player_id: number }>;
 
   return results.map((result) => ({
-    ...result,
+    playerId: Number(result.player_id),
     rank: Number(result.rank),
+    player: result.player,
+    club: result.club,
+    position: result.position,
     score: Number(result.score),
   }));
+}
+
+export async function getPinnedPlayerRank(playerId: number): Promise<PinnedPlayerRank | null> {
+  if (!Number.isInteger(playerId) || playerId <= 0) return null;
+
+  await databaseUpdate;
+  const results = await (await getMosaic()).coordinator().query(
+    `SELECT player_id, rank, score, player, club, position
+     FROM ranked_players_all
+     WHERE player_id = ${playerId}
+     LIMIT 1`,
+    { type: "json", cache: false },
+  ) as Array<PinnedPlayerRank & { player_id: number }>;
+
+  const result = results[0];
+  if (!result) return null;
+
+  return {
+    playerId: Number(result.player_id),
+    rank: Number(result.rank),
+    score: Number(result.score),
+    player: result.player,
+    club: result.club,
+    position: result.position,
+  };
 }

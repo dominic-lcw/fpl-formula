@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppSidebar, type DashboardView } from "@/components/app-sidebar";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
 import { PlayerRankSearch } from "@/components/player-rank-search";
+import { PlayerRankTracker, type PinnedPlayerSnapshot } from "@/components/player-rank-tracker";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { ScoreFormula } from "@/components/score-formula";
 import { FormulaTracker } from "@/components/formula-tracker";
@@ -14,7 +15,11 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { Position, RankingParams } from "@/lib/fpl-types";
-import { calculateMosaicRankings, type MosaicRankingData } from "@/lib/mosaic-rankings";
+import {
+  calculateMosaicRankings,
+  getPinnedPlayerRank,
+  type MosaicRankingData,
+} from "@/lib/mosaic-rankings";
 import { DEFAULT_PARAMS, FORMULA_PRESETS, sanitiseParams } from "@/lib/scoring";
 
 const positionOptions: Array<Position | "ALL"> = ["ALL", "GKP", "DEF", "MID", "FWD"];
@@ -88,11 +93,28 @@ export function RankingsDashboard() {
   const [activeTab, setActiveTab] = useState<DashboardView>("rankings");
   const [tableVersion, setTableVersion] = useState(0);
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
+  const [pinnedPlayer, setPinnedPlayer] = useState<{ playerId: number; name: string } | null>(null);
+  type PinnedPlayerInput = {
+    playerId: number;
+    player: string;
+    rank: number;
+    score: number;
+    club: string;
+    position: Position;
+  };
+  const [pinnedSnapshot, setPinnedSnapshot] = useState<PinnedPlayerSnapshot | null>(null);
+  const [rankHistory, setRankHistory] = useState<Array<{ rank: number; score: number }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveGameweek, setLiveGameweek] = useState<LiveGameweekStatus | null>(null);
   const [showLiveData, setShowLiveData] = useState(false);
   const latestRequest = useRef(0);
+  const previousPinnedRank = useRef<number | null>(null);
+  const pinnedPlayerRef = useRef(pinnedPlayer);
+
+  useEffect(() => {
+    pinnedPlayerRef.current = pinnedPlayer;
+  }, [pinnedPlayer]);
 
   const loadLiveGameweek = useCallback(async (): Promise<LiveGameweekStatus | null> => {
     try {
@@ -123,8 +145,34 @@ export function RankingsDashboard() {
       const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam, options);
       if (requestId === latestRequest.current) {
         setData(payload);
-        setSelectedRank(null);
         setTableVersion((version) => version + 1);
+
+        const activePinnedPlayer = pinnedPlayerRef.current;
+        if (activePinnedPlayer) {
+          const snapshot = await getPinnedPlayerRank(activePinnedPlayer.playerId);
+          if (requestId !== latestRequest.current) return;
+
+          if (snapshot) {
+            const delta = previousPinnedRank.current === null
+              ? null
+              : previousPinnedRank.current - snapshot.rank;
+            previousPinnedRank.current = snapshot.rank;
+            setPinnedSnapshot({
+              rank: snapshot.rank,
+              score: snapshot.score,
+              club: snapshot.club,
+              position: snapshot.position,
+              delta,
+            });
+            setRankHistory((history) => [...history.slice(-19), { rank: snapshot.rank, score: snapshot.score }]);
+            setSelectedRank(snapshot.rank);
+          } else {
+            setPinnedSnapshot(null);
+            setSelectedRank(null);
+          }
+        } else {
+          setSelectedRank(null);
+        }
       }
     } catch (reason) {
       if (requestId === latestRequest.current) {
@@ -177,6 +225,37 @@ export function RankingsDashboard() {
   function applyTrackerParams(nextParams: RankingParams) {
     updateParams(sanitiseParams(nextParams));
     setActiveTab("rankings");
+  }
+
+  function pinPlayer(player: PinnedPlayerInput | null) {
+    const nextPinnedPlayer = player
+      ? { playerId: player.playerId, name: player.player }
+      : null;
+    setPinnedPlayer(nextPinnedPlayer);
+    pinnedPlayerRef.current = nextPinnedPlayer;
+
+    if (!player) {
+      previousPinnedRank.current = null;
+      setPinnedSnapshot(null);
+      setRankHistory([]);
+      setSelectedRank(null);
+      return;
+    }
+
+    previousPinnedRank.current = player.rank;
+    setPinnedSnapshot({
+      rank: player.rank,
+      score: player.score,
+      club: player.club,
+      position: player.position,
+      delta: null,
+    });
+    setRankHistory([{ rank: player.rank, score: player.score }]);
+    setSelectedRank(player.rank);
+  }
+
+  function unpinPlayer() {
+    pinPlayer(null);
   }
 
   function updateLiveData(enabled: boolean) {
@@ -303,7 +382,14 @@ export function RankingsDashboard() {
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-muted-foreground" size={15} />
               </label>
-              {data?.season ? <PlayerRankSearch key={tableVersion} onSelectRank={setSelectedRank} /> : null}
+              {data?.season ? (
+                <PlayerRankSearch
+                  key={tableVersion}
+                  pinnedPlayer={pinnedPlayer}
+                  onSelectRank={setSelectedRank}
+                  onPinPlayer={pinPlayer}
+                />
+              ) : null}
             </div>
             <button
               type="button"
@@ -314,6 +400,18 @@ export function RankingsDashboard() {
               <RefreshCw size={15} /> Refresh
             </button>
           </div>
+
+          {pinnedPlayer ? (
+            <div className="mb-4">
+              <PlayerRankTracker
+                playerName={pinnedPlayer.name}
+                snapshot={pinnedSnapshot}
+                history={rankHistory}
+                isLoading={isLoading}
+                onUnpin={unpinPlayer}
+              />
+            </div>
+          ) : null}
 
           <Card className="mb-4">
             <CardContent>
