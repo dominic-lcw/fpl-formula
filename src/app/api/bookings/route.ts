@@ -10,29 +10,9 @@ import {
 } from "@/lib/bookings";
 import { getGameweekSlate } from "@/lib/gameweek-slate";
 import { isBookableSelection, isBookingMarket } from "@/lib/booking-settlement";
-import {
-  DEFAULT_FORECAST_PARAMS,
-  getFixtureForecast,
-  getForecastData,
-  type ForecastParams,
-} from "@/lib/match-forecast";
+import { getFixtureForecast, getForecastData } from "@/lib/match-forecast";
 
 export const dynamic = "force-dynamic";
-
-function numberParam(value: unknown, fallback: number) {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function forecastParamsFromBody(body: Record<string, unknown>): ForecastParams {
-  return {
-    lookbackGameweeks: numberParam(body.lookback, DEFAULT_FORECAST_PARAMS.lookbackGameweeks),
-    homeAdvantage: numberParam(body.homeAdvantage, DEFAULT_FORECAST_PARAMS.homeAdvantage),
-    correlation: numberParam(body.correlation, DEFAULT_FORECAST_PARAMS.correlation),
-    simulations: Math.round(numberParam(body.simulations, DEFAULT_FORECAST_PARAMS.simulations)),
-    fplStrengthBlend: numberParam(body.fplBlend, DEFAULT_FORECAST_PARAMS.fplStrengthBlend),
-  };
-}
 
 function errorResponse(error: unknown, fallback: string) {
   if (error instanceof BookingRequestError) {
@@ -44,16 +24,6 @@ function errorResponse(error: unknown, fallback: string) {
   );
 }
 
-function forecastParamsFromQuery(searchParams: URLSearchParams): ForecastParams {
-  return {
-    lookbackGameweeks: numberParam(searchParams.get("lookback"), DEFAULT_FORECAST_PARAMS.lookbackGameweeks),
-    homeAdvantage: numberParam(searchParams.get("homeAdvantage"), DEFAULT_FORECAST_PARAMS.homeAdvantage),
-    correlation: numberParam(searchParams.get("correlation"), DEFAULT_FORECAST_PARAMS.correlation),
-    simulations: Math.round(numberParam(searchParams.get("simulations"), DEFAULT_FORECAST_PARAMS.simulations)),
-    fplStrengthBlend: numberParam(searchParams.get("fplBlend"), DEFAULT_FORECAST_PARAMS.fplStrengthBlend),
-  };
-}
-
 export async function GET(request: NextRequest) {
   const season = request.nextUrl.searchParams.get("season") ?? undefined;
   const gameweekParam = request.nextUrl.searchParams.get("gameweek");
@@ -62,12 +32,7 @@ export async function GET(request: NextRequest) {
   try {
     if (season && Number.isInteger(gameweek) && gameweek > 0) {
       const bookings = await listBookings(season);
-      const slate = await getGameweekSlate(
-        season,
-        gameweek,
-        forecastParamsFromQuery(request.nextUrl.searchParams),
-        bookings,
-      );
+      const slate = await getGameweekSlate(season, gameweek, bookings);
       return NextResponse.json({ bookings, ...slate });
     }
     const settle = request.nextUrl.searchParams.get("settle") === "1";
@@ -87,11 +52,6 @@ type BookingRequestBody = Partial<BookingInput> & {
   stake?: number;
   odds?: number;
   notes?: string;
-  lookback?: number;
-  homeAdvantage?: number;
-  correlation?: number;
-  simulations?: number;
-  fplBlend?: number;
   bookings?: Array<{
     fixtureId?: number;
     market?: string;
@@ -120,7 +80,7 @@ async function bookGameweek(body: BookingRequestBody) {
     return NextResponse.json({ error: "Choose at least one match to book." }, { status: 400 });
   }
 
-  const forecastData = await getForecastData(forecastParamsFromBody(body));
+  const forecastData = await getForecastData();
   if (!forecastData.season) {
     return NextResponse.json({ error: "No forecast is available." }, { status: 404 });
   }
@@ -189,7 +149,7 @@ async function bookOne(body: BookingRequestBody) {
     return NextResponse.json({ error: "That market or selection cannot be booked." }, { status: 400 });
   }
 
-  const forecastPayload = await getFixtureForecast(body.fixtureId, forecastParamsFromBody(body));
+  const forecastPayload = await getFixtureForecast(body.fixtureId);
   const forecast = forecastPayload.forecast;
   if (!forecast) {
     return NextResponse.json({ error: "Fixture forecast not found." }, { status: 404 });

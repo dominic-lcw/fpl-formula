@@ -2,7 +2,7 @@ import { highestMatchOutcome, type BookingMarket, type BookingRecord } from "@/l
 import { listBookings } from "@/lib/bookings";
 import { query } from "@/lib/db";
 import { readBookings } from "@/lib/user-store";
-import { getForecastData, type ForecastParams } from "@/lib/match-forecast";
+import { getForecastData } from "@/lib/match-forecast";
 
 export type GameweekSlateRow = {
   fixtureId: number;
@@ -94,10 +94,9 @@ export async function listBookingGameweeks(season: string) {
 export async function getGameweekSlate(
   season: string,
   gameweek: number,
-  params: ForecastParams,
   bookings?: BookingRecord[],
 ): Promise<{ rows: GameweekSlateRow[]; summary: GameweekSlateSummary; availableGameweeks: number[] }> {
-  const resolvedBookings = bookings ?? await listBookings(season, { settle: true });
+  const resolvedBookings = bookings ?? await listBookings(season);
   const [fixtures, forecast, availableGameweeks] = await Promise.all([
     query<FixtureRow>(
       `SELECT f.fixture_id, f.event, f.kickoff_time, f.team_h_score, f.team_a_score, f.finished,
@@ -110,7 +109,7 @@ export async function getGameweekSlate(
        ORDER BY f.kickoff_time NULLS LAST, f.fixture_id`,
       [season, gameweek],
     ),
-    getForecastData(params),
+    getForecastData(),
     listBookingGameweeks(season),
   ]);
 

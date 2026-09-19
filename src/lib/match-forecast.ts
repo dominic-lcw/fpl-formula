@@ -65,7 +65,18 @@ async function getSeasonMeta(): Promise<SeasonMeta | null> {
   };
 }
 
-export async function getForecastData(params: ForecastParams = DEFAULT_FORECAST_PARAMS) {
+function forecastParamsEqual(left: ForecastParams, right: ForecastParams) {
+  return left.lookbackGameweeks === right.lookbackGameweeks
+    && left.homeAdvantage === right.homeAdvantage
+    && left.correlation === right.correlation
+    && left.simulations === right.simulations
+    && left.fplStrengthBlend === right.fplStrengthBlend;
+}
+
+let cachedDefaultForecast: Awaited<ReturnType<typeof computeForecastData>> | undefined;
+let defaultForecastPromise: Promise<Awaited<ReturnType<typeof computeForecastData>>> | undefined;
+
+async function computeForecastData(params: ForecastParams) {
   const meta = await getSeasonMeta();
   if (!meta) {
     return {
@@ -170,6 +181,26 @@ export async function getForecastData(params: ForecastParams = DEFAULT_FORECAST_
     availableGameweeks,
     defaultGameweek,
   };
+}
+
+export function invalidateForecastCache() {
+  cachedDefaultForecast = undefined;
+  defaultForecastPromise = undefined;
+}
+
+export async function getForecastData(params: ForecastParams = DEFAULT_FORECAST_PARAMS) {
+  if (!forecastParamsEqual(params, DEFAULT_FORECAST_PARAMS)) {
+    return computeForecastData(params);
+  }
+
+  if (cachedDefaultForecast) return cachedDefaultForecast;
+  if (!defaultForecastPromise) {
+    defaultForecastPromise = computeForecastData(params).then((data) => {
+      cachedDefaultForecast = data;
+      return data;
+    });
+  }
+  return defaultForecastPromise;
 }
 
 export async function getFixtureForecast(
