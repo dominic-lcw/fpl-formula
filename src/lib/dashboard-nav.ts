@@ -1,4 +1,4 @@
-export type DashboardView = "rankings" | "team" | "tracker" | "forecast";
+export type DashboardView = "rankings" | "team" | "tracker" | "forecast" | "news";
 
 export const viewMeta: Record<DashboardView, { title: string; description: string }> = {
   rankings: {
@@ -17,6 +17,10 @@ export const viewMeta: Record<DashboardView, { title: string; description: strin
     title: "Match forecast",
     description: "Fixture cards with predicted winners and likely scorelines — click a card for the top 3 simulated scores. Book from the Bookings tab.",
   },
+  news: {
+    title: "Manager news",
+    description: "Pre-match manager quotes by gameweek and club. Review the fetched BBC press data before we wire it into rankings.",
+  },
 };
 
 export const dashboardRoutes: Record<DashboardView, string> = {
@@ -24,11 +28,13 @@ export const dashboardRoutes: Record<DashboardView, string> = {
   team: "/team",
   tracker: "/tracker",
   forecast: "/forecast",
+  news: "/news",
 };
 
 export function viewFromPathname(pathname: string): DashboardView {
   if (pathname.startsWith("/team")) return "team";
   if (pathname.startsWith("/tracker")) return "tracker";
   if (pathname.startsWith("/forecast")) return "forecast";
+  if (pathname.startsWith("/news")) return "news";
   return "rankings";
 }

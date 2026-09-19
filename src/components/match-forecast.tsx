@@ -863,10 +863,19 @@ export function MatchForecastPanel() {
     params.fplStrengthBlend,
   ]);
 
-  useEffect(() => {
-    if (subView !== "bookings" || !data?.season) return;
-    void loadBookings(data.season, resolvedGameweek, params);
-  }, [data?.season, loadBookings, params, resolvedGameweek, subView]);
+  const navigateSubView = useCallback((next: ForecastSubView) => {
+    setSubView(next);
+    if (next === "bookings" && data?.season) {
+      void loadBookings(data.season, resolvedGameweek, params);
+    }
+  }, [data, loadBookings, params, resolvedGameweek]);
+
+  const selectGameweek = useCallback((gameweek: number) => {
+    setSelectedGameweek(gameweek);
+    if (subView === "bookings" && data?.season) {
+      void loadBookings(data.season, gameweek, params);
+    }
+  }, [data, loadBookings, params, subView]);
 
   async function bookGameweek() {
     if (!data?.season) return;
@@ -996,13 +1005,13 @@ export function MatchForecastPanel() {
           <div className="flex flex-wrap items-center gap-3">
             <SubViewNav
               activeView={subView}
-              onNavigate={setSubView}
+              onNavigate={navigateSubView}
             />
             {(subView === "fixtures" || subView === "bookings") && (subView === "bookings" ? bookingGameweeks : fixtureGameweeks).length > 0 ? (
               <GameweekSelect
                 gameweeks={subView === "bookings" ? bookingGameweeks : fixtureGameweeks}
                 value={resolvedGameweek}
-                onChange={setSelectedGameweek}
+                onChange={selectGameweek}
               />
             ) : null}
           </div>

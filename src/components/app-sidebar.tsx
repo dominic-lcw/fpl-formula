@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, GitBranch, LineChart, Target, UsersRound } from "lucide-react";
+import { BarChart3, GitBranch, LineChart, Newspaper, Target, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -44,6 +44,12 @@ const navItems = [
     title: "Match forecast",
     href: dashboardRoutes.forecast,
     icon: Target,
+  },
+  {
+    id: "news" as const,
+    title: "Manager news",
+    href: dashboardRoutes.news,
+    icon: Newspaper,
   },
 ];
 

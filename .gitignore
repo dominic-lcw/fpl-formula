@@ -4,6 +4,7 @@ node_modules/
 coverage/
 data/parquet/
 data/user/
+data/manager-words/
 data/.parquet-staging-*/
 data/*.duckdb
 .env*
