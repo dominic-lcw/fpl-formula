@@ -38,7 +38,7 @@ function formatPercent(value: number) {
 
 function formatPnl(value: number) {
   const sign = value > 0 ? "+" : "";
-  return `${sign}£${value.toFixed(2)}`;
+  return `${sign}$${value.toFixed(2)}`;
 }
 
 function selectionLabel(market: BookingMarket, selection: string) {
@@ -431,7 +431,7 @@ function BookingRows({
                 <p className="font-medium">{selectionLabel(booking.market, booking.selection)}</p>
                 <p className="text-xs text-muted-foreground">{booking.homeTeam} vs {booking.awayTeam}</p>
               </td>
-              <td className="py-2 pr-3">£{booking.stake.toFixed(2)}</td>
+              <td className="py-2 pr-3">${booking.stake.toFixed(2)}</td>
               <td className="py-2 pr-3">{booking.odds.toFixed(2)}</td>
               <td className="py-2 pr-3">
                 {booking.status === "open" ? "Open" : booking.outcome === "won" ? "Won" : "Lost"}
@@ -476,7 +476,7 @@ function BookingLedger({
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Open stake</p>
-          <p className="mt-2 text-xl font-semibold">£{totals.openStake.toFixed(2)}</p>
+          <p className="mt-2 text-xl font-semibold">${totals.openStake.toFixed(2)}</p>
           <p className="text-sm text-muted-foreground">{totals.openCount} open</p>
         </div>
         <div className="rounded-xl border p-4">
@@ -558,7 +558,7 @@ function GameweekBookingTable({
                 ) : null}
                 {summary.settledCount > 0 && summary.openCount > 0 ? " · " : null}
                 {summary.openCount > 0 ? (
-                  <span className="text-muted-foreground">£{summary.openStake.toFixed(2)} still open</span>
+                  <span className="text-muted-foreground">${summary.openStake.toFixed(2)} still open</span>
                 ) : null}
               </p>
             ) : null}
@@ -575,7 +575,7 @@ function GameweekBookingTable({
         </div>
         <div className="flex flex-wrap gap-3">
           <label className="grid gap-1 text-sm">
-            Stake (£)
+            Stake ($)
             <Input value={stake} onChange={(event) => onStakeChange(event.target.value)} inputMode="decimal" className="w-28" />
           </label>
           <label className="grid gap-1 text-sm">
@@ -628,7 +628,7 @@ function GameweekBookingTable({
                         "—"
                       )}
                     </td>
-                    <td className="py-2 pr-3">{booking ? `£${booking.stake.toFixed(2)}` : "—"}</td>
+                    <td className="py-2 pr-3">{booking ? `$${booking.stake.toFixed(2)}` : "—"}</td>
                     <td className="py-2 pr-3">
                       {booking ? (
                         booking.odds.toFixed(2)
