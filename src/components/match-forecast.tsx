@@ -13,7 +13,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { highestMatchOutcome, type BookingMarket, type BookingRecord } from "@/lib/booking-settlement";
+import type { BookingMarket, type BookingRecord } from "@/lib/booking-settlement";
+import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
 
@@ -506,16 +507,16 @@ function BookingLedger({
   );
 }
 
-function resultLabel(fixture: FixtureForecast, selection: "home" | "draw" | "away") {
-  if (selection === "home") return `${fixture.homeShortName} win`;
-  if (selection === "away") return `${fixture.awayShortName} win`;
+function resultLabel(homeShortName: string, awayShortName: string, selection: "home" | "draw" | "away") {
+  if (selection === "home") return `${homeShortName} win`;
+  if (selection === "away") return `${awayShortName} win`;
   return "Draw";
 }
 
 function GameweekBookingTable({
   gameweek,
-  fixtures,
-  bookings,
+  rows,
+  summary,
   stake,
   defaultOdds,
   rowOdds,
@@ -526,8 +527,8 @@ function GameweekBookingTable({
   onBookAll,
 }: {
   gameweek: number;
-  fixtures: FixtureForecast[];
-  bookings: BookingRecord[];
+  rows: GameweekSlateRow[];
+  summary: GameweekSlateSummary;
   stake: string;
   defaultOdds: string;
   rowOdds: Record<number, string>;
@@ -537,10 +538,7 @@ function GameweekBookingTable({
   onRowOddsChange: (fixtureId: number, odds: string) => void;
   onBookAll: () => void;
 }) {
-  const openByFixture = new Map(
-    bookings.filter((booking) => booking.status === "open").map((booking) => [booking.fixtureId, booking]),
-  );
-  const pending = fixtures.filter((fixture) => !openByFixture.has(fixture.fixtureId));
+  const pending = rows.filter((row) => !row.booking && !row.finished && row.modelPick);
 
   return (
     <Card>
@@ -549,8 +547,21 @@ function GameweekBookingTable({
           <div>
             <CardTitle>Gameweek {gameweek}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Each row is the most likely result. One click books every match that is still open.
+              Played matches show the final score and profit and loss from your booked odds.
             </p>
+            {summary.settledCount > 0 || summary.openCount > 0 ? (
+              <p className="mt-2 text-sm">
+                {summary.settledCount > 0 ? (
+                  <span className={summary.settledPnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
+                    Settled {formatPnl(summary.settledPnl)}
+                  </span>
+                ) : null}
+                {summary.settledCount > 0 && summary.openCount > 0 ? " · " : null}
+                {summary.openCount > 0 ? (
+                  <span className="text-muted-foreground">£{summary.openStake.toFixed(2)} still open</span>
+                ) : null}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
@@ -575,43 +586,73 @@ function GameweekBookingTable({
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="py-2 pr-3">Match</th>
-                <th className="py-2 pr-3">Top result</th>
-                <th className="py-2 pr-3">Prob</th>
+                <th className="py-2 pr-3">Pick</th>
+                <th className="py-2 pr-3">Stake</th>
                 <th className="py-2 pr-3">Odds</th>
+                <th className="py-2 pr-3">Score</th>
+                <th className="py-2 pr-3">PnL</th>
                 <th className="py-2">Status</th>
               </tr>
             </thead>
             <tbody>
-              {fixtures.map((fixture) => {
-                const pick = highestMatchOutcome(fixture);
-                const open = openByFixture.get(fixture.fixtureId);
-                const kickoff = formatKickoff(fixture.kickoffTime);
+              {rows.map((row) => {
+                const booking = row.booking;
+                const pick = booking
+                  ? { selection: booking.selection, market: booking.market, probability: booking.modelProb }
+                  : row.modelPick;
+                const kickoff = formatKickoff(row.kickoffTime);
+                const score = booking?.homeScore ?? row.homeScore;
+                const opponentScore = booking?.awayScore ?? row.awayScore;
+
                 return (
-                  <tr key={fixture.fixtureId} className="border-b border-border/60">
+                  <tr key={row.fixtureId} className="border-b border-border/60">
                     <td className="py-2 pr-3">
-                      <p className="font-medium">{fixture.homeShortName} vs {fixture.awayShortName}</p>
-                      <p className="text-xs text-muted-foreground">{kickoff ?? fixture.homeTeam}</p>
+                      <p className="font-medium">{row.homeShortName} vs {row.awayShortName}</p>
+                      <p className="text-xs text-muted-foreground">{kickoff ?? row.homeTeam}</p>
                     </td>
-                    <td className="py-2 pr-3">{open ? selectionLabel(open.market, open.selection) : resultLabel(fixture, pick.selection)}</td>
-                    <td className="py-2 pr-3">{formatPercent(open?.modelProb ?? pick.probability)}</td>
                     <td className="py-2 pr-3">
-                      {open ? (
-                        open.odds.toFixed(2)
+                      {pick ? (
+                        <>
+                          <p className="font-medium">
+                            {booking
+                              ? selectionLabel(booking.market, booking.selection)
+                              : resultLabel(row.homeShortName, row.awayShortName, pick.selection as "home" | "draw" | "away")}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{formatPercent(pick.probability)}</p>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">{booking ? `£${booking.stake.toFixed(2)}` : "—"}</td>
+                    <td className="py-2 pr-3">
+                      {booking ? (
+                        booking.odds.toFixed(2)
+                      ) : row.finished ? (
+                        "—"
                       ) : (
                         <Input
-                          value={rowOdds[fixture.fixtureId] ?? defaultOdds}
-                          onChange={(event) => onRowOddsChange(fixture.fixtureId, event.target.value)}
+                          value={rowOdds[row.fixtureId] ?? defaultOdds}
+                          onChange={(event) => onRowOddsChange(row.fixtureId, event.target.value)}
                           inputMode="decimal"
-                          aria-label={`Odds for ${fixture.homeShortName} vs ${fixture.awayShortName}`}
+                          aria-label={`Odds for ${row.homeShortName} vs ${row.awayShortName}`}
                           className="h-8 w-24"
                         />
                       )}
                     </td>
-                    <td className="py-2">{open ? "Open" : "—"}</td>
+                    <td className="py-2 pr-3">
+                      {score === null || opponentScore === null ? "—" : `${score}–${opponentScore}`}
+                    </td>
+                    <td className={`py-2 pr-3 ${booking?.pnl === null || booking?.pnl === undefined ? "text-muted-foreground" : booking.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+                      {booking?.pnl === null || booking?.pnl === undefined ? "—" : formatPnl(booking.pnl)}
+                    </td>
+                    <td className="py-2">
+                      {!booking ? (row.finished ? "Played" : "—") : booking.status === "open" ? "Open" : booking.outcome === "won" ? "Won" : "Lost"}
+                    </td>
                   </tr>
                 );
               })}
@@ -629,6 +670,17 @@ export function MatchForecastPanel() {
   const [subView, setSubView] = useState<ForecastSubView>("fixtures");
   const [selectedGameweek, setSelectedGameweek] = useState(DEFAULT_GAMEWEEK);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
+  const [slateRows, setSlateRows] = useState<GameweekSlateRow[]>([]);
+  const [slateSummary, setSlateSummary] = useState<GameweekSlateSummary>({
+    settledPnl: 0,
+    openStake: 0,
+    settledCount: 0,
+    openCount: 0,
+    won: 0,
+    lost: 0,
+    unbookedCount: 0,
+  });
+  const [bookingGameweeks, setBookingGameweeks] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isBooking, setIsBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -637,13 +689,14 @@ export function MatchForecastPanel() {
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
   const latestRequest = useRef(0);
 
+  const fixtureGameweeks = useMemo(() => data?.availableGameweeks ?? [], [data?.availableGameweeks]);
   const resolvedGameweek = useMemo(() => {
-    const gameweeks = data?.availableGameweeks ?? [];
+    const gameweeks = subView === "bookings" && bookingGameweeks.length > 0 ? bookingGameweeks : fixtureGameweeks;
     if (!gameweeks.length) return selectedGameweek;
     if (gameweeks.includes(selectedGameweek)) return selectedGameweek;
     if (gameweeks.includes(DEFAULT_GAMEWEEK)) return DEFAULT_GAMEWEEK;
     return gameweeks[0]!;
-  }, [data?.availableGameweeks, selectedGameweek]);
+  }, [bookingGameweeks, fixtureGameweeks, selectedGameweek, subView]);
 
   const gameweekFixtures = useMemo(
     () => data?.upcomingFixtures.filter((fixture) => fixture.event === resolvedGameweek) ?? [],
@@ -658,12 +711,36 @@ export function MatchForecastPanel() {
     return ids;
   }, [bookings]);
 
-  const loadBookings = useCallback(async (season?: string | null) => {
-    const query = season ? `?season=${encodeURIComponent(season)}` : "";
-    const response = await fetch(`/api/bookings${query}`, { cache: "no-store" });
+  const loadBookings = useCallback(async (
+    season?: string | null,
+    gameweek?: number,
+    forecastParams: ForecastParams = DEFAULT_FORECAST_PARAMS,
+  ) => {
+    if (!season) return;
+    const query = new URLSearchParams({
+      season,
+      lookback: String(forecastParams.lookbackGameweeks),
+      homeAdvantage: String(forecastParams.homeAdvantage),
+      correlation: String(forecastParams.correlation),
+      simulations: String(forecastParams.simulations),
+      fplBlend: String(forecastParams.fplStrengthBlend),
+    });
+    if (gameweek) query.set("gameweek", String(gameweek));
+
+    const response = await fetch(`/api/bookings?${query.toString()}`, { cache: "no-store" });
     if (!response.ok) return;
-    const payload = await response.json() as { bookings: BookingRecord[] };
+    const payload = await response.json() as {
+      bookings: BookingRecord[];
+      rows?: GameweekSlateRow[];
+      summary?: GameweekSlateSummary;
+      availableGameweeks?: number[];
+    };
     setBookings(payload.bookings);
+    if (payload.rows && payload.summary) {
+      setSlateRows(payload.rows);
+      setSlateSummary(payload.summary);
+    }
+    if (payload.availableGameweeks) setBookingGameweeks(payload.availableGameweeks);
   }, []);
 
   const loadForecast = useCallback(async (nextParams: ForecastParams) => {
@@ -685,7 +762,9 @@ export function MatchForecastPanel() {
 
       if (requestId === latestRequest.current) {
         setData(payload);
-        if (payload.season) await loadBookings(payload.season);
+        if (payload.season) {
+          await loadBookings(payload.season, resolvedGameweek, nextParams);
+        }
       }
     } catch (reason) {
       if (requestId === latestRequest.current) {
@@ -694,7 +773,7 @@ export function MatchForecastPanel() {
     } finally {
       if (requestId === latestRequest.current) setIsLoading(false);
     }
-  }, [loadBookings]);
+  }, [loadBookings, resolvedGameweek]);
 
   // Depend on each control value so formula tweaks always retrigger a fetch.
   // Debounce so slider drags coalesce into one recompute.
@@ -718,27 +797,27 @@ export function MatchForecastPanel() {
     params.fplStrengthBlend,
   ]);
 
+  useEffect(() => {
+    if (subView !== "bookings" || !data?.season) return;
+    void loadBookings(data.season, resolvedGameweek, params);
+  }, [data?.season, loadBookings, params, resolvedGameweek, subView]);
+
   async function bookGameweek() {
     if (!data?.season) return;
     const stakeValue = Number(stake);
-    const pending = gameweekFixtures.filter((fixture) => !bookings.some(
-      (booking) => booking.fixtureId === fixture.fixtureId && booking.status === "open",
-    ));
+    const pending = slateRows.filter((row) => !row.booking && !row.finished && row.modelPick);
     if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
       setError("Stake must be positive.");
       return;
     }
 
-    const rows = pending.map((fixture) => {
-      const pick = highestMatchOutcome(fixture);
-      return {
-        fixtureId: fixture.fixtureId,
-        market: pick.market,
-        selection: pick.selection,
-        stake: stakeValue,
-        odds: Number(rowOdds[fixture.fixtureId] ?? defaultOdds),
-      };
-    });
+    const rows = pending.map((row) => ({
+      fixtureId: row.fixtureId,
+      market: row.modelPick!.market,
+      selection: row.modelPick!.selection,
+      stake: stakeValue,
+      odds: Number(rowOdds[row.fixtureId] ?? defaultOdds),
+    }));
     if (rows.some((row) => !Number.isFinite(row.odds) || row.odds <= 1)) {
       setError("Decimal odds must be greater than 1.");
       return;
@@ -762,7 +841,7 @@ export function MatchForecastPanel() {
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to book the gameweek.");
-      await loadBookings(data.season);
+      await loadBookings(data.season, resolvedGameweek, params);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to book the gameweek.");
     } finally {
@@ -777,7 +856,7 @@ export function MatchForecastPanel() {
       setError(payload.error ?? "Unable to cancel booking.");
       return;
     }
-    if (data?.season) await loadBookings(data.season);
+    if (data?.season) await loadBookings(data.season, resolvedGameweek, params);
   }
 
   if (isLoading && !data) {
@@ -811,9 +890,9 @@ export function MatchForecastPanel() {
               activeView={subView}
               onNavigate={setSubView}
             />
-            {(subView === "fixtures" || subView === "bookings") && data.availableGameweeks.length > 0 ? (
+            {(subView === "fixtures" || subView === "bookings") && (subView === "bookings" ? bookingGameweeks : fixtureGameweeks).length > 0 ? (
               <GameweekSelect
-                gameweeks={data.availableGameweeks}
+                gameweeks={subView === "bookings" ? bookingGameweeks : fixtureGameweeks}
                 value={resolvedGameweek}
                 onChange={setSelectedGameweek}
               />
@@ -824,7 +903,7 @@ export function MatchForecastPanel() {
               ? `completed through GW${data.currentGameweek ?? "?"}`
               : subView === "bookings"
                 ? `GW${resolvedGameweek} · book slate`
-                : `GW${resolvedGameweek} · ${gameweekFixtures.length} fixtures`}
+                : `GW${resolvedGameweek} · ${slateSummary.settledCount} settled · ${slateSummary.openCount} open`}
             {isLoading ? " · recomputing…" : ""}
           </p>
         </div>
@@ -833,7 +912,7 @@ export function MatchForecastPanel() {
 
         {subView === "bookings" ? (
           <div className="grid gap-5">
-            {gameweekFixtures.length === 0 ? (
+            {slateRows.length === 0 ? (
               <div className="rounded-xl border border-dashed py-16 text-center">
                 <p className="font-medium">No fixtures for Gameweek {resolvedGameweek}</p>
                 <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
@@ -841,8 +920,8 @@ export function MatchForecastPanel() {
             ) : (
               <GameweekBookingTable
                 gameweek={resolvedGameweek}
-                fixtures={gameweekFixtures}
-                bookings={bookings}
+                rows={slateRows}
+                summary={slateSummary}
                 stake={stake}
                 defaultOdds={defaultOdds}
                 rowOdds={rowOdds}
