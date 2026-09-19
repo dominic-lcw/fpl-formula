@@ -27,11 +27,10 @@ type ForecastResponse = {
   teamStrengths: TeamStrength[];
   upcomingFixtures: FixtureForecast[];
   availableGameweeks: number[];
+  defaultGameweek: number | null;
 };
 
 type ForecastSubView = "fixtures" | "strengths" | "bookings";
-
-const DEFAULT_GAMEWEEK = 4;
 
 function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
@@ -732,7 +731,8 @@ export function MatchForecastPanel() {
   const [params, setParams] = useState<ForecastParams>(DEFAULT_FORECAST_PARAMS);
   const [data, setData] = useState<ForecastResponse | null>(null);
   const [subView, setSubView] = useState<ForecastSubView>("fixtures");
-  const [selectedGameweek, setSelectedGameweek] = useState(DEFAULT_GAMEWEEK);
+  const [selectedGameweek, setSelectedGameweek] = useState<number | null>(null);
+  const hasInitializedGameweek = useRef(false);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [slateRows, setSlateRows] = useState<GameweekSlateRow[]>([]);
   const [slateSummary, setSlateSummary] = useState<GameweekSlateSummary>({
@@ -756,13 +756,25 @@ export function MatchForecastPanel() {
   const latestRequest = useRef(0);
 
   const fixtureGameweeks = useMemo(() => data?.availableGameweeks ?? [], [data?.availableGameweeks]);
+  const activeGameweeks = useMemo(
+    () => (subView === "bookings" && bookingGameweeks.length > 0 ? bookingGameweeks : fixtureGameweeks),
+    [bookingGameweeks, fixtureGameweeks, subView],
+  );
   const resolvedGameweek = useMemo(() => {
-    const gameweeks = subView === "bookings" && bookingGameweeks.length > 0 ? bookingGameweeks : fixtureGameweeks;
-    if (!gameweeks.length) return selectedGameweek;
-    if (gameweeks.includes(selectedGameweek)) return selectedGameweek;
-    if (gameweeks.includes(DEFAULT_GAMEWEEK)) return DEFAULT_GAMEWEEK;
-    return gameweeks[0]!;
-  }, [bookingGameweeks, fixtureGameweeks, selectedGameweek, subView]);
+    const gameweeks = activeGameweeks;
+    const fallback = (data?.defaultGameweek != null && gameweeks.includes(data.defaultGameweek))
+      ? data.defaultGameweek
+      : (gameweeks[0] ?? data?.defaultGameweek ?? 1);
+    if (!gameweeks.length) return selectedGameweek ?? fallback;
+    if (selectedGameweek != null && gameweeks.includes(selectedGameweek)) return selectedGameweek;
+    return fallback;
+  }, [activeGameweeks, data?.defaultGameweek, selectedGameweek]);
+
+  useEffect(() => {
+    if (!data?.defaultGameweek || hasInitializedGameweek.current) return;
+    setSelectedGameweek(data.defaultGameweek);
+    hasInitializedGameweek.current = true;
+  }, [data?.defaultGameweek]);
 
   const gameweekFixtures = useMemo(
     () => data?.upcomingFixtures.filter((fixture) => fixture.event === resolvedGameweek) ?? [],

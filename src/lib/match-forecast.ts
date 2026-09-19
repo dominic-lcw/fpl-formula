@@ -33,6 +33,15 @@ type SeasonMeta = {
   currentGameweek: number;
 };
 
+export function resolveDefaultGameweek(
+  availableGameweeks: number[],
+  completedGameweek: number,
+) {
+  if (!availableGameweeks.length) return null;
+  return availableGameweeks.find((gameweek) => gameweek > completedGameweek)
+    ?? availableGameweeks[0]!;
+}
+
 async function getSeasonMeta(): Promise<SeasonMeta | null> {
   const sync = await query<{ season: string }>(
     `SELECT season
@@ -67,6 +76,7 @@ export async function getForecastData(params: ForecastParams = DEFAULT_FORECAST_
       teamStrengths: [] as TeamStrength[],
       upcomingFixtures: [] as FixtureForecast[],
       availableGameweeks: [] as number[],
+      defaultGameweek: null as number | null,
     };
   }
 
@@ -148,6 +158,7 @@ export async function getForecastData(params: ForecastParams = DEFAULT_FORECAST_
   const availableGameweeks = [...new Set(
     forecasts.map((fixture) => fixture.event).filter((event): event is number => Number.isInteger(event)),
   )].sort((left, right) => left - right);
+  const defaultGameweek = resolveDefaultGameweek(availableGameweeks, meta.currentGameweek);
 
   return {
     season: meta.season,
@@ -157,6 +168,7 @@ export async function getForecastData(params: ForecastParams = DEFAULT_FORECAST_
     teamStrengths: strengths,
     upcomingFixtures: forecasts,
     availableGameweeks,
+    defaultGameweek,
   };
 }
 
