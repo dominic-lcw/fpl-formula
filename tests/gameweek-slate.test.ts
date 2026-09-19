@@ -20,13 +20,14 @@ const forecast = {
 };
 
 let bookSelection: typeof import("../src/lib/bookings").bookSelection;
+let settleOpenBookings: typeof import("../src/lib/bookings").settleOpenBookings;
 let createHydrationConnection: typeof import("../src/lib/db").createHydrationConnection;
 let exportParquetDataset: typeof import("../src/lib/db").exportParquetDataset;
 let getGameweekSlate: typeof import("../src/lib/gameweek-slate").getGameweekSlate;
 let resetReadConnection: typeof import("../src/lib/db").resetReadConnection;
 
 beforeAll(async () => {
-  ({ bookSelection } = await import("../src/lib/bookings"));
+  ({ bookSelection, settleOpenBookings } = await import("../src/lib/bookings"));
   ({ createHydrationConnection, exportParquetDataset, resetReadConnection } = await import("../src/lib/db"));
   ({ getGameweekSlate } = await import("../src/lib/gameweek-slate"));
 });
@@ -63,13 +64,8 @@ describe("gameweek slate", () => {
     });
 
     resetReadConnection();
-    const slate = await getGameweekSlate("2025-26", 5, {
-      lookbackGameweeks: 8,
-      homeAdvantage: 1.12,
-      correlation: 0.08,
-      simulations: 5000,
-      fplStrengthBlend: 0.35,
-    });
+    await settleOpenBookings();
+    const slate = await getGameweekSlate("2025-26", 5);
 
     expect(slate.rows).toHaveLength(2);
     const played = slate.rows.find((row) => row.fixtureId === 501);

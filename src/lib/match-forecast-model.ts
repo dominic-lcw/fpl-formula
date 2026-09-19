@@ -46,7 +46,7 @@ export const DEFAULT_FORECAST_PARAMS: ForecastParams = {
   lookbackGameweeks: 10,
   homeAdvantage: 1.12,
   correlation: 0.08,
-  simulations: 10_000,
+  simulations: 3_000,
   fplStrengthBlend: 0.35,
 };
 

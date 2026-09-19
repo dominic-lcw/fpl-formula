@@ -17,7 +17,6 @@ const dataTables = [
   "player_fixture_stats",
   "sync_runs",
 ] as const;
-const userTables = ["bookings", "fixture_results"] as const;
 let readConnectionPromise: Promise<DuckDBConnection> | undefined;
 
 const schema = `
@@ -77,42 +76,8 @@ function datasetFiles() {
   return dataTables.map((table) => path.join(parquetDirectory, `${table}.parquet`));
 }
 
-function userTableFile(table: (typeof userTables)[number]) {
-  return path.join(userDataDirectory, `${table}.parquet`);
-}
-
 async function hasParquetDataset() {
   return (await Promise.all(datasetFiles().map(fileExists))).every(Boolean);
-}
-
-const userTableSchema = `
-  CREATE TABLE IF NOT EXISTS bookings (
-    id UUID PRIMARY KEY, fixture_id INTEGER NOT NULL, season VARCHAR NOT NULL,
-    home_team VARCHAR NOT NULL, away_team VARCHAR NOT NULL,
-    market VARCHAR NOT NULL, selection VARCHAR NOT NULL,
-    stake DOUBLE NOT NULL, odds DOUBLE NOT NULL,
-    expected_home_goals DOUBLE NOT NULL, expected_away_goals DOUBLE NOT NULL,
-    model_prob DOUBLE NOT NULL, expected_value DOUBLE NOT NULL,
-    notes VARCHAR, booked_at TIMESTAMP NOT NULL, status VARCHAR NOT NULL,
-    home_score INTEGER, away_score INTEGER, outcome VARCHAR, pnl DOUBLE, settled_at TIMESTAMP
-  );
-  CREATE TABLE IF NOT EXISTS fixture_results (
-    season VARCHAR NOT NULL, fixture_id INTEGER NOT NULL,
-    team_h_score INTEGER NOT NULL, team_a_score INTEGER NOT NULL,
-    resolved_at TIMESTAMP NOT NULL, source VARCHAR NOT NULL,
-    PRIMARY KEY (season, fixture_id)
-  );
-`;
-
-async function loadUserTables(connection: DuckDBConnection) {
-  await connection.run(userTableSchema);
-  for (const table of userTables) {
-    const filePath = userTableFile(table);
-    if (await fileExists(filePath)) {
-      const escaped = filePath.replaceAll("'", "''");
-      await connection.run(`INSERT INTO ${table} SELECT * FROM read_parquet('${escaped}')`);
-    }
-  }
 }
 
 export async function createHydrationConnection() {
@@ -124,14 +89,12 @@ export async function createHydrationConnection() {
       await connection.run(`INSERT INTO ${table} SELECT * FROM read_parquet('${filePath}')`);
     }
   }
-  await loadUserTables(connection);
   return connection;
 }
 
 async function loadParquetDataset(connection: DuckDBConnection) {
   const files = datasetFiles();
   if (!(await hasParquetDataset())) {
-    await loadUserTables(connection);
     return;
   }
 
@@ -139,7 +102,6 @@ async function loadParquetDataset(connection: DuckDBConnection) {
     const filePath = files[index].replaceAll("'", "''");
     await connection.run(`CREATE TABLE ${table} AS SELECT * FROM read_parquet('${filePath}')`);
   }
-  await loadUserTables(connection);
 }
 
 export async function getConnection() {
@@ -166,18 +128,6 @@ export async function exportParquetDataset(connection: DuckDBConnection) {
   } catch (error) {
     await rm(stagingDirectory, { recursive: true, force: true });
     throw error;
-  }
-}
-
-export async function persistUserTable(connection: DuckDBConnection, table: (typeof userTables)[number]) {
-  await mkdir(userDataDirectory, { recursive: true });
-  const stagingPath = path.join(tmpdir(), `${table}-${randomUUID()}.parquet`);
-  const escaped = stagingPath.replaceAll("'", "''");
-  try {
-    await connection.run(`COPY ${table} TO '${escaped}' (FORMAT PARQUET, COMPRESSION ZSTD)`);
-    await copyFile(stagingPath, userTableFile(table));
-  } finally {
-    await rm(stagingPath, { force: true });
   }
 }
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { gradeSelection, highestMatchOutcome, profitAndLoss } from "../src/lib/booking-settlement";
 
 const testParquetDirectory = path.join(tmpdir(), `fpl-formula-bookings-${randomUUID()}`);
@@ -29,10 +29,16 @@ let resolveOpenBookings: typeof import("../src/lib/bookings").resolveOpenBooking
 let createHydrationConnection: typeof import("../src/lib/db").createHydrationConnection;
 let exportParquetDataset: typeof import("../src/lib/db").exportParquetDataset;
 let resetReadConnection: typeof import("../src/lib/db").resetReadConnection;
+let resetUserStoreCache: typeof import("../src/lib/user-store").resetUserStoreCache;
 
 beforeAll(async () => {
   ({ bookSelection, bookSelections, cancelBooking, listBookings, resolveOpenBookings } = await import("../src/lib/bookings"));
   ({ createHydrationConnection, exportParquetDataset, resetReadConnection } = await import("../src/lib/db"));
+  ({ resetUserStoreCache } = await import("../src/lib/user-store"));
+});
+
+beforeEach(() => {
+  resetUserStoreCache();
 });
 
 describe("booking settlement", () => {
@@ -105,11 +111,10 @@ describe("booking settlement", () => {
       notes: "Still to be played",
     });
 
-    await expect(stat(path.join(testUserDirectory, "bookings.parquet"))).resolves.toBeTruthy();
-    await expect(stat(path.join(testParquetDirectory, "bookings.parquet"))).rejects.toThrow();
+    await expect(stat(path.join(testUserDirectory, "bookings.json"))).resolves.toBeTruthy();
 
     resetReadConnection();
-    const settled = await listBookings("2025-26");
+    const settled = await listBookings("2025-26", { settle: true });
     const wonRow = settled.find((entry) => entry.id === won.id);
     const lostRow = settled.find((entry) => entry.id === lost.id);
     const openRow = settled.find((entry) => entry.id === open.id);
@@ -119,12 +124,11 @@ describe("booking settlement", () => {
     expect(lostRow).toMatchObject({ status: "settled", outcome: "lost", pnl: -10 });
     expect(openRow).toMatchObject({ status: "open", outcome: null, pnl: null, homeScore: null });
 
-    resetReadConnection();
+    resetUserStoreCache();
     const reloaded = await listBookings("2025-26");
     expect(reloaded.find((entry) => entry.id === won.id)?.pnl).toBeCloseTo(11, 5);
 
     await cancelBooking(open.id);
-    resetReadConnection();
     expect((await listBookings("2025-26")).some((entry) => entry.id === open.id)).toBe(false);
     await expect(cancelBooking(won.id)).rejects.toMatchObject({ status: 409 });
   });
@@ -162,10 +166,10 @@ describe("booking settlement", () => {
     resetReadConnection();
     const resolved = await resolveOpenBookings();
     expect(resolved).toMatchObject({ settled: 1, remaining: 0, persistedFixtures: 1 });
-    await expect(stat(path.join(testUserDirectory, "bookings.parquet"))).resolves.toBeTruthy();
-    await expect(stat(path.join(testUserDirectory, "fixture_results.parquet"))).resolves.toBeTruthy();
+    await expect(stat(path.join(testUserDirectory, "bookings.json"))).resolves.toBeTruthy();
+    await expect(stat(path.join(testUserDirectory, "fixture-results.json"))).resolves.toBeTruthy();
 
-    resetReadConnection();
+    resetUserStoreCache();
     const settled = await listBookings("2025-26");
     expect(settled.find((entry) => entry.id === provisional.id)).toMatchObject({
       status: "settled",

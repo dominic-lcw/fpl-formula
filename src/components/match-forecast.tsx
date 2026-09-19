@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Calculator,
   ChevronDown,
   LoaderCircle,
   Receipt,
@@ -12,12 +11,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
-import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
-import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
+import type { FixtureForecast, TeamStrength } from "@/lib/match-forecast-model";
 
 type ForecastResponse = {
   season: string | null;
@@ -205,40 +204,6 @@ function FixtureForecastCard({
   );
 }
 
-function ParameterSlider({
-  label,
-  value,
-  min,
-  max,
-  step = 1,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="grid gap-2 text-sm">
-      <span className="flex justify-between">
-        <span>{label}</span>
-        <strong>{step < 1 ? value.toFixed(2) : value}</strong>
-      </span>
-      <input
-        className="accent-primary"
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-    </label>
-  );
-}
-
 function StrengthBar({ value, tone }: { value: number; tone: "attack" | "defence" }) {
   const width = Math.min(100, Math.max(8, (value / 2.2) * 100));
   return (
@@ -308,72 +273,6 @@ function SubViewNav({
         </button>
       ))}
     </div>
-  );
-}
-
-function ModelControls({
-  params,
-  isRecomputing = false,
-  onChange,
-}: {
-  params: ForecastParams;
-  isRecomputing?: boolean;
-  onChange: (updater: (current: ForecastParams) => ForecastParams) => void;
-}) {
-  return (
-    <Card className="h-fit">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Calculator className="size-4 text-muted-foreground" />
-          Model controls
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Predictions recompute as you adjust each control.
-          {isRecomputing ? " Updating…" : ""}
-        </p>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        <ParameterSlider
-          label="Lookback (GWs)"
-          value={params.lookbackGameweeks}
-          min={3}
-          max={20}
-          onChange={(value) => onChange((current) => ({ ...current, lookbackGameweeks: value }))}
-        />
-        <ParameterSlider
-          label="Home advantage"
-          value={params.homeAdvantage}
-          min={1}
-          max={1.35}
-          step={0.01}
-          onChange={(value) => onChange((current) => ({ ...current, homeAdvantage: value }))}
-        />
-        <ParameterSlider
-          label="Bivariate correlation (λ₃)"
-          value={params.correlation}
-          min={0}
-          max={0.25}
-          step={0.01}
-          onChange={(value) => onChange((current) => ({ ...current, correlation: value }))}
-        />
-        <ParameterSlider
-          label="FPL strength blend"
-          value={params.fplStrengthBlend}
-          min={0}
-          max={1}
-          step={0.05}
-          onChange={(value) => onChange((current) => ({ ...current, fplStrengthBlend: value }))}
-        />
-        <ParameterSlider
-          label="Monte Carlo runs"
-          value={params.simulations}
-          min={1000}
-          max={25000}
-          step={1000}
-          onChange={(value) => onChange((current) => ({ ...current, simulations: value }))}
-        />
-      </CardContent>
-    </Card>
   );
 }
 
@@ -728,7 +627,6 @@ function GameweekBookingTable({
 }
 
 export function MatchForecastPanel() {
-  const [params, setParams] = useState<ForecastParams>(DEFAULT_FORECAST_PARAMS);
   const [data, setData] = useState<ForecastResponse | null>(null);
   const [subView, setSubView] = useState<ForecastSubView>("fixtures");
   const [selectedGameweek, setSelectedGameweek] = useState<number | null>(null);
@@ -789,21 +687,18 @@ export function MatchForecastPanel() {
     return ids;
   }, [bookings]);
 
-  const loadBookings = useCallback(async (
-    season?: string | null,
-    gameweek?: number,
-    forecastParams: ForecastParams = DEFAULT_FORECAST_PARAMS,
-  ) => {
-    if (!season) return;
+  const loadBookingSummary = useCallback(async (season: string) => {
+    const response = await fetch(`/api/bookings?season=${encodeURIComponent(season)}`, { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json() as { bookings: BookingRecord[] };
+    setBookings(payload.bookings);
+  }, []);
+
+  const loadBookingsSlate = useCallback(async (season: string, gameweek: number) => {
     const query = new URLSearchParams({
       season,
-      lookback: String(forecastParams.lookbackGameweeks),
-      homeAdvantage: String(forecastParams.homeAdvantage),
-      correlation: String(forecastParams.correlation),
-      simulations: String(forecastParams.simulations),
-      fplBlend: String(forecastParams.fplStrengthBlend),
+      gameweek: String(gameweek),
     });
-    if (gameweek) query.set("gameweek", String(gameweek));
 
     const response = await fetch(`/api/bookings?${query.toString()}`, { cache: "no-store" });
     if (!response.ok) return;
@@ -821,28 +716,17 @@ export function MatchForecastPanel() {
     if (payload.availableGameweeks) setBookingGameweeks(payload.availableGameweeks);
   }, []);
 
-  const loadForecast = useCallback(async (nextParams: ForecastParams) => {
+  const loadForecast = useCallback(async () => {
     const requestId = ++latestRequest.current;
     setIsLoading(true);
     setError(null);
     try {
-      const query = new URLSearchParams({
-        lookback: String(nextParams.lookbackGameweeks),
-        homeAdvantage: String(nextParams.homeAdvantage),
-        correlation: String(nextParams.correlation),
-        simulations: String(nextParams.simulations),
-        fplBlend: String(nextParams.fplStrengthBlend),
-      });
-
-      const response = await fetch(`/api/forecast?${query.toString()}`, { cache: "no-store" });
+      const response = await fetch("/api/forecast");
       const payload = await response.json() as ForecastResponse & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to load forecast.");
 
       if (requestId === latestRequest.current) {
         setData(payload);
-        if (payload.season) {
-          await loadBookings(payload.season, resolvedGameweek, nextParams);
-        }
       }
     } catch (reason) {
       if (requestId === latestRequest.current) {
@@ -851,43 +735,29 @@ export function MatchForecastPanel() {
     } finally {
       if (requestId === latestRequest.current) setIsLoading(false);
     }
-  }, [loadBookings, resolvedGameweek]);
+  }, []);
 
-  // Depend on each control value so formula tweaks always retrigger a fetch.
-  // Debounce so slider drags coalesce into one recompute.
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      void loadForecast({
-        lookbackGameweeks: params.lookbackGameweeks,
-        homeAdvantage: params.homeAdvantage,
-        correlation: params.correlation,
-        simulations: params.simulations,
-        fplStrengthBlend: params.fplStrengthBlend,
-      });
-    }, 250);
-    return () => window.clearTimeout(timeout);
-  }, [
-    loadForecast,
-    params.lookbackGameweeks,
-    params.homeAdvantage,
-    params.correlation,
-    params.simulations,
-    params.fplStrengthBlend,
-  ]);
+    void loadForecast();
+  }, [loadForecast]);
+
+  useEffect(() => {
+    if (!data?.season) return;
+    void loadBookingSummary(data.season);
+  }, [data?.season, loadBookingSummary]);
+
+  useEffect(() => {
+    if (subView !== "bookings" || !data?.season || !resolvedGameweek) return;
+    void loadBookingsSlate(data.season, resolvedGameweek);
+  }, [subView, data?.season, resolvedGameweek, loadBookingsSlate]);
 
   const navigateSubView = useCallback((next: ForecastSubView) => {
     setSubView(next);
-    if (next === "bookings" && data?.season) {
-      void loadBookings(data.season, resolvedGameweek, params);
-    }
-  }, [data, loadBookings, params, resolvedGameweek]);
+  }, []);
 
   const selectGameweek = useCallback((gameweek: number) => {
     setSelectedGameweek(gameweek);
-    if (subView === "bookings" && data?.season) {
-      void loadBookings(data.season, gameweek, params);
-    }
-  }, [data, loadBookings, params, subView]);
+  }, []);
 
   async function bookGameweek() {
     if (!data?.season) return;
@@ -917,18 +787,15 @@ export function MatchForecastPanel() {
       const response = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookings: rows,
-          lookback: params.lookbackGameweeks,
-          homeAdvantage: params.homeAdvantage,
-          correlation: params.correlation,
-          simulations: params.simulations,
-          fplBlend: params.fplStrengthBlend,
-        }),
+        body: JSON.stringify({ bookings: rows }),
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to book the gameweek.");
-      await loadBookings(data.season, resolvedGameweek, params);
+      if (subView === "bookings") {
+        await loadBookingsSlate(data.season, resolvedGameweek);
+      } else {
+        await loadBookingSummary(data.season);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to book the gameweek.");
     } finally {
@@ -943,7 +810,12 @@ export function MatchForecastPanel() {
       setError(payload.error ?? "Unable to cancel booking.");
       return;
     }
-    if (data?.season) await loadBookings(data.season, resolvedGameweek, params);
+    if (!data?.season) return;
+    if (subView === "bookings") {
+      await loadBookingsSlate(data.season, resolvedGameweek);
+    } else {
+      await loadBookingSummary(data.season);
+    }
   }
 
   async function resolveOpenBookings() {
@@ -962,7 +834,11 @@ export function MatchForecastPanel() {
       if (!response.ok) throw new Error(payload.error ?? "Unable to resolve open bookings.");
 
       if (data?.season) {
-        await loadBookings(data.season, resolvedGameweek, params);
+        if (subView === "bookings") {
+          await loadBookingsSlate(data.season, resolvedGameweek);
+        } else {
+          await loadBookingSummary(data.season);
+        }
       } else if (payload.bookings) {
         setBookings(payload.bookings);
       }
@@ -1009,10 +885,7 @@ export function MatchForecastPanel() {
   }
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
-      <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
-
-      <div className="grid gap-5">
+    <section className="grid gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <SubViewNav
@@ -1033,7 +906,6 @@ export function MatchForecastPanel() {
               : subView === "bookings"
                 ? `GW${resolvedGameweek} · book slate`
                 : `GW${resolvedGameweek} · ${slateSummary.settledCount} settled · ${slateSummary.openCount} open`}
-            {isLoading ? " · recomputing…" : ""}
           </p>
         </div>
 
@@ -1090,7 +962,6 @@ export function MatchForecastPanel() {
             ))}
           </div>
         )}
-      </div>
     </section>
   );
 }
