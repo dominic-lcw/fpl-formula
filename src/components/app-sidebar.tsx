@@ -3,6 +3,7 @@
 import { BarChart3, GitBranch, LineChart, Newspaper, Target, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Sidebar,
@@ -17,6 +18,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarSeparator,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { dashboardRoutes, viewFromPathname } from "@/lib/dashboard-nav";
 
@@ -62,6 +64,11 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const activeView = viewFromPathname(pathname);
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  useEffect(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [pathname, isMobile, setOpenMobile]);
 
   return (
     <Sidebar variant="inset" collapsible="icon">
