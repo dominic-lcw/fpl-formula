@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DashboardProvider, useDashboard } from "@/components/dashboard-provider";
 import { FormulaTracker } from "@/components/formula-tracker";
@@ -39,14 +39,12 @@ function DashboardPanels({
   const { params, updateParams, showLiveData, updateLiveData } = useDashboard();
   const [mountedViews, setMountedViews] = useState<Set<DashboardView>>(() => new Set(["rankings"]));
 
-  useEffect(() => {
+  if (!mountedViews.has(activeView)) {
     setMountedViews((current) => {
       if (current.has(activeView)) return current;
-      const next = new Set(current);
-      next.add(activeView);
-      return next;
+      return new Set([...current, activeView]);
     });
-  }, [activeView]);
+  }
 
   function applyTrackerParams(nextParams: RankingParams) {
     updateParams(sanitiseParams(nextParams));

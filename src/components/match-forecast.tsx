@@ -760,15 +760,16 @@ export function MatchForecastPanel() {
     () => (subView === "bookings" && bookingGameweeks.length > 0 ? bookingGameweeks : fixtureGameweeks),
     [bookingGameweeks, fixtureGameweeks, subView],
   );
-  const resolvedGameweek = useMemo(() => {
+  const defaultGameweek = data?.defaultGameweek ?? null;
+  const resolvedGameweek = (() => {
     const gameweeks = activeGameweeks;
-    const fallback = (data?.defaultGameweek != null && gameweeks.includes(data.defaultGameweek))
-      ? data.defaultGameweek
-      : (gameweeks[0] ?? data?.defaultGameweek ?? 1);
+    const fallback = (defaultGameweek != null && gameweeks.includes(defaultGameweek))
+      ? defaultGameweek
+      : (gameweeks[0] ?? defaultGameweek ?? 1);
     if (!gameweeks.length) return selectedGameweek ?? fallback;
     if (selectedGameweek != null && gameweeks.includes(selectedGameweek)) return selectedGameweek;
     return fallback;
-  }, [activeGameweeks, data?.defaultGameweek, selectedGameweek]);
+  })();
 
   useEffect(() => {
     if (!data?.defaultGameweek || hasInitializedGameweek.current) return;
