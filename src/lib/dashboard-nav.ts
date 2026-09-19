@@ -31,10 +31,21 @@ export const dashboardRoutes: Record<DashboardView, string> = {
   news: "/news",
 };
 
+export function normalizePathname(pathname: string) {
+  if (!pathname || pathname === "/") return "/";
+  return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
+
 export function viewFromPathname(pathname: string): DashboardView {
-  if (pathname.startsWith("/team")) return "team";
-  if (pathname.startsWith("/tracker")) return "tracker";
-  if (pathname.startsWith("/forecast")) return "forecast";
-  if (pathname.startsWith("/news")) return "news";
+  const normalized = normalizePathname(pathname);
+  for (const [view, route] of Object.entries(dashboardRoutes) as Array<[DashboardView, string]>) {
+    if (normalized === route || normalized.startsWith(`${route}/`)) {
+      return view;
+    }
+  }
   return "rankings";
+}
+
+export function shouldBootstrapRankings(pathname: string) {
+  return viewFromPathname(pathname) === "rankings";
 }
