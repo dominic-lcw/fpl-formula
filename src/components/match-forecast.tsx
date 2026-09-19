@@ -5,14 +5,17 @@ import {
   ChevronDown,
   LoaderCircle,
   Receipt,
+  RefreshCw,
   Target,
   Trash2,
   TrendingUp,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { highestMatchOutcome, type BookingMarket, type BookingRecord } from "@/lib/booking-settlement";
+import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
+import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
 
@@ -36,7 +39,7 @@ function formatPercent(value: number) {
 
 function formatPnl(value: number) {
   const sign = value > 0 ? "+" : "";
-  return `${sign}£${value.toFixed(2)}`;
+  return `${sign}$${value.toFixed(2)}`;
 }
 
 function selectionLabel(market: BookingMarket, selection: string) {
@@ -86,6 +89,121 @@ function formatKickoff(kickoffTime: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function predictedWinner(fixture: FixtureForecast) {
+  const outcomes = [
+    { label: `${fixture.homeShortName} win`, prob: fixture.homeWinProb },
+    { label: "Draw", prob: fixture.drawProb },
+    { label: `${fixture.awayShortName} win`, prob: fixture.awayWinProb },
+  ];
+  return outcomes.sort((left, right) => right.prob - left.prob)[0]!;
+}
+
+function mostLikelyScoreline(fixture: FixtureForecast) {
+  return fixture.topScorelines[0] ?? null;
+}
+
+function FixtureForecastCard({
+  fixture,
+  booked,
+}: {
+  fixture: FixtureForecast;
+  booked: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const winner = predictedWinner(fixture);
+  const scoreline = mostLikelyScoreline(fixture);
+  const kickoff = formatKickoff(fixture.kickoffTime);
+  const topScorelines = fixture.topScorelines.slice(0, 3);
+
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      onClick={() => setExpanded((current) => !current)}
+      className="flex h-full flex-col rounded-xl border border-border bg-card p-5 text-left shadow-xs transition hover:border-primary/40 hover:bg-accent/20"
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          GW{fixture.event ?? "?"}{kickoff ? ` · ${kickoff}` : ""}
+        </p>
+        <div className="flex items-center gap-2">
+          {booked ? <Badge className="bg-primary/10 text-primary">Booked</Badge> : null}
+          <ChevronDown className={`size-4 text-muted-foreground transition ${expanded ? "rotate-180" : ""}`} />
+        </div>
+      </div>
+
+      <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <div className="text-center">
+          <p className="text-lg font-semibold tracking-tight">{fixture.homeShortName}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{fixture.homeTeam}</p>
+        </div>
+        <span className="rounded-full border px-2.5 py-1 text-xs font-medium text-muted-foreground">vs</span>
+        <div className="text-center">
+          <p className="text-lg font-semibold tracking-tight">{fixture.awayShortName}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{fixture.awayTeam}</p>
+        </div>
+      </div>
+
+      <div className="mt-auto grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Predicted winner</p>
+          <p className="mt-1 text-sm font-semibold">{winner.label}</p>
+          <p className="text-xs text-muted-foreground">{formatPercent(winner.prob)}</p>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Most likely score</p>
+          {scoreline ? (
+            <>
+              <p className="mt-1 text-sm font-semibold">{scoreline.home}-{scoreline.away}</p>
+              <p className="text-xs text-muted-foreground">{formatPercent(scoreline.prob)}</p>
+            </>
+          ) : (
+            <p className="mt-1 text-sm text-muted-foreground">—</p>
+          )}
+        </div>
+      </div>
+
+      {expanded ? (
+        <div className="mt-4 space-y-3 border-t pt-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Top 3 scorelines</p>
+          {topScorelines.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No simulation data.</p>
+          ) : (
+            <div className="grid gap-2">
+              {topScorelines.map((line, index) => (
+                <div key={`${line.home}-${line.away}`} className="grid grid-cols-[1.5rem_3rem_1fr_auto] items-center gap-2 text-sm">
+                  <span className="text-xs text-muted-foreground">{index + 1}</span>
+                  <span className="font-semibold tabular-nums">{line.home}-{line.away}</span>
+                  <div className="h-2 rounded-full bg-muted">
+                    <div
+                      className="h-2 rounded-full bg-primary/70"
+                      style={{ width: `${Math.max(8, line.prob * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs tabular-nums text-muted-foreground">{formatPercent(line.prob)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="grid gap-1 text-xs text-muted-foreground">
+            <p>Expected {fixture.expectedHomeGoals.toFixed(2)}–{fixture.expectedAwayGoals.toFixed(2)}</p>
+            <p>H/D/A {formatPercent(fixture.homeWinProb)}/{formatPercent(fixture.drawProb)}/{formatPercent(fixture.awayWinProb)}</p>
+            <p>Over 2.5 {formatPercent(fixture.over25Prob)} · BTTS {formatPercent(fixture.bttsProb)}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 border-t pt-3 text-xs text-muted-foreground">
+          <p>Expected {fixture.expectedHomeGoals.toFixed(2)}–{fixture.expectedAwayGoals.toFixed(2)}</p>
+          <p className="mt-1">
+            H/D/A {formatPercent(fixture.homeWinProb)}/{formatPercent(fixture.drawProb)}/{formatPercent(fixture.awayWinProb)}
+          </p>
+          <p className="mt-2 font-medium text-primary">Click for top scorelines</p>
+        </div>
+      )}
+    </button>
+  );
 }
 
 function ParameterSlider({
@@ -355,7 +473,7 @@ function BookingRows({
                 <p className="font-medium">{selectionLabel(booking.market, booking.selection)}</p>
                 <p className="text-xs text-muted-foreground">{booking.homeTeam} vs {booking.awayTeam}</p>
               </td>
-              <td className="py-2 pr-3">£{booking.stake.toFixed(2)}</td>
+              <td className="py-2 pr-3">${booking.stake.toFixed(2)}</td>
               <td className="py-2 pr-3">{booking.odds.toFixed(2)}</td>
               <td className="py-2 pr-3">
                 {booking.status === "open" ? "Open" : booking.outcome === "won" ? "Won" : "Lost"}
@@ -388,10 +506,16 @@ function BookingRows({
 
 function BookingLedger({
   bookings,
+  isResolving,
+  resolveMessage,
   onCancel,
+  onResolve,
 }: {
   bookings: BookingRecord[];
+  isResolving: boolean;
+  resolveMessage: string | null;
   onCancel: (id: string) => void;
+  onResolve: () => void;
 }) {
   const totals = bookingTotals(bookings);
 
@@ -400,7 +524,7 @@ function BookingLedger({
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Open stake</p>
-          <p className="mt-2 text-xl font-semibold">£{totals.openStake.toFixed(2)}</p>
+          <p className="mt-2 text-xl font-semibold">${totals.openStake.toFixed(2)}</p>
           <p className="text-sm text-muted-foreground">{totals.openCount} open</p>
         </div>
         <div className="rounded-xl border p-4">
@@ -417,11 +541,27 @@ function BookingLedger({
         </div>
       </div>
       <Card>
-        <CardHeader>
-          <CardTitle>Booking ledger</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            A booking stays open until the match result is in the dataset. Profit and loss is then settled from the final score.
-          </p>
+        <CardHeader className="gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Booking ledger</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Bookings settle automatically once FPL marks a fixture finished. Resolve checks provisional or live results and saves scores to disk.
+              </p>
+            </div>
+            {totals.openCount > 0 ? (
+              <button
+                type="button"
+                disabled={isResolving}
+                onClick={onResolve}
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
+              >
+                {isResolving ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                Resolve open
+              </button>
+            ) : null}
+          </div>
+          {resolveMessage ? <p className="text-sm text-muted-foreground">{resolveMessage}</p> : null}
         </CardHeader>
         <CardContent>
           <BookingRows bookings={bookings} onCancel={onCancel} />
@@ -431,16 +571,16 @@ function BookingLedger({
   );
 }
 
-function resultLabel(fixture: FixtureForecast, selection: "home" | "draw" | "away") {
-  if (selection === "home") return `${fixture.homeShortName} win`;
-  if (selection === "away") return `${fixture.awayShortName} win`;
+function resultLabel(homeShortName: string, awayShortName: string, selection: "home" | "draw" | "away") {
+  if (selection === "home") return `${homeShortName} win`;
+  if (selection === "away") return `${awayShortName} win`;
   return "Draw";
 }
 
 function GameweekBookingTable({
   gameweek,
-  fixtures,
-  bookings,
+  rows,
+  summary,
   stake,
   defaultOdds,
   rowOdds,
@@ -451,8 +591,8 @@ function GameweekBookingTable({
   onBookAll,
 }: {
   gameweek: number;
-  fixtures: FixtureForecast[];
-  bookings: BookingRecord[];
+  rows: GameweekSlateRow[];
+  summary: GameweekSlateSummary;
   stake: string;
   defaultOdds: string;
   rowOdds: Record<number, string>;
@@ -462,10 +602,7 @@ function GameweekBookingTable({
   onRowOddsChange: (fixtureId: number, odds: string) => void;
   onBookAll: () => void;
 }) {
-  const openByFixture = new Map(
-    bookings.filter((booking) => booking.status === "open").map((booking) => [booking.fixtureId, booking]),
-  );
-  const pending = fixtures.filter((fixture) => !openByFixture.has(fixture.fixtureId));
+  const pending = rows.filter((row) => !row.booking && !row.finished && row.modelPick);
 
   return (
     <Card>
@@ -474,8 +611,21 @@ function GameweekBookingTable({
           <div>
             <CardTitle>Gameweek {gameweek}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Each row is the most likely result. One click books every match that is still open.
+              Played matches show the final score and profit and loss from your booked odds.
             </p>
+            {summary.settledCount > 0 || summary.openCount > 0 ? (
+              <p className="mt-2 text-sm">
+                {summary.settledCount > 0 ? (
+                  <span className={summary.settledPnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
+                    Settled {formatPnl(summary.settledPnl)}
+                  </span>
+                ) : null}
+                {summary.settledCount > 0 && summary.openCount > 0 ? " · " : null}
+                {summary.openCount > 0 ? (
+                  <span className="text-muted-foreground">${summary.openStake.toFixed(2)} still open</span>
+                ) : null}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
@@ -489,7 +639,7 @@ function GameweekBookingTable({
         </div>
         <div className="flex flex-wrap gap-3">
           <label className="grid gap-1 text-sm">
-            Stake (£)
+            Stake ($)
             <Input value={stake} onChange={(event) => onStakeChange(event.target.value)} inputMode="decimal" className="w-28" />
           </label>
           <label className="grid gap-1 text-sm">
@@ -500,43 +650,73 @@ function GameweekBookingTable({
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="py-2 pr-3">Match</th>
-                <th className="py-2 pr-3">Top result</th>
-                <th className="py-2 pr-3">Prob</th>
+                <th className="py-2 pr-3">Pick</th>
+                <th className="py-2 pr-3">Stake</th>
                 <th className="py-2 pr-3">Odds</th>
+                <th className="py-2 pr-3">Score</th>
+                <th className="py-2 pr-3">PnL</th>
                 <th className="py-2">Status</th>
               </tr>
             </thead>
             <tbody>
-              {fixtures.map((fixture) => {
-                const pick = highestMatchOutcome(fixture);
-                const open = openByFixture.get(fixture.fixtureId);
-                const kickoff = formatKickoff(fixture.kickoffTime);
+              {rows.map((row) => {
+                const booking = row.booking;
+                const pick = booking
+                  ? { selection: booking.selection, market: booking.market, probability: booking.modelProb }
+                  : row.modelPick;
+                const kickoff = formatKickoff(row.kickoffTime);
+                const score = booking?.homeScore ?? row.homeScore;
+                const opponentScore = booking?.awayScore ?? row.awayScore;
+
                 return (
-                  <tr key={fixture.fixtureId} className="border-b border-border/60">
+                  <tr key={row.fixtureId} className="border-b border-border/60">
                     <td className="py-2 pr-3">
-                      <p className="font-medium">{fixture.homeShortName} vs {fixture.awayShortName}</p>
-                      <p className="text-xs text-muted-foreground">{kickoff ?? fixture.homeTeam}</p>
+                      <p className="font-medium">{row.homeShortName} vs {row.awayShortName}</p>
+                      <p className="text-xs text-muted-foreground">{kickoff ?? row.homeTeam}</p>
                     </td>
-                    <td className="py-2 pr-3">{open ? selectionLabel(open.market, open.selection) : resultLabel(fixture, pick.selection)}</td>
-                    <td className="py-2 pr-3">{formatPercent(open?.modelProb ?? pick.probability)}</td>
                     <td className="py-2 pr-3">
-                      {open ? (
-                        open.odds.toFixed(2)
+                      {pick ? (
+                        <>
+                          <p className="font-medium">
+                            {booking
+                              ? selectionLabel(booking.market, booking.selection)
+                              : resultLabel(row.homeShortName, row.awayShortName, pick.selection as "home" | "draw" | "away")}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{formatPercent(pick.probability)}</p>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">{booking ? `$${booking.stake.toFixed(2)}` : "—"}</td>
+                    <td className="py-2 pr-3">
+                      {booking ? (
+                        booking.odds.toFixed(2)
+                      ) : row.finished ? (
+                        "—"
                       ) : (
                         <Input
-                          value={rowOdds[fixture.fixtureId] ?? defaultOdds}
-                          onChange={(event) => onRowOddsChange(fixture.fixtureId, event.target.value)}
+                          value={rowOdds[row.fixtureId] ?? defaultOdds}
+                          onChange={(event) => onRowOddsChange(row.fixtureId, event.target.value)}
                           inputMode="decimal"
-                          aria-label={`Odds for ${fixture.homeShortName} vs ${fixture.awayShortName}`}
+                          aria-label={`Odds for ${row.homeShortName} vs ${row.awayShortName}`}
                           className="h-8 w-24"
                         />
                       )}
                     </td>
-                    <td className="py-2">{open ? "Open" : "—"}</td>
+                    <td className="py-2 pr-3">
+                      {score === null || opponentScore === null ? "—" : `${score}–${opponentScore}`}
+                    </td>
+                    <td className={`py-2 pr-3 ${booking?.pnl === null || booking?.pnl === undefined ? "text-muted-foreground" : booking.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+                      {booking?.pnl === null || booking?.pnl === undefined ? "—" : formatPnl(booking.pnl)}
+                    </td>
+                    <td className="py-2">
+                      {!booking ? (row.finished ? "Played" : "—") : booking.status === "open" ? "Open" : booking.outcome === "won" ? "Won" : "Lost"}
+                    </td>
                   </tr>
                 );
               })}
@@ -554,33 +734,79 @@ export function MatchForecastPanel() {
   const [subView, setSubView] = useState<ForecastSubView>("fixtures");
   const [selectedGameweek, setSelectedGameweek] = useState(DEFAULT_GAMEWEEK);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
+  const [slateRows, setSlateRows] = useState<GameweekSlateRow[]>([]);
+  const [slateSummary, setSlateSummary] = useState<GameweekSlateSummary>({
+    settledPnl: 0,
+    openStake: 0,
+    settledCount: 0,
+    openCount: 0,
+    won: 0,
+    lost: 0,
+    unbookedCount: 0,
+  });
+  const [bookingGameweeks, setBookingGameweeks] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isBooking, setIsBooking] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resolveMessage, setResolveMessage] = useState<string | null>(null);
   const [stake, setStake] = useState("10");
   const [defaultOdds, setDefaultOdds] = useState("2.10");
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
   const latestRequest = useRef(0);
 
+  const fixtureGameweeks = useMemo(() => data?.availableGameweeks ?? [], [data?.availableGameweeks]);
   const resolvedGameweek = useMemo(() => {
-    const gameweeks = data?.availableGameweeks ?? [];
+    const gameweeks = subView === "bookings" && bookingGameweeks.length > 0 ? bookingGameweeks : fixtureGameweeks;
     if (!gameweeks.length) return selectedGameweek;
     if (gameweeks.includes(selectedGameweek)) return selectedGameweek;
     if (gameweeks.includes(DEFAULT_GAMEWEEK)) return DEFAULT_GAMEWEEK;
     return gameweeks[0]!;
-  }, [data?.availableGameweeks, selectedGameweek]);
+  }, [bookingGameweeks, fixtureGameweeks, selectedGameweek, subView]);
 
   const gameweekFixtures = useMemo(
     () => data?.upcomingFixtures.filter((fixture) => fixture.event === resolvedGameweek) ?? [],
     [data?.upcomingFixtures, resolvedGameweek],
   );
 
-  const loadBookings = useCallback(async (season?: string | null) => {
-    const query = season ? `?season=${encodeURIComponent(season)}` : "";
-    const response = await fetch(`/api/bookings${query}`, { cache: "no-store" });
+  const openBookingsByFixture = useMemo(() => {
+    const ids = new Set<number>();
+    for (const booking of bookings) {
+      if (booking.status === "open") ids.add(booking.fixtureId);
+    }
+    return ids;
+  }, [bookings]);
+
+  const loadBookings = useCallback(async (
+    season?: string | null,
+    gameweek?: number,
+    forecastParams: ForecastParams = DEFAULT_FORECAST_PARAMS,
+  ) => {
+    if (!season) return;
+    const query = new URLSearchParams({
+      season,
+      lookback: String(forecastParams.lookbackGameweeks),
+      homeAdvantage: String(forecastParams.homeAdvantage),
+      correlation: String(forecastParams.correlation),
+      simulations: String(forecastParams.simulations),
+      fplBlend: String(forecastParams.fplStrengthBlend),
+    });
+    if (gameweek) query.set("gameweek", String(gameweek));
+
+    const response = await fetch(`/api/bookings?${query.toString()}`, { cache: "no-store" });
     if (!response.ok) return;
-    const payload = await response.json() as { bookings: BookingRecord[] };
+    const payload = await response.json() as {
+      bookings: BookingRecord[];
+      rows?: GameweekSlateRow[];
+      summary?: GameweekSlateSummary;
+      availableGameweeks?: number[];
+    };
     setBookings(payload.bookings);
+    if (payload.rows && payload.summary) {
+      setSlateRows(payload.rows);
+      setSlateSummary(payload.summary);
+    }
+    if (payload.availableGameweeks) setBookingGameweeks(payload.availableGameweeks);
   }, []);
 
   const loadForecast = useCallback(async (nextParams: ForecastParams) => {
@@ -602,7 +828,9 @@ export function MatchForecastPanel() {
 
       if (requestId === latestRequest.current) {
         setData(payload);
-        if (payload.season) await loadBookings(payload.season);
+        if (payload.season) {
+          await loadBookings(payload.season, resolvedGameweek, nextParams);
+        }
       }
     } catch (reason) {
       if (requestId === latestRequest.current) {
@@ -611,7 +839,7 @@ export function MatchForecastPanel() {
     } finally {
       if (requestId === latestRequest.current) setIsLoading(false);
     }
-  }, [loadBookings]);
+  }, [loadBookings, resolvedGameweek]);
 
   // Depend on each control value so formula tweaks always retrigger a fetch.
   // Debounce so slider drags coalesce into one recompute.
@@ -635,27 +863,30 @@ export function MatchForecastPanel() {
     params.fplStrengthBlend,
   ]);
 
+  useEffect(() => {
+    if (subView !== "bookings" || !data?.season) return;
+    const timeout = window.setTimeout(() => {
+      void loadBookings(data.season!, resolvedGameweek, params);
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [data?.season, loadBookings, params, resolvedGameweek, subView]);
+
   async function bookGameweek() {
     if (!data?.season) return;
     const stakeValue = Number(stake);
-    const pending = gameweekFixtures.filter((fixture) => !bookings.some(
-      (booking) => booking.fixtureId === fixture.fixtureId && booking.status === "open",
-    ));
+    const pending = slateRows.filter((row) => !row.booking && !row.finished && row.modelPick);
     if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
       setError("Stake must be positive.");
       return;
     }
 
-    const rows = pending.map((fixture) => {
-      const pick = highestMatchOutcome(fixture);
-      return {
-        fixtureId: fixture.fixtureId,
-        market: pick.market,
-        selection: pick.selection,
-        stake: stakeValue,
-        odds: Number(rowOdds[fixture.fixtureId] ?? defaultOdds),
-      };
-    });
+    const rows = pending.map((row) => ({
+      fixtureId: row.fixtureId,
+      market: row.modelPick!.market,
+      selection: row.modelPick!.selection,
+      stake: stakeValue,
+      odds: Number(rowOdds[row.fixtureId] ?? defaultOdds),
+    }));
     if (rows.some((row) => !Number.isFinite(row.odds) || row.odds <= 1)) {
       setError("Decimal odds must be greater than 1.");
       return;
@@ -679,7 +910,7 @@ export function MatchForecastPanel() {
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to book the gameweek.");
-      await loadBookings(data.season);
+      await loadBookings(data.season, resolvedGameweek, params);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to book the gameweek.");
     } finally {
@@ -694,7 +925,49 @@ export function MatchForecastPanel() {
       setError(payload.error ?? "Unable to cancel booking.");
       return;
     }
-    if (data?.season) await loadBookings(data.season);
+    if (data?.season) await loadBookings(data.season, resolvedGameweek, params);
+  }
+
+  async function resolveOpenBookings() {
+    setIsResolving(true);
+    setError(null);
+    setResolveMessage(null);
+    try {
+      const response = await fetch("/api/bookings", { method: "PATCH", cache: "no-store" });
+      const payload = await response.json() as {
+        settled?: number;
+        remaining?: number;
+        persistedFixtures?: number;
+        bookings?: BookingRecord[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to resolve open bookings.");
+
+      if (data?.season) {
+        await loadBookings(data.season, resolvedGameweek, params);
+      } else if (payload.bookings) {
+        setBookings(payload.bookings);
+      }
+
+      const settled = payload.settled ?? 0;
+      const remaining = payload.remaining ?? 0;
+      const persistedFixtures = payload.persistedFixtures ?? 0;
+      if (settled === 0 && remaining > 0) {
+        setResolveMessage(`No results were available yet. ${remaining} booking${remaining === 1 ? "" : "s"} still open.`);
+      } else if (settled > 0) {
+        setResolveMessage(
+          `Settled and saved ${settled} booking${settled === 1 ? "" : "s"}`
+          + (persistedFixtures > 0 ? ` and ${persistedFixtures} match result${persistedFixtures === 1 ? "" : "s"}` : "")
+          + `.${remaining > 0 ? ` ${remaining} still open.` : " Results persist across reloads."}`,
+        );
+      } else {
+        setResolveMessage("All bookings are already settled.");
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to resolve open bookings.");
+    } finally {
+      setIsResolving(false);
+    }
   }
 
   if (isLoading && !data) {
@@ -728,9 +1001,9 @@ export function MatchForecastPanel() {
               activeView={subView}
               onNavigate={setSubView}
             />
-            {subView === "fixtures" && data.availableGameweeks.length > 0 ? (
+            {(subView === "fixtures" || subView === "bookings") && (subView === "bookings" ? bookingGameweeks : fixtureGameweeks).length > 0 ? (
               <GameweekSelect
-                gameweeks={data.availableGameweeks}
+                gameweeks={subView === "bookings" ? bookingGameweeks : fixtureGameweeks}
                 value={resolvedGameweek}
                 onChange={setSelectedGameweek}
               />
@@ -740,8 +1013,8 @@ export function MatchForecastPanel() {
             {data.season} · {subView === "strengths"
               ? `completed through GW${data.currentGameweek ?? "?"}`
               : subView === "bookings"
-                ? "booking ledger"
-                : `GW${resolvedGameweek} · ${gameweekFixtures.length} fixtures`}
+                ? `GW${resolvedGameweek} · book slate`
+                : `GW${resolvedGameweek} · ${slateSummary.settledCount} settled · ${slateSummary.openCount} open`}
             {isLoading ? " · recomputing…" : ""}
           </p>
         </div>
@@ -749,7 +1022,38 @@ export function MatchForecastPanel() {
         {error ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
 
         {subView === "bookings" ? (
-          <BookingLedger bookings={bookings} onCancel={(id) => void removeBet(id)} />
+          <div className="grid gap-5">
+            {slateRows.length === 0 ? (
+              <div className="rounded-xl border border-dashed py-16 text-center">
+                <p className="font-medium">No fixtures for Gameweek {resolvedGameweek}</p>
+                <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
+              </div>
+            ) : (
+              <GameweekBookingTable
+                gameweek={resolvedGameweek}
+                rows={slateRows}
+                summary={slateSummary}
+                stake={stake}
+                defaultOdds={defaultOdds}
+                rowOdds={rowOdds}
+                isBooking={isBooking}
+                onStakeChange={setStake}
+                onDefaultOddsChange={(value) => {
+                  setDefaultOdds(value);
+                  setRowOdds({});
+                }}
+                onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
+                onBookAll={() => void bookGameweek()}
+              />
+            )}
+            <BookingLedger
+              bookings={bookings}
+              isResolving={isResolving}
+              resolveMessage={resolveMessage}
+              onCancel={(id) => void removeBet(id)}
+              onResolve={() => void resolveOpenBookings()}
+            />
+          </div>
         ) : subView === "strengths" ? (
           <TeamStrengthsPanel data={data} />
         ) : gameweekFixtures.length === 0 ? (
@@ -758,22 +1062,15 @@ export function MatchForecastPanel() {
             <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
           </div>
         ) : (
-          <GameweekBookingTable
-            gameweek={resolvedGameweek}
-            fixtures={gameweekFixtures}
-            bookings={bookings}
-            stake={stake}
-            defaultOdds={defaultOdds}
-            rowOdds={rowOdds}
-            isBooking={isBooking}
-            onStakeChange={setStake}
-            onDefaultOddsChange={(value) => {
-              setDefaultOdds(value);
-              setRowOdds({});
-            }}
-            onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
-            onBookAll={() => void bookGameweek()}
-          />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {gameweekFixtures.map((fixture) => (
+              <FixtureForecastCard
+                key={fixture.fixtureId}
+                fixture={fixture}
+                booked={openBookingsByFixture.has(fixture.fixtureId)}
+              />
+            ))}
+          </div>
         )}
       </div>
     </section>

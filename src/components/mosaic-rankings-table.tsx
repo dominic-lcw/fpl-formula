@@ -101,7 +101,7 @@ export function MosaicRankingsTable({
           score: "center",
         },
         format: {
-          price: (value: unknown) => `£${formatNumber(value, 1)}m`,
+          price: (value: unknown) => `$${formatNumber(value, 1)}m`,
           form_points: (value: unknown) => `${formatNumber(value)} pts`,
           minutes: (value: unknown) => `${formatNumber(value)}m`,
           xg: (value: unknown) => formatNumber(value, 2),
