@@ -89,7 +89,7 @@ flowchart LR
 
 - Resource names use an `az` prefix and a deterministic deployment token; the public web app name is `azweb<token>`, which is globally unique to this subscription, region, and environment.
 - The production workflow triggers on pushes to `main`; GitHub treats a merged pull request as a push to that branch.
-- Every workflow run installs dependencies on an Ubuntu runner, executes `pnpm hydrate`, builds the Next.js standalone server, copies `data/parquet/` into the deployment package, then ZIP-deploys it.
+- Every workflow run installs dependencies on an Ubuntu runner, executes `pnpm hydrate`, fetches manager press quotes with `pnpm fetch:manager-words`, builds the Next.js standalone server, copies `data/` into the deployment package, then ZIP-deploys it.
 - The App Service restarts for the new package, loading the fresh Parquet data into its in-memory DuckDB connection.
 - A GitHub `production` environment will be used without required reviewers so deployment remains automatic.
 - The workflow authenticates through GitHub OpenID Connect and a user-assigned managed identity; no Azure password or publish profile is stored in GitHub.
