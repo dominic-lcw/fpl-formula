@@ -24,11 +24,10 @@ type ForecastResponse = {
   teamStrengths: TeamStrength[];
   upcomingFixtures: FixtureForecast[];
   availableGameweeks: number[];
+  defaultGameweek: number | null;
 };
 
 type ForecastSubView = "fixtures" | "strengths" | "bookings";
-
-const DEFAULT_GAMEWEEK = 4;
 
 function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
@@ -552,7 +551,8 @@ export function MatchForecastPanel() {
   const [params, setParams] = useState<ForecastParams>(DEFAULT_FORECAST_PARAMS);
   const [data, setData] = useState<ForecastResponse | null>(null);
   const [subView, setSubView] = useState<ForecastSubView>("fixtures");
-  const [selectedGameweek, setSelectedGameweek] = useState(DEFAULT_GAMEWEEK);
+  const [selectedGameweek, setSelectedGameweek] = useState<number | null>(null);
+  const hasInitializedGameweek = useRef(false);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isBooking, setIsBooking] = useState(false);
@@ -564,11 +564,17 @@ export function MatchForecastPanel() {
 
   const resolvedGameweek = useMemo(() => {
     const gameweeks = data?.availableGameweeks ?? [];
-    if (!gameweeks.length) return selectedGameweek;
-    if (gameweeks.includes(selectedGameweek)) return selectedGameweek;
-    if (gameweeks.includes(DEFAULT_GAMEWEEK)) return DEFAULT_GAMEWEEK;
-    return gameweeks[0]!;
-  }, [data?.availableGameweeks, selectedGameweek]);
+    const fallback = data?.defaultGameweek ?? gameweeks[0] ?? 1;
+    if (!gameweeks.length) return selectedGameweek ?? fallback;
+    if (selectedGameweek != null && gameweeks.includes(selectedGameweek)) return selectedGameweek;
+    return fallback;
+  }, [data?.availableGameweeks, data?.defaultGameweek, selectedGameweek]);
+
+  useEffect(() => {
+    if (!data?.defaultGameweek || hasInitializedGameweek.current) return;
+    setSelectedGameweek(data.defaultGameweek);
+    hasInitializedGameweek.current = true;
+  }, [data?.defaultGameweek]);
 
   const gameweekFixtures = useMemo(
     () => data?.upcomingFixtures.filter((fixture) => fixture.event === resolvedGameweek) ?? [],
