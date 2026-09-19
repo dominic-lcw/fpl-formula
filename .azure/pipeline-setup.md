@@ -26,7 +26,7 @@ The federated credential uses the subject claim emitted by this repository's Git
 ## Normal release flow
 
 - Merge a pull request into `main`.
-- The `Deploy FPL Formula` workflow runs tests and linting, downloads fresh FPL data, builds the Linux standalone Node.js package, and ZIP-deploys it.
+- The `Deploy FPL Formula` workflow runs tests and linting, downloads fresh FPL data, fetches BBC manager press quotes, builds the Linux standalone Node.js package, and ZIP-deploys it.
 - App Service restarts the process and loads the refreshed Parquet data.
 
 The infrastructure workflow is intentionally manual (`workflow_dispatch`) because it can change Azure resources. Run it only after reviewing an infrastructure change.

@@ -42,9 +42,12 @@ Choose from Balanced, Form first, Fixture led, or Steady presets, or tune the ro
 ```bash
 pnpm hydrate          # previous-season player summaries + current season
 pnpm hydrate:current  # current season only
+pnpm fetch:manager-words  # BBC manager press quotes for the Manager news page
 pnpm test
 pnpm lint
 pnpm build
 ```
 
 For routine updates, schedule `pnpm hydrate:current` after each FPL Gameweek completes. The previous-season summary refresh is idempotent and runs only with `pnpm hydrate`. Restart the app process after hydration so its in-memory DuckDB query layer reloads the new Parquet dataset.
+
+Manager news is fetched separately from BBC Sport RSS feeds and written to `data/manager-words/latest.json`. Override the location with `FPL_MANAGER_WORDS_DIR`. Production deploys run `pnpm fetch:manager-words` after hydration so the Manager news page is populated on startup.
