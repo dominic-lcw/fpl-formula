@@ -12,7 +12,7 @@ import {
   type BookingStatus,
 } from "@/lib/booking-settlement";
 import { expectedValue, modelProbabilityForMarket, type FixtureForecast } from "@/lib/match-forecast-model";
-import { getConnection, parquetDirectory, persistUserTable, query, resetReadConnection } from "@/lib/db";
+import { getConnection, parquetDirectory, persistUserTable, query } from "@/lib/db";
 
 export type { BookingMarket, BookingOutcome, BookingRecord, BookingStatus };
 export { gradeSelection, isBookableSelection, profitAndLoss };
@@ -285,7 +285,6 @@ async function settleOpenBookingsWithScores(scoreByFixture: Map<string, Pick<Fin
 
   if (settled > 0) {
     await persistUserTable(connection, "bookings");
-    resetReadConnection();
   }
   return settled;
 }
@@ -335,7 +334,6 @@ export async function resolveOpenBookings(): Promise<ResolveOpenBookingsResult> 
   if (newlyResolvedScores.length > 0) {
     const connection = await getConnection();
     await persistResolvedFixtureResults(connection, newlyResolvedScores);
-    resetReadConnection();
   }
 
   const remaining = (await query<{ count: number }>(
@@ -388,7 +386,6 @@ export async function bookSelection(input: BookingInput) {
   const connection = await getConnection();
   await insertBooking(connection, booking);
   await persistUserTable(connection, "bookings");
-  resetReadConnection();
   return booking;
 }
 
@@ -409,7 +406,6 @@ export async function bookSelections(inputs: BookingInput[]) {
     await insertBooking(connection, booking);
   }
   await persistUserTable(connection, "bookings");
-  resetReadConnection();
   return records;
 }
 
@@ -424,5 +420,4 @@ export async function cancelBooking(id: string) {
   const connection = await getConnection();
   await connection.run(`DELETE FROM bookings WHERE id = ? AND status = 'open'`, [id]);
   await persistUserTable(connection, "bookings");
-  resetReadConnection();
 }

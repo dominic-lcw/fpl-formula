@@ -22,8 +22,10 @@ export async function GET(request: NextRequest) {
     },
   });
 
+  const liveGameweek = numberParam(searchParams.get("liveGameweek"));
+
   try {
-    return NextResponse.json(await getRankingData(params));
+    return NextResponse.json(await getRankingData(params, { liveGameweek }));
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to query FPL data." },

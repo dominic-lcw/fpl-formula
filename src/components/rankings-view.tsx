@@ -2,12 +2,13 @@
 
 import { ChevronDown, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
 import { useDashboard } from "@/components/dashboard-provider";
-import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
 import { PlayerRankSearch } from "@/components/player-rank-search";
 import { PlayerRankTracker } from "@/components/player-rank-tracker";
+import { RankingsTable } from "@/components/rankings-table";
 import { ScoreFormula } from "@/components/score-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Position, RankingParams } from "@/lib/fpl-types";
+import { filterRankings } from "@/lib/rankings-client";
 import { FORMULA_PRESETS } from "@/lib/scoring";
 
 const positionOptions: Array<Position | "ALL"> = ["ALL", "GKP", "DEF", "MID", "FWD"];
@@ -63,6 +64,8 @@ export function RankingsView() {
     pinPlayer,
     unpinPlayer,
   } = useDashboard();
+
+  const filteredRankings = data ? filterRankings(data.rankings, position, team) : [];
 
   function updateWeight(key: keyof RankingParams["weights"], value: number) {
     updateParams({ ...params, weights: { ...params.weights, [key]: value } });
@@ -147,6 +150,7 @@ export function RankingsView() {
             {data?.season ? (
               <PlayerRankSearch
                 key={tableVersion}
+                rankings={data.rankings}
                 pinnedPlayer={pinnedPlayer}
                 onSelectRank={setSelectedRank}
                 onPinPlayer={pinPlayer}
@@ -186,15 +190,15 @@ export function RankingsView() {
             <div>
               <CardTitle>Expected ranking</CardTitle>
               <p aria-live="polite" className="text-sm text-muted-foreground">
-                {isLoading && data ? "Updating rankings…" : `${data?.count ?? 0} eligible players`}
+                {isLoading && data ? "Updating rankings…" : `${filteredRankings.length} eligible players`}
               </p>
             </div>
             <Settings2 size={18} className="text-muted-foreground" />
           </CardHeader>
           <CardContent className={isLoading && data ? "opacity-60 transition-opacity" : "transition-opacity"}>
-            {isLoading && !data ? <p className="py-12 text-center text-muted-foreground">Calculating the player pool…</p> : error && !data ? <p className="py-12 text-center text-destructive">{error}</p> : !data?.season ? (
+            {isLoading && !data ? <p className="py-12 text-center text-muted-foreground">Loading the player pool…</p> : error && !data ? <p className="py-12 text-center text-destructive">{error}</p> : !data?.season ? (
               <div className="py-12 text-center"><p className="font-medium">No FPL data has been hydrated yet.</p><p className="mt-2 text-sm text-muted-foreground">Run <code className="rounded bg-muted px-1.5 py-0.5">pnpm hydrate</code> to download the archive and current season.</p></div>
-            ) : data.count ? <MosaicRankingsTable version={tableVersion} selectedRank={selectedRank} /> : <p className="py-12 text-center text-muted-foreground">No players match these filters.</p>}
+            ) : filteredRankings.length ? <RankingsTable rankings={filteredRankings} selectedRank={selectedRank} /> : <p className="py-12 text-center text-muted-foreground">No players match these filters.</p>}
           </CardContent>
         </Card>
       </div>

@@ -2,16 +2,15 @@
 
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
-import type { Position, RankingParams } from "@/lib/fpl-types";
-import {
-  calculateMosaicRankings,
-  getPinnedPlayerRank,
-  type MosaicRankingData,
-  type RankedPlayerSuggestion,
-} from "@/lib/mosaic-rankings";
 import type { PinnedPlayerSnapshot } from "@/components/player-rank-tracker";
 import { shouldBootstrapRankings } from "@/lib/dashboard-nav";
+import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
+import type { Position, RankingParams, RankingResponse } from "@/lib/fpl-types";
+import {
+  fetchRankings,
+  getPinnedPlayerRank,
+  type RankedPlayerSuggestion,
+} from "@/lib/rankings-client";
 import { DEFAULT_PARAMS, sanitiseParams } from "@/lib/scoring";
 
 type StatusResponse = {
@@ -25,7 +24,7 @@ type StatusResponse = {
 type DashboardContextValue = {
   params: RankingParams;
   updateParams: (nextParams: RankingParams) => void;
-  data: MosaicRankingData | null;
+  data: RankingResponse | null;
   position: Position | "ALL";
   setPosition: (position: Position | "ALL") => void;
   team: string;
@@ -58,7 +57,7 @@ export function useDashboard() {
 }
 
 function buildSeasonLabel(
-  data: MosaicRankingData | null,
+  data: RankingResponse | null,
   syncSeason: string | null,
   liveGameweek: LiveGameweekStatus | null,
 ) {
@@ -83,7 +82,7 @@ function buildSeasonLabel(
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [params, setParams] = useState<RankingParams>(DEFAULT_PARAMS);
-  const [data, setData] = useState<MosaicRankingData | null>(null);
+  const [data, setData] = useState<RankingResponse | null>(null);
   const [position, setPositionState] = useState<Position | "ALL">("ALL");
   const [team, setTeamState] = useState("ALL");
   const [tableVersion, setTableVersion] = useState(0);
@@ -122,18 +121,16 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
   const loadRankings = useCallback(async (
     nextParams: RankingParams,
-    nextPosition: Position | "ALL",
-    nextTeam: string,
     options: {
-      refreshDataset?: boolean;
       liveGameweek?: number | null;
+      cache?: RequestCache;
     } = {},
   ) => {
     const requestId = ++latestRequest.current;
     setIsLoading(true);
     setError(null);
     try {
-      const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam, options);
+      const payload = await fetchRankings(nextParams, options);
       rankingsBootstrapped.current = true;
       if (requestId === latestRequest.current) {
         setData(payload);
@@ -141,7 +138,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
         const activePinnedPlayer = pinnedPlayerRef.current;
         if (activePinnedPlayer) {
-          const snapshot = await getPinnedPlayerRank(activePinnedPlayer.playerId);
+          const snapshot = getPinnedPlayerRank(payload.rankings, activePinnedPlayer.playerId);
           if (requestId !== latestRequest.current) return;
 
           if (snapshot) {
@@ -168,7 +165,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (reason) {
       if (requestId === latestRequest.current) {
-        setError(reason instanceof Error ? reason.message : "Unable to calculate rankings locally.");
+        setError(reason instanceof Error ? reason.message : "Unable to load rankings.");
       }
     } finally {
       if (requestId === latestRequest.current) setIsLoading(false);
@@ -189,7 +186,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       setParams(savedParams);
       void loadLiveGameweek();
       if (shouldBootstrapRankings(initialPathname.current)) {
-        void loadRankings(savedParams, "ALL", "ALL");
+        void loadRankings(savedParams);
       } else {
         setIsLoading(false);
       }
@@ -200,31 +197,25 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!shouldBootstrapRankings(pathname)) return;
     if (rankingsBootstrapped.current || isLoading) return;
-    void loadRankings(params, position, team, {
+    void loadRankings(params, {
       liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
     });
-  }, [pathname, params, position, team, showLiveData, liveGameweek, isLoading, loadRankings]);
+  }, [pathname, params, showLiveData, liveGameweek, isLoading, loadRankings]);
 
   function updateParams(nextParams: RankingParams) {
     setParams(nextParams);
     window.localStorage.setItem("fpl-ranking-preset", JSON.stringify(nextParams));
-    void loadRankings(nextParams, position, team, {
+    void loadRankings(nextParams, {
       liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
     });
   }
 
   function setPosition(nextPosition: Position | "ALL") {
     setPositionState(nextPosition);
-    void loadRankings(params, nextPosition, team, {
-      liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
-    });
   }
 
   function setTeam(nextTeam: string) {
     setTeamState(nextTeam);
-    void loadRankings(params, position, nextTeam, {
-      liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
-    });
   }
 
   function updateLiveData(enabled: boolean) {
@@ -232,12 +223,12 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     if (!rankingsBootstrapped.current) return;
 
     if (!enabled) {
-      void loadRankings(params, position, team);
+      void loadRankings(params);
       return;
     }
 
     void loadLiveGameweek().then((nextLiveGameweek) => {
-      void loadRankings(params, position, team, {
+      void loadRankings(params, {
         liveGameweek: liveGameweekForRankings(nextLiveGameweek),
       });
     });
@@ -245,8 +236,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
   function refreshRankings() {
     void loadLiveGameweek().then((nextLiveGameweek) => {
-      void loadRankings(params, position, team, {
-        refreshDataset: true,
+      void loadRankings(params, {
+        cache: "no-store",
         liveGameweek: showLiveData ? liveGameweekForRankings(nextLiveGameweek) : null,
       });
     });
