@@ -4,6 +4,7 @@ import { ChevronDown, RefreshCw, Settings2, SlidersHorizontal } from "lucide-rea
 import { useDashboard } from "@/components/dashboard-provider";
 import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
 import { PlayerRankSearch } from "@/components/player-rank-search";
+import { PlayerRankTracker } from "@/components/player-rank-tracker";
 import { ScoreFormula } from "@/components/score-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Position, RankingParams } from "@/lib/fpl-types";
@@ -56,6 +57,11 @@ export function RankingsView() {
     showLiveData,
     updateLiveData,
     refreshRankings,
+    pinnedPlayer,
+    pinnedSnapshot,
+    rankHistory,
+    pinPlayer,
+    unpinPlayer,
   } = useDashboard();
 
   function updateWeight(key: keyof RankingParams["weights"], value: number) {
@@ -138,7 +144,14 @@ export function RankingsView() {
               </select>
               <ChevronDown className="pointer-events-none absolute right-2 top-2.5 text-muted-foreground" size={15} />
             </label>
-            {data?.season ? <PlayerRankSearch key={tableVersion} onSelectRank={setSelectedRank} /> : null}
+            {data?.season ? (
+              <PlayerRankSearch
+                key={tableVersion}
+                pinnedPlayer={pinnedPlayer}
+                onSelectRank={setSelectedRank}
+                onPinPlayer={pinPlayer}
+              />
+            ) : null}
           </div>
           <button
             type="button"
@@ -149,6 +162,18 @@ export function RankingsView() {
             <RefreshCw size={15} /> Refresh
           </button>
         </div>
+
+        {pinnedPlayer ? (
+          <div className="mb-4">
+            <PlayerRankTracker
+              playerName={pinnedPlayer.name}
+              snapshot={pinnedSnapshot}
+              history={rankHistory}
+              isLoading={isLoading}
+              onUnpin={unpinPlayer}
+            />
+          </div>
+        ) : null}
 
         <Card className="mb-4">
           <CardContent>
