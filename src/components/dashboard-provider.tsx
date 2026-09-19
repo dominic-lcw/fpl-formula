@@ -1,7 +1,9 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { PinnedPlayerSnapshot } from "@/components/player-rank-tracker";
+import { shouldBootstrapRankings } from "@/lib/dashboard-nav";
 import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { Position, RankingParams, RankingResponse } from "@/lib/fpl-types";
 import {
@@ -12,6 +14,10 @@ import {
 import { DEFAULT_PARAMS, sanitiseParams } from "@/lib/scoring";
 
 type StatusResponse = {
+  latest: {
+    season: string;
+    status: string;
+  } | null;
   liveGameweek: LiveGameweekStatus | null;
 };
 
@@ -50,7 +56,31 @@ export function useDashboard() {
   return context;
 }
 
+function buildSeasonLabel(
+  data: RankingResponse | null,
+  syncSeason: string | null,
+  liveGameweek: LiveGameweekStatus | null,
+) {
+  if (data?.season) {
+    return `${data.season} · ${data.includesLiveGameweek ? `live through GW${data.currentGameweek ?? "?"}` : `after GW${data.currentGameweek ?? "?"}`}`;
+  }
+
+  if (syncSeason && liveGameweek) {
+    const gameweek = liveGameweek.currentGameweek;
+    const suffix = liveGameweek.currentGameweekStatus === "in_progress"
+      ? `live through GW${gameweek}`
+      : liveGameweek.currentGameweekStatus === "upcoming"
+        ? `GW${gameweek} next`
+        : `after GW${gameweek}`;
+    return `${syncSeason} · ${suffix}`;
+  }
+
+  if (syncSeason) return syncSeason;
+  return "Awaiting first hydration";
+}
+
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [params, setParams] = useState<RankingParams>(DEFAULT_PARAMS);
   const [data, setData] = useState<RankingResponse | null>(null);
   const [position, setPositionState] = useState<Position | "ALL">("ALL");
@@ -60,13 +90,16 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [pinnedPlayer, setPinnedPlayer] = useState<{ playerId: number; name: string } | null>(null);
   const [pinnedSnapshot, setPinnedSnapshot] = useState<PinnedPlayerSnapshot | null>(null);
   const [rankHistory, setRankHistory] = useState<Array<{ rank: number; score: number }>>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => shouldBootstrapRankings(pathname));
   const [error, setError] = useState<string | null>(null);
   const [liveGameweek, setLiveGameweek] = useState<LiveGameweekStatus | null>(null);
+  const [syncSeason, setSyncSeason] = useState<string | null>(null);
   const [showLiveData, setShowLiveData] = useState(false);
   const latestRequest = useRef(0);
   const previousPinnedRank = useRef<number | null>(null);
   const pinnedPlayerRef = useRef(pinnedPlayer);
+  const rankingsBootstrapped = useRef(false);
+  const initialPathname = useRef(pathname);
 
   useEffect(() => {
     pinnedPlayerRef.current = pinnedPlayer;
@@ -78,6 +111,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       if (!response.ok) return null;
       const payload = await response.json() as StatusResponse;
       setLiveGameweek(payload.liveGameweek);
+      setSyncSeason(payload.latest?.season ?? null);
       return payload.liveGameweek;
     } catch {
       setLiveGameweek(null);
@@ -97,6 +131,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       const payload = await fetchRankings(nextParams, options);
+      rankingsBootstrapped.current = true;
       if (requestId === latestRequest.current) {
         setData(payload);
         setTableVersion((version) => version + 1);
@@ -149,11 +184,23 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     }
     const timeout = window.setTimeout(() => {
       setParams(savedParams);
-      void loadRankings(savedParams);
       void loadLiveGameweek();
+      if (shouldBootstrapRankings(initialPathname.current)) {
+        void loadRankings(savedParams);
+      } else {
+        setIsLoading(false);
+      }
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [loadLiveGameweek, loadRankings]);
+
+  useEffect(() => {
+    if (!shouldBootstrapRankings(pathname)) return;
+    if (rankingsBootstrapped.current || isLoading) return;
+    void loadRankings(params, {
+      liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
+    });
+  }, [pathname, params, showLiveData, liveGameweek, isLoading, loadRankings]);
 
   function updateParams(nextParams: RankingParams) {
     setParams(nextParams);
@@ -173,6 +220,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
   function updateLiveData(enabled: boolean) {
     setShowLiveData(enabled);
+    if (!rankingsBootstrapped.current) return;
+
     if (!enabled) {
       void loadRankings(params);
       return;
@@ -225,9 +274,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     pinPlayer(null);
   }
 
-  const seasonLabel = data?.season
-    ? `${data.season} · ${data.includesLiveGameweek ? `live through GW${data.currentGameweek ?? "?"}` : `after GW${data.currentGameweek ?? "?"}`}`
-    : "Awaiting first hydration";
+  const seasonLabel = buildSeasonLabel(data, syncSeason, liveGameweek);
 
   return (
     <DashboardContext.Provider
