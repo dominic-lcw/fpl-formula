@@ -34,7 +34,7 @@ const viewMeta: Record<DashboardView, { title: string; description: string }> = 
   },
   forecast: {
     title: "Match forecast",
-    description: "One gameweek table. Book the most likely result on every match, then settle PnL from the scores.",
+    description: "Fixture cards with predicted winners and likely scorelines. Book a whole gameweek from the Bookings tab.",
   },
 };
 

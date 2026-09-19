@@ -10,6 +10,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { highestMatchOutcome, type BookingMarket, type BookingRecord } from "@/lib/booking-settlement";
@@ -86,6 +87,80 @@ function formatKickoff(kickoffTime: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function predictedWinner(fixture: FixtureForecast) {
+  const outcomes = [
+    { label: `${fixture.homeShortName} win`, prob: fixture.homeWinProb },
+    { label: "Draw", prob: fixture.drawProb },
+    { label: `${fixture.awayShortName} win`, prob: fixture.awayWinProb },
+  ];
+  return outcomes.sort((left, right) => right.prob - left.prob)[0]!;
+}
+
+function mostLikelyScoreline(fixture: FixtureForecast) {
+  return fixture.topScorelines[0] ?? null;
+}
+
+function FixtureForecastCard({
+  fixture,
+  booked,
+}: {
+  fixture: FixtureForecast;
+  booked: boolean;
+}) {
+  const winner = predictedWinner(fixture);
+  const scoreline = mostLikelyScoreline(fixture);
+  const kickoff = formatKickoff(fixture.kickoffTime);
+
+  return (
+    <article className="flex h-full flex-col rounded-xl border border-border bg-card p-5 shadow-xs">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          GW{fixture.event ?? "?"}{kickoff ? ` · ${kickoff}` : ""}
+        </p>
+        {booked ? <Badge className="bg-primary/10 text-primary">Booked</Badge> : null}
+      </div>
+
+      <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <div className="text-center">
+          <p className="text-lg font-semibold tracking-tight">{fixture.homeShortName}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{fixture.homeTeam}</p>
+        </div>
+        <span className="rounded-full border px-2.5 py-1 text-xs font-medium text-muted-foreground">vs</span>
+        <div className="text-center">
+          <p className="text-lg font-semibold tracking-tight">{fixture.awayShortName}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{fixture.awayTeam}</p>
+        </div>
+      </div>
+
+      <div className="mt-auto grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Predicted winner</p>
+          <p className="mt-1 text-sm font-semibold">{winner.label}</p>
+          <p className="text-xs text-muted-foreground">{formatPercent(winner.prob)}</p>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Most likely score</p>
+          {scoreline ? (
+            <>
+              <p className="mt-1 text-sm font-semibold">{scoreline.home}-{scoreline.away}</p>
+              <p className="text-xs text-muted-foreground">{formatPercent(scoreline.prob)}</p>
+            </>
+          ) : (
+            <p className="mt-1 text-sm text-muted-foreground">—</p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 border-t pt-3 text-xs text-muted-foreground">
+        <p>Expected {fixture.expectedHomeGoals.toFixed(2)}–{fixture.expectedAwayGoals.toFixed(2)}</p>
+        <p className="mt-1">
+          H/D/A {formatPercent(fixture.homeWinProb)}/{formatPercent(fixture.drawProb)}/{formatPercent(fixture.awayWinProb)}
+        </p>
+      </div>
+    </article>
+  );
 }
 
 function ParameterSlider({
@@ -575,6 +650,14 @@ export function MatchForecastPanel() {
     [data?.upcomingFixtures, resolvedGameweek],
   );
 
+  const openBookingsByFixture = useMemo(() => {
+    const ids = new Set<number>();
+    for (const booking of bookings) {
+      if (booking.status === "open") ids.add(booking.fixtureId);
+    }
+    return ids;
+  }, [bookings]);
+
   const loadBookings = useCallback(async (season?: string | null) => {
     const query = season ? `?season=${encodeURIComponent(season)}` : "";
     const response = await fetch(`/api/bookings${query}`, { cache: "no-store" });
@@ -728,7 +811,7 @@ export function MatchForecastPanel() {
               activeView={subView}
               onNavigate={setSubView}
             />
-            {subView === "fixtures" && data.availableGameweeks.length > 0 ? (
+            {(subView === "fixtures" || subView === "bookings") && data.availableGameweeks.length > 0 ? (
               <GameweekSelect
                 gameweeks={data.availableGameweeks}
                 value={resolvedGameweek}
@@ -740,7 +823,7 @@ export function MatchForecastPanel() {
             {data.season} · {subView === "strengths"
               ? `completed through GW${data.currentGameweek ?? "?"}`
               : subView === "bookings"
-                ? "booking ledger"
+                ? `GW${resolvedGameweek} · book slate`
                 : `GW${resolvedGameweek} · ${gameweekFixtures.length} fixtures`}
             {isLoading ? " · recomputing…" : ""}
           </p>
@@ -749,7 +832,32 @@ export function MatchForecastPanel() {
         {error ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
 
         {subView === "bookings" ? (
-          <BookingLedger bookings={bookings} onCancel={(id) => void removeBet(id)} />
+          <div className="grid gap-5">
+            {gameweekFixtures.length === 0 ? (
+              <div className="rounded-xl border border-dashed py-16 text-center">
+                <p className="font-medium">No fixtures for Gameweek {resolvedGameweek}</p>
+                <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
+              </div>
+            ) : (
+              <GameweekBookingTable
+                gameweek={resolvedGameweek}
+                fixtures={gameweekFixtures}
+                bookings={bookings}
+                stake={stake}
+                defaultOdds={defaultOdds}
+                rowOdds={rowOdds}
+                isBooking={isBooking}
+                onStakeChange={setStake}
+                onDefaultOddsChange={(value) => {
+                  setDefaultOdds(value);
+                  setRowOdds({});
+                }}
+                onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
+                onBookAll={() => void bookGameweek()}
+              />
+            )}
+            <BookingLedger bookings={bookings} onCancel={(id) => void removeBet(id)} />
+          </div>
         ) : subView === "strengths" ? (
           <TeamStrengthsPanel data={data} />
         ) : gameweekFixtures.length === 0 ? (
@@ -758,22 +866,15 @@ export function MatchForecastPanel() {
             <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
           </div>
         ) : (
-          <GameweekBookingTable
-            gameweek={resolvedGameweek}
-            fixtures={gameweekFixtures}
-            bookings={bookings}
-            stake={stake}
-            defaultOdds={defaultOdds}
-            rowOdds={rowOdds}
-            isBooking={isBooking}
-            onStakeChange={setStake}
-            onDefaultOddsChange={(value) => {
-              setDefaultOdds(value);
-              setRowOdds({});
-            }}
-            onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
-            onBookAll={() => void bookGameweek()}
-          />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {gameweekFixtures.map((fixture) => (
+              <FixtureForecastCard
+                key={fixture.fixtureId}
+                fixture={fixture}
+                booked={openBookingsByFixture.has(fixture.fixtureId)}
+              />
+            ))}
+          </div>
         )}
       </div>
     </section>
