@@ -110,17 +110,27 @@ function FixtureForecastCard({
   fixture: FixtureForecast;
   booked: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const winner = predictedWinner(fixture);
   const scoreline = mostLikelyScoreline(fixture);
   const kickoff = formatKickoff(fixture.kickoffTime);
+  const topScorelines = fixture.topScorelines.slice(0, 3);
 
   return (
-    <article className="flex h-full flex-col rounded-xl border border-border bg-card p-5 shadow-xs">
+    <button
+      type="button"
+      aria-expanded={expanded}
+      onClick={() => setExpanded((current) => !current)}
+      className="flex h-full flex-col rounded-xl border border-border bg-card p-5 text-left shadow-xs transition hover:border-primary/40 hover:bg-accent/20"
+    >
       <div className="mb-4 flex items-start justify-between gap-3">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           GW{fixture.event ?? "?"}{kickoff ? ` · ${kickoff}` : ""}
         </p>
-        {booked ? <Badge className="bg-primary/10 text-primary">Booked</Badge> : null}
+        <div className="flex items-center gap-2">
+          {booked ? <Badge className="bg-primary/10 text-primary">Booked</Badge> : null}
+          <ChevronDown className={`size-4 text-muted-foreground transition ${expanded ? "rotate-180" : ""}`} />
+        </div>
       </div>
 
       <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
@@ -154,13 +164,44 @@ function FixtureForecastCard({
         </div>
       </div>
 
-      <div className="mt-4 border-t pt-3 text-xs text-muted-foreground">
-        <p>Expected {fixture.expectedHomeGoals.toFixed(2)}–{fixture.expectedAwayGoals.toFixed(2)}</p>
-        <p className="mt-1">
-          H/D/A {formatPercent(fixture.homeWinProb)}/{formatPercent(fixture.drawProb)}/{formatPercent(fixture.awayWinProb)}
-        </p>
-      </div>
-    </article>
+      {expanded ? (
+        <div className="mt-4 space-y-3 border-t pt-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Top 3 scorelines</p>
+          {topScorelines.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No simulation data.</p>
+          ) : (
+            <div className="grid gap-2">
+              {topScorelines.map((line, index) => (
+                <div key={`${line.home}-${line.away}`} className="grid grid-cols-[1.5rem_3rem_1fr_auto] items-center gap-2 text-sm">
+                  <span className="text-xs text-muted-foreground">{index + 1}</span>
+                  <span className="font-semibold tabular-nums">{line.home}-{line.away}</span>
+                  <div className="h-2 rounded-full bg-muted">
+                    <div
+                      className="h-2 rounded-full bg-primary/70"
+                      style={{ width: `${Math.max(8, line.prob * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs tabular-nums text-muted-foreground">{formatPercent(line.prob)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="grid gap-1 text-xs text-muted-foreground">
+            <p>Expected {fixture.expectedHomeGoals.toFixed(2)}–{fixture.expectedAwayGoals.toFixed(2)}</p>
+            <p>H/D/A {formatPercent(fixture.homeWinProb)}/{formatPercent(fixture.drawProb)}/{formatPercent(fixture.awayWinProb)}</p>
+            <p>Over 2.5 {formatPercent(fixture.over25Prob)} · BTTS {formatPercent(fixture.bttsProb)}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 border-t pt-3 text-xs text-muted-foreground">
+          <p>Expected {fixture.expectedHomeGoals.toFixed(2)}–{fixture.expectedAwayGoals.toFixed(2)}</p>
+          <p className="mt-1">
+            H/D/A {formatPercent(fixture.homeWinProb)}/{formatPercent(fixture.drawProb)}/{formatPercent(fixture.awayWinProb)}
+          </p>
+          <p className="mt-2 font-medium text-primary">Click for top scorelines</p>
+        </div>
+      )}
+    </button>
   );
 }
 
