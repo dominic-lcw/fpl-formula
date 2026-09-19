@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { BookingMarket, type BookingRecord } from "@/lib/booking-settlement";
+import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
