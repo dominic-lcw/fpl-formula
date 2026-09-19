@@ -5,6 +5,7 @@ import {
   ChevronDown,
   LoaderCircle,
   Receipt,
+  RefreshCw,
   Target,
   Trash2,
   TrendingUp,
@@ -388,10 +389,16 @@ function BookingRows({
 
 function BookingLedger({
   bookings,
+  isResolving,
+  resolveMessage,
   onCancel,
+  onResolve,
 }: {
   bookings: BookingRecord[];
+  isResolving: boolean;
+  resolveMessage: string | null;
   onCancel: (id: string) => void;
+  onResolve: () => void;
 }) {
   const totals = bookingTotals(bookings);
 
@@ -417,11 +424,27 @@ function BookingLedger({
         </div>
       </div>
       <Card>
-        <CardHeader>
-          <CardTitle>Booking ledger</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            A booking stays open until the match result is in the dataset. Profit and loss is then settled from the final score.
-          </p>
+        <CardHeader className="gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Booking ledger</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Bookings settle automatically once FPL marks a fixture finished. Use resolve to check provisional or live results too.
+              </p>
+            </div>
+            {totals.openCount > 0 ? (
+              <button
+                type="button"
+                disabled={isResolving}
+                onClick={onResolve}
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
+              >
+                {isResolving ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                Resolve open
+              </button>
+            ) : null}
+          </div>
+          {resolveMessage ? <p className="text-sm text-muted-foreground">{resolveMessage}</p> : null}
         </CardHeader>
         <CardContent>
           <BookingRows bookings={bookings} onCancel={onCancel} />
@@ -556,7 +579,9 @@ export function MatchForecastPanel() {
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isBooking, setIsBooking] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resolveMessage, setResolveMessage] = useState<string | null>(null);
   const [stake, setStake] = useState("10");
   const [defaultOdds, setDefaultOdds] = useState("2.10");
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
@@ -697,6 +722,39 @@ export function MatchForecastPanel() {
     if (data?.season) await loadBookings(data.season);
   }
 
+  async function resolveOpenBookings() {
+    setIsResolving(true);
+    setError(null);
+    setResolveMessage(null);
+    try {
+      const response = await fetch("/api/bookings", { method: "PATCH", cache: "no-store" });
+      const payload = await response.json() as {
+        settled?: number;
+        remaining?: number;
+        bookings?: BookingRecord[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to resolve open bookings.");
+
+      if (payload.bookings) setBookings(payload.bookings);
+      const settled = payload.settled ?? 0;
+      const remaining = payload.remaining ?? 0;
+      if (settled === 0 && remaining > 0) {
+        setResolveMessage(`No results were available yet. ${remaining} booking${remaining === 1 ? "" : "s"} still open.`);
+      } else if (settled > 0) {
+        setResolveMessage(
+          `Settled ${settled} booking${settled === 1 ? "" : "s"}.${remaining > 0 ? ` ${remaining} still open.` : ""}`,
+        );
+      } else {
+        setResolveMessage("All bookings are already settled.");
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to resolve open bookings.");
+    } finally {
+      setIsResolving(false);
+    }
+  }
+
   if (isLoading && !data) {
     return (
       <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">
@@ -749,7 +807,13 @@ export function MatchForecastPanel() {
         {error ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
 
         {subView === "bookings" ? (
-          <BookingLedger bookings={bookings} onCancel={(id) => void removeBet(id)} />
+          <BookingLedger
+            bookings={bookings}
+            isResolving={isResolving}
+            resolveMessage={resolveMessage}
+            onCancel={(id) => void removeBet(id)}
+            onResolve={() => void resolveOpenBookings()}
+          />
         ) : subView === "strengths" ? (
           <TeamStrengthsPanel data={data} />
         ) : gameweekFixtures.length === 0 ? (

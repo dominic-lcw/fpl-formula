@@ -5,6 +5,7 @@ import {
   bookSelections,
   cancelBooking,
   listBookings,
+  resolveOpenBookings,
   type BookingInput,
 } from "@/lib/bookings";
 import { isBookableSelection, isBookingMarket } from "@/lib/booking-settlement";
@@ -196,5 +197,17 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     return errorResponse(error, "Unable to cancel booking.");
+  }
+}
+
+export async function PATCH() {
+  try {
+    const result = await resolveOpenBookings();
+    return NextResponse.json({
+      ...result,
+      bookings: await listBookings(),
+    });
+  } catch (error) {
+    return errorResponse(error, "Unable to resolve open bookings.");
   }
 }
