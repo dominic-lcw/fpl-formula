@@ -1,12 +1,19 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DashboardProvider, useDashboard } from "@/components/dashboard-provider";
+import { FormulaTracker } from "@/components/formula-tracker";
+import { ManagerNewsPanel } from "@/components/manager-news";
+import { MatchForecastPanel } from "@/components/match-forecast";
+import { RankingsView } from "@/components/rankings-view";
+import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { viewFromPathname, viewMeta } from "@/lib/dashboard-nav";
+import { viewMeta, type DashboardView } from "@/lib/dashboard-nav";
 import type { LiveGameweekStatus } from "@/lib/fpl-gameweeks";
+import type { RankingParams } from "@/lib/fpl-types";
+import { sanitiseParams } from "@/lib/scoring";
 
 function liveGameweekLabel(liveGameweek: LiveGameweekStatus) {
   if (liveGameweek.currentGameweekStatus === "in_progress") {
@@ -18,15 +25,77 @@ function liveGameweekLabel(liveGameweek: LiveGameweekStatus) {
   return `Live FPL: GW${liveGameweek.currentGameweek} complete`;
 }
 
-function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const activeView = viewFromPathname(pathname);
+function panelClass(activeView: DashboardView, view: DashboardView) {
+  return activeView === view ? undefined : "hidden";
+}
+
+function DashboardPanels({
+  activeView,
+  onNavigate,
+}: {
+  activeView: DashboardView;
+  onNavigate: (view: DashboardView) => void;
+}) {
+  const { params, updateParams, showLiveData, updateLiveData } = useDashboard();
+  const [mountedViews, setMountedViews] = useState<Set<DashboardView>>(() => new Set(["rankings"]));
+
+  useEffect(() => {
+    setMountedViews((current) => {
+      if (current.has(activeView)) return current;
+      const next = new Set(current);
+      next.add(activeView);
+      return next;
+    });
+  }, [activeView]);
+
+  function applyTrackerParams(nextParams: RankingParams) {
+    updateParams(sanitiseParams(nextParams));
+    onNavigate("rankings");
+  }
+
+  return (
+    <>
+      <div className={panelClass(activeView, "rankings")} aria-hidden={activeView !== "rankings"}>
+        <RankingsView />
+      </div>
+      {mountedViews.has("team") ? (
+        <div className={panelClass(activeView, "team")} aria-hidden={activeView !== "team"}>
+          <TeamAnalysisPanel
+            params={params}
+            showLiveData={showLiveData}
+            onShowLiveDataChange={updateLiveData}
+          />
+        </div>
+      ) : null}
+      {mountedViews.has("tracker") ? (
+        <div className={panelClass(activeView, "tracker")} aria-hidden={activeView !== "tracker"}>
+          <FormulaTracker currentParams={params} onApplyParams={applyTrackerParams} />
+        </div>
+      ) : null}
+      {mountedViews.has("forecast") ? (
+        <div className={panelClass(activeView, "forecast")} aria-hidden={activeView !== "forecast"}>
+          <MatchForecastPanel />
+        </div>
+      ) : null}
+      {mountedViews.has("news") ? (
+        <div className={panelClass(activeView, "news")} aria-hidden={activeView !== "news"}>
+          <ManagerNewsPanel />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function DashboardLayout() {
+  const [activeView, setActiveView] = useState<DashboardView>("rankings");
   const { seasonLabel, liveGameweek } = useDashboard();
   const meta = viewMeta[activeView];
 
   return (
     <SidebarProvider>
       <AppSidebar
+        activeView={activeView}
+        onNavigate={setActiveView}
         seasonLabel={seasonLabel}
         liveLabel={liveGameweek ? liveGameweekLabel(liveGameweek) : null}
       />
@@ -41,17 +110,17 @@ function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 p-4 sm:p-6">
-          {children}
+          <DashboardPanels activeView={activeView} onNavigate={setActiveView} />
         </div>
       </SidebarInset>
     </SidebarProvider>
   );
 }
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+export function DashboardShell() {
   return (
     <DashboardProvider>
-      <DashboardLayout>{children}</DashboardLayout>
+      <DashboardLayout />
     </DashboardProvider>
   );
 }
