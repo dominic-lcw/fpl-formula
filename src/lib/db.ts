@@ -17,7 +17,7 @@ const dataTables = [
   "player_fixture_stats",
   "sync_runs",
 ] as const;
-const userTables = ["bookings"] as const;
+const userTables = ["bookings", "fixture_results"] as const;
 let readConnectionPromise: Promise<DuckDBConnection> | undefined;
 
 const schema = `
@@ -95,6 +95,12 @@ const userTableSchema = `
     model_prob DOUBLE NOT NULL, expected_value DOUBLE NOT NULL,
     notes VARCHAR, booked_at TIMESTAMP NOT NULL, status VARCHAR NOT NULL,
     home_score INTEGER, away_score INTEGER, outcome VARCHAR, pnl DOUBLE, settled_at TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS fixture_results (
+    season VARCHAR NOT NULL, fixture_id INTEGER NOT NULL,
+    team_h_score INTEGER NOT NULL, team_a_score INTEGER NOT NULL,
+    resolved_at TIMESTAMP NOT NULL, source VARCHAR NOT NULL,
+    PRIMARY KEY (season, fixture_id)
   );
 `;
 

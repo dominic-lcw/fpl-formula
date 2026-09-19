@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Trophy } from "lucide-react";
+import { Pin, Search, Trophy } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   searchRankedPlayers,
@@ -8,10 +8,12 @@ import {
 } from "@/lib/mosaic-rankings";
 
 type PlayerRankSearchProps = {
+  pinnedPlayer: { playerId: number; name: string } | null;
   onSelectRank: (rank: number | null) => void;
+  onPinPlayer: (player: RankedPlayerSuggestion | null) => void;
 };
 
-export function PlayerRankSearch({ onSelectRank }: PlayerRankSearchProps) {
+export function PlayerRankSearch({ pinnedPlayer, onSelectRank, onPinPlayer }: PlayerRankSearchProps) {
   const listboxId = useId();
   const requestId = useRef(0);
   const skipNextSearch = useRef(false);
@@ -53,6 +55,15 @@ export function PlayerRankSearch({ onSelectRank }: PlayerRankSearchProps) {
     setQuery(suggestion.player);
     setIsOpen(false);
     onSelectRank(suggestion.rank);
+    onPinPlayer(suggestion);
+  }
+
+  function clearPinnedPlayer() {
+    setQuery("");
+    onSelectRank(null);
+    onPinPlayer(null);
+    setSuggestions([]);
+    setIsOpen(false);
   }
 
   const shouldShowSuggestions = isOpen && query.trim().length > 0;
@@ -86,9 +97,18 @@ export function PlayerRankSearch({ onSelectRank }: PlayerRankSearchProps) {
           aria-controls={listboxId}
           aria-expanded={shouldShowSuggestions}
           role="combobox"
-          placeholder="Find a player’s rank"
-          className="h-9 w-full rounded-md border border-input bg-background py-2 pl-9 pr-3 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          placeholder="Track a player’s rank"
+          className={`h-9 w-full rounded-md border bg-background py-2 pl-9 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring ${pinnedPlayer ? "border-cyan-400/40 pr-16" : "border-input pr-3"}`}
         />
+        {pinnedPlayer ? (
+          <button
+            type="button"
+            onClick={clearPinnedPlayer}
+            className="absolute right-2 top-1.5 inline-flex items-center gap-1 rounded-md bg-cyan-400/10 px-2 py-1 text-xs font-medium text-cyan-200"
+          >
+            <Pin size={12} /> Pinned
+          </button>
+        ) : null}
       </label>
       {shouldShowSuggestions ? (
         <div
@@ -101,7 +121,7 @@ export function PlayerRankSearch({ onSelectRank }: PlayerRankSearchProps) {
           {!isSearching && !suggestions.length ? <p className="px-3 py-2 text-sm text-muted-foreground">No ranked players found.</p> : null}
           {suggestions.map((suggestion) => (
             <button
-              key={`${suggestion.rank}-${suggestion.player}`}
+              key={`${suggestion.playerId}-${suggestion.rank}`}
               type="button"
               role="option"
               aria-selected={false}

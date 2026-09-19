@@ -25,12 +25,13 @@ let bookSelection: typeof import("../src/lib/bookings").bookSelection;
 let bookSelections: typeof import("../src/lib/bookings").bookSelections;
 let cancelBooking: typeof import("../src/lib/bookings").cancelBooking;
 let listBookings: typeof import("../src/lib/bookings").listBookings;
+let resolveOpenBookings: typeof import("../src/lib/bookings").resolveOpenBookings;
 let createHydrationConnection: typeof import("../src/lib/db").createHydrationConnection;
 let exportParquetDataset: typeof import("../src/lib/db").exportParquetDataset;
 let resetReadConnection: typeof import("../src/lib/db").resetReadConnection;
 
 beforeAll(async () => {
-  ({ bookSelection, bookSelections, cancelBooking, listBookings } = await import("../src/lib/bookings"));
+  ({ bookSelection, bookSelections, cancelBooking, listBookings, resolveOpenBookings } = await import("../src/lib/bookings"));
   ({ createHydrationConnection, exportParquetDataset, resetReadConnection } = await import("../src/lib/db"));
 });
 
@@ -126,6 +127,53 @@ describe("booking settlement", () => {
     resetReadConnection();
     expect((await listBookings("2025-26")).some((entry) => entry.id === open.id)).toBe(false);
     await expect(cancelBooking(won.id)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("keeps provisional results open until resolve is called", async () => {
+    resetReadConnection();
+    const connection = await createHydrationConnection();
+    await connection.run(
+      `INSERT INTO fixtures (season, fixture_id, event, team_h, team_a, team_h_score, team_a_score, finished)
+       VALUES ('2025-26', 303, 5, 4, 6, 3, 0, false)`,
+    );
+    await exportParquetDataset(connection);
+    connection.closeSync();
+    resetReadConnection();
+
+    const provisional = await bookSelection({
+      fixtureId: 303,
+      season: "2025-26",
+      homeTeam: "Brentford",
+      awayTeam: "Chelsea",
+      market: "1X2",
+      selection: "home",
+      stake: 10,
+      odds: 2.4,
+      forecast,
+    });
+
+    const stillOpen = await listBookings("2025-26");
+    expect(stillOpen.find((entry) => entry.id === provisional.id)).toMatchObject({
+      status: "open",
+      homeScore: null,
+      awayScore: null,
+    });
+
+    resetReadConnection();
+    const resolved = await resolveOpenBookings();
+    expect(resolved).toMatchObject({ settled: 1, remaining: 0, persistedFixtures: 1 });
+    await expect(stat(path.join(testUserDirectory, "bookings.parquet"))).resolves.toBeTruthy();
+    await expect(stat(path.join(testUserDirectory, "fixture_results.parquet"))).resolves.toBeTruthy();
+
+    resetReadConnection();
+    const settled = await listBookings("2025-26");
+    expect(settled.find((entry) => entry.id === provisional.id)).toMatchObject({
+      status: "settled",
+      outcome: "won",
+      homeScore: 3,
+      awayScore: 0,
+      pnl: 14,
+    });
   });
 
   it("books several top results in one write and skips ones already open", async () => {

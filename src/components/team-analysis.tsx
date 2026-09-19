@@ -38,7 +38,7 @@ function Suggestion({ player }: { player: RankedPlayer }) {
     <li className="flex items-center justify-between gap-3 py-2 text-sm">
       <div className="min-w-0">
         <p className="truncate font-medium">{player.name}</p>
-        <p className="text-xs text-muted-foreground">{player.teamShortName} · £{player.cost.toFixed(1)}m</p>
+        <p className="text-xs text-muted-foreground">{player.teamShortName} · ${player.cost.toFixed(1)}m</p>
       </div>
       <span className="score-badge" data-tone={scoreTone(player.score)}>{player.score.toFixed(1)}</span>
     </li>

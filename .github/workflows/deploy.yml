@@ -46,6 +46,9 @@ jobs:
       - name: Hydrate FPL data
         run: pnpm hydrate
 
+      - name: Fetch manager news
+        run: pnpm fetch:manager-words
+
       - name: Build production package
         run: |
           pnpm build
@@ -82,6 +85,7 @@ jobs:
           health_url="https://${WEBAPP_NAME}.azurewebsites.net/api/health"
           status_url="https://${WEBAPP_NAME}.azurewebsites.net/api/status"
           rankings_url="https://${WEBAPP_NAME}.azurewebsites.net/api/rankings?minMinutes=0"
+          manager_words_url="https://${WEBAPP_NAME}.azurewebsites.net/api/manager-words"
           temp_dir="$(mktemp -d)"
           trap 'rm -rf "$temp_dir"' EXIT
           deadline=$((SECONDS + 180))
@@ -94,16 +98,21 @@ jobs:
             if [ "$health_status" = "200" ]; then
               status_code="$(curl --silent --output "$temp_dir/status.json" --write-out "%{http_code}" --connect-timeout 5 --max-time 10 "$status_url" || true)"
               rankings_code="$(curl --silent --output "$temp_dir/rankings.json" --write-out "%{http_code}" --connect-timeout 5 --max-time 10 "$rankings_url" || true)"
+              manager_words_code="$(curl --silent --output "$temp_dir/manager-words.json" --write-out "%{http_code}" --connect-timeout 5 --max-time 10 "$manager_words_url" || true)"
 
-              if [ "$status_code" = "200" ] && [ "$rankings_code" = "200" ] && node -e '
+              if [ "$status_code" = "200" ] && [ "$rankings_code" = "200" ] && [ "$manager_words_code" = "200" ] && node -e '
                 const fs = require("node:fs");
                 const status = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
                 const rankings = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+                const managerWords = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
                 if (status.latest?.status !== "complete" || rankings.rankings?.length < 1) {
                   throw new Error("FPL data is incomplete or rankings are empty.");
                 }
-              ' "$temp_dir/status.json" "$temp_dir/rankings.json"; then
-                echo "Production service is healthy with hydrated FPL rankings."
+                if (!Array.isArray(managerWords.items) || managerWords.items.length < 1) {
+                  throw new Error("Manager news dataset is missing or empty.");
+                }
+              ' "$temp_dir/status.json" "$temp_dir/rankings.json" "$temp_dir/manager-words.json"; then
+                echo "Production service is healthy with hydrated FPL rankings and manager news."
                 exit 0
               fi
             fi

@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "hydrate": "tsx scripts/hydrate-fpl.ts",
-    "hydrate:current": "tsx scripts/hydrate-fpl.ts --current-only"
+    "hydrate:current": "tsx scripts/hydrate-fpl.ts --current-only",
+    "fetch:manager-words": "tsx scripts/fetch-manager-words.ts"
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.5-r.4",
