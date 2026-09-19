@@ -1,6 +1,8 @@
 "use client";
 
-import { BarChart3, GitBranch, LineChart, Target, UsersRound } from "lucide-react";
+import { BarChart3, GitBranch, LineChart, Newspaper, Target, UsersRound } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Sidebar,
@@ -16,56 +18,66 @@ import {
   SidebarRail,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
-
-export type DashboardView = "rankings" | "team" | "tracker" | "forecast";
+import { dashboardRoutes, viewFromPathname } from "@/lib/dashboard-nav";
 
 const navItems = [
   {
     id: "rankings" as const,
     title: "Rankings",
+    href: dashboardRoutes.rankings,
     icon: BarChart3,
   },
   {
     id: "team" as const,
     title: "My team",
+    href: dashboardRoutes.team,
     icon: UsersRound,
   },
   {
     id: "tracker" as const,
     title: "Formula tracker",
+    href: dashboardRoutes.tracker,
     icon: LineChart,
   },
   {
     id: "forecast" as const,
     title: "Match forecast",
+    href: dashboardRoutes.forecast,
     icon: Target,
+  },
+  {
+    id: "news" as const,
+    title: "Manager news",
+    href: dashboardRoutes.news,
+    icon: Newspaper,
   },
 ];
 
 export function AppSidebar({
-  activeView,
-  onNavigate,
   seasonLabel,
   liveLabel,
 }: {
-  activeView: DashboardView;
-  onNavigate: (view: DashboardView) => void;
   seasonLabel?: string;
   liveLabel?: string | null;
 }) {
+  const pathname = usePathname();
+  const activeView = viewFromPathname(pathname);
+
   return (
     <Sidebar variant="inset" collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" className="pointer-events-none">
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <BarChart3 className="size-4" />
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">FPL Formula Lab</span>
-                <span className="truncate text-xs text-muted-foreground">Explainable rankings</span>
-              </div>
+            <SidebarMenuButton size="lg" asChild>
+              <Link href={dashboardRoutes.rankings}>
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                  <BarChart3 className="size-4" />
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-semibold">FPL Formula Lab</span>
+                  <span className="truncate text-xs text-muted-foreground">Explainable rankings</span>
+                </div>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -78,12 +90,14 @@ export function AppSidebar({
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton
+                    asChild
                     isActive={activeView === item.id}
-                    onClick={() => onNavigate(item.id)}
                     tooltip={item.title}
                   >
-                    <item.icon />
-                    <span>{item.title}</span>
+                    <Link href={item.href}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

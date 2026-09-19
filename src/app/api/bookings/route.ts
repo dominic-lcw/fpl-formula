@@ -5,8 +5,10 @@ import {
   bookSelections,
   cancelBooking,
   listBookings,
+  resolveOpenBookings,
   type BookingInput,
 } from "@/lib/bookings";
+import { getGameweekSlate } from "@/lib/gameweek-slate";
 import { isBookableSelection, isBookingMarket } from "@/lib/booking-settlement";
 import {
   DEFAULT_FORECAST_PARAMS,
@@ -42,9 +44,32 @@ function errorResponse(error: unknown, fallback: string) {
   );
 }
 
+function forecastParamsFromQuery(searchParams: URLSearchParams): ForecastParams {
+  return {
+    lookbackGameweeks: numberParam(searchParams.get("lookback"), DEFAULT_FORECAST_PARAMS.lookbackGameweeks),
+    homeAdvantage: numberParam(searchParams.get("homeAdvantage"), DEFAULT_FORECAST_PARAMS.homeAdvantage),
+    correlation: numberParam(searchParams.get("correlation"), DEFAULT_FORECAST_PARAMS.correlation),
+    simulations: Math.round(numberParam(searchParams.get("simulations"), DEFAULT_FORECAST_PARAMS.simulations)),
+    fplStrengthBlend: numberParam(searchParams.get("fplBlend"), DEFAULT_FORECAST_PARAMS.fplStrengthBlend),
+  };
+}
+
 export async function GET(request: NextRequest) {
   const season = request.nextUrl.searchParams.get("season") ?? undefined;
+  const gameweekParam = request.nextUrl.searchParams.get("gameweek");
+  const gameweek = gameweekParam ? Number(gameweekParam) : NaN;
+
   try {
+    if (season && Number.isInteger(gameweek) && gameweek > 0) {
+      const bookings = await listBookings(season);
+      const slate = await getGameweekSlate(
+        season,
+        gameweek,
+        forecastParamsFromQuery(request.nextUrl.searchParams),
+        bookings,
+      );
+      return NextResponse.json({ bookings, ...slate });
+    }
     return NextResponse.json({ bookings: await listBookings(season) });
   } catch (error) {
     return errorResponse(error, "Unable to load bookings.");
@@ -196,5 +221,17 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     return errorResponse(error, "Unable to cancel booking.");
+  }
+}
+
+export async function PATCH() {
+  try {
+    const result = await resolveOpenBookings();
+    return NextResponse.json({
+      ...result,
+      bookings: await listBookings(),
+    });
+  } catch (error) {
+    return errorResponse(error, "Unable to resolve open bookings.");
   }
 }

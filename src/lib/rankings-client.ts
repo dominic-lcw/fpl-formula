@@ -1,12 +1,15 @@
 import type { Position, RankedPlayer, RankingParams, RankingResponse } from "@/lib/fpl-types";
 
 export type RankedPlayerSuggestion = {
+  playerId: number;
   rank: number;
   player: string;
   club: string;
   position: Position;
   score: number;
 };
+
+export type PinnedPlayerRank = RankedPlayerSuggestion;
 
 export function rankingsSearchParams(
   params: RankingParams,
@@ -67,12 +70,29 @@ export function searchRankings(rankings: RankedPlayer[], term: string): RankedPl
     })
     .slice(0, 8)
     .map((player) => ({
+      playerId: player.playerId,
       rank: player.rank,
       player: player.name,
       club: player.teamShortName,
       position: player.position,
       score: player.score,
     }));
+}
+
+export function getPinnedPlayerRank(rankings: RankedPlayer[], playerId: number): PinnedPlayerRank | null {
+  if (!Number.isInteger(playerId) || playerId <= 0) return null;
+
+  const player = rankings.find((entry) => entry.playerId === playerId);
+  if (!player) return null;
+
+  return {
+    playerId: player.playerId,
+    rank: player.rank,
+    player: player.name,
+    club: player.teamShortName,
+    position: player.position,
+    score: player.score,
+  };
 }
 
 export function formatNextFixtures(player: RankedPlayer) {

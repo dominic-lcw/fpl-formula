@@ -1,5 +1,6 @@
-import { RankingsDashboard } from "@/components/rankings-dashboard";
+import { redirect } from "next/navigation";
+import { dashboardRoutes } from "@/lib/dashboard-nav";
 
 export default function Home() {
-  return <RankingsDashboard />;
+  redirect(dashboardRoutes.rankings);
 }
