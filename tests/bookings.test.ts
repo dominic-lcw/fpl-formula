@@ -161,14 +161,18 @@ describe("booking settlement", () => {
 
     resetReadConnection();
     const resolved = await resolveOpenBookings();
-    expect(resolved).toMatchObject({ settled: 1, remaining: 0 });
+    expect(resolved).toMatchObject({ settled: 1, remaining: 0, persistedFixtures: 1 });
+    await expect(stat(path.join(testUserDirectory, "bookings.parquet"))).resolves.toBeTruthy();
+    await expect(stat(path.join(testUserDirectory, "fixture_results.parquet"))).resolves.toBeTruthy();
 
+    resetReadConnection();
     const settled = await listBookings("2025-26");
     expect(settled.find((entry) => entry.id === provisional.id)).toMatchObject({
       status: "settled",
       outcome: "won",
       homeScore: 3,
       awayScore: 0,
+      pnl: 14,
     });
   });
 

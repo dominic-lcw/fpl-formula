@@ -429,7 +429,7 @@ function BookingLedger({
             <div>
               <CardTitle>Booking ledger</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Bookings settle automatically once FPL marks a fixture finished. Use resolve to check provisional or live results too.
+                Bookings settle automatically once FPL marks a fixture finished. Resolve checks provisional or live results and saves scores to disk.
               </p>
             </div>
             {totals.openCount > 0 ? (
@@ -731,19 +731,25 @@ export function MatchForecastPanel() {
       const payload = await response.json() as {
         settled?: number;
         remaining?: number;
+        persistedFixtures?: number;
         bookings?: BookingRecord[];
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error ?? "Unable to resolve open bookings.");
 
       if (payload.bookings) setBookings(payload.bookings);
+      else if (data?.season) await loadBookings(data.season);
+
       const settled = payload.settled ?? 0;
       const remaining = payload.remaining ?? 0;
+      const persistedFixtures = payload.persistedFixtures ?? 0;
       if (settled === 0 && remaining > 0) {
         setResolveMessage(`No results were available yet. ${remaining} booking${remaining === 1 ? "" : "s"} still open.`);
       } else if (settled > 0) {
         setResolveMessage(
-          `Settled ${settled} booking${settled === 1 ? "" : "s"}.${remaining > 0 ? ` ${remaining} still open.` : ""}`,
+          `Settled and saved ${settled} booking${settled === 1 ? "" : "s"}`
+          + (persistedFixtures > 0 ? ` and ${persistedFixtures} match result${persistedFixtures === 1 ? "" : "s"}` : "")
+          + `.${remaining > 0 ? ` ${remaining} still open.` : " Results persist across reloads."}`,
         );
       } else {
         setResolveMessage("All bookings are already settled.");

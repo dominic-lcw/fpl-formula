@@ -74,6 +74,11 @@ type FinishedScore = {
 type ResolveOpenBookingsResult = {
   settled: number;
   remaining: number;
+  persistedFixtures: number;
+};
+
+type SettlementScore = FinishedScore & {
+  source: "parquet-finished" | "parquet-provisional" | "persisted" | "fpl-live";
 };
 
 const FPL_FIXTURES_API = "https://fantasy.premierleague.com/api/fixtures/";
@@ -166,6 +171,59 @@ async function finishedScoresFromParquet(includeProvisional = false) {
   );
 }
 
+async function persistedFixtureResults() {
+  return query<FinishedScore>(
+    `SELECT fixture_id, season, team_h_score, team_a_score FROM fixture_results`,
+  );
+}
+
+function mergeSettlementScores(entries: SettlementScore[]) {
+  const scoreByFixture = new Map<string, SettlementScore>();
+  for (const entry of entries) {
+    scoreByFixture.set(scoreKey(entry.season, entry.fixture_id), entry);
+  }
+  return scoreByFixture;
+}
+
+async function autoSettlementScores() {
+  return mergeSettlementScores([
+    ...(await finishedScoresFromParquet(false)).map((score) => ({
+      ...score,
+      source: "parquet-finished" as const,
+    })),
+    ...(await persistedFixtureResults()).map((score) => ({
+      ...score,
+      source: "persisted" as const,
+    })),
+  ]);
+}
+
+async function persistResolvedFixtureResults(
+  connection: Awaited<ReturnType<typeof getConnection>>,
+  results: SettlementScore[],
+) {
+  if (results.length === 0) return;
+
+  const resolvedAt = new Date().toISOString();
+  for (const result of results) {
+    if (result.team_h_score === null || result.team_a_score === null) continue;
+    await connection.run(
+      `INSERT OR REPLACE INTO fixture_results
+        (season, fixture_id, team_h_score, team_a_score, resolved_at, source)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        result.season,
+        result.fixture_id,
+        result.team_h_score,
+        result.team_a_score,
+        resolvedAt,
+        result.source,
+      ],
+    );
+  }
+  await persistUserTable(connection, "fixture_results");
+}
+
 function isSettleableFplFixture(fixture: FplFixtureResponse) {
   if (fixture.team_h_score === null || fixture.team_a_score === null) return false;
   return fixture.finished || fixture.finished_provisional === true || (fixture.minutes ?? 0) >= 90;
@@ -198,9 +256,7 @@ function scoreKey(season: string, fixtureId: number) {
   return `${season}:${fixtureId}`;
 }
 
-async function settleOpenBookingsWithScores(
-  scoreByFixture: Map<string, Pick<FinishedScore, "team_h_score" | "team_a_score">>,
-) {
+async function settleOpenBookingsWithScores(scoreByFixture: Map<string, Pick<FinishedScore, "team_h_score" | "team_a_score">>) {
   const open = await query<BookingRow>(`SELECT * FROM bookings WHERE status = 'open'`);
   if (open.length === 0) return 0;
 
@@ -235,17 +291,19 @@ async function settleOpenBookingsWithScores(
 }
 
 export async function settleOpenBookings() {
-  const scores = await finishedScoresFromParquet(false);
-  const scoreByFixture = new Map(
-    scores.map((score) => [scoreKey(score.season, score.fixture_id), score]),
-  );
-  return settleOpenBookingsWithScores(scoreByFixture);
+  return settleOpenBookingsWithScores(await autoSettlementScores());
 }
 
 export async function resolveOpenBookings(): Promise<ResolveOpenBookingsResult> {
-  const scoreByFixture = new Map<string, Pick<FinishedScore, "team_h_score" | "team_a_score">>();
+  const scoreByFixture = await autoSettlementScores();
+  const newlyResolvedScores: SettlementScore[] = [];
+
   for (const score of await finishedScoresFromParquet(true)) {
-    scoreByFixture.set(scoreKey(score.season, score.fixture_id), score);
+    const key = scoreKey(score.season, score.fixture_id);
+    if (scoreByFixture.has(key)) continue;
+    const entry: SettlementScore = { ...score, source: "parquet-provisional" };
+    scoreByFixture.set(key, entry);
+    newlyResolvedScores.push(entry);
   }
 
   const openBeforeLive = await query<Pick<BookingRow, "season" | "fixture_id">>(
@@ -258,16 +316,33 @@ export async function resolveOpenBookings(): Promise<ResolveOpenBookingsResult> 
   const liveScores = await liveFixtureScores([...new Set(unresolvedFixtureIds)]);
   for (const row of openBeforeLive) {
     const liveScore = liveScores.get(row.fixture_id);
-    if (!liveScore) continue;
-    scoreByFixture.set(scoreKey(row.season, row.fixture_id), liveScore);
+    if (!liveScore || liveScore.team_h_score === null || liveScore.team_a_score === null) continue;
+    const key = scoreKey(row.season, row.fixture_id);
+    if (scoreByFixture.has(key)) continue;
+    const entry: SettlementScore = {
+      season: row.season,
+      fixture_id: row.fixture_id,
+      team_h_score: liveScore.team_h_score,
+      team_a_score: liveScore.team_a_score,
+      source: "fpl-live",
+    };
+    scoreByFixture.set(key, entry);
+    newlyResolvedScores.push(entry);
   }
 
   const settled = await settleOpenBookingsWithScores(scoreByFixture);
+
+  if (newlyResolvedScores.length > 0) {
+    const connection = await getConnection();
+    await persistResolvedFixtureResults(connection, newlyResolvedScores);
+    resetReadConnection();
+  }
+
   const remaining = (await query<{ count: number }>(
     `SELECT count(*)::INTEGER AS count FROM bookings WHERE status = 'open'`,
   ))[0]?.count ?? 0;
 
-  return { settled, remaining };
+  return { settled, remaining, persistedFixtures: newlyResolvedScores.length };
 }
 
 export async function listBookings(season?: string) {
