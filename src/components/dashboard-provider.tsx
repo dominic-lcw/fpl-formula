@@ -3,7 +3,13 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { Position, RankingParams } from "@/lib/fpl-types";
-import { calculateMosaicRankings, type MosaicRankingData } from "@/lib/mosaic-rankings";
+import {
+  calculateMosaicRankings,
+  getPinnedPlayerRank,
+  type MosaicRankingData,
+  type RankedPlayerSuggestion,
+} from "@/lib/mosaic-rankings";
+import type { PinnedPlayerSnapshot } from "@/components/player-rank-tracker";
 import { DEFAULT_PARAMS, sanitiseParams } from "@/lib/scoring";
 
 type StatusResponse = {
@@ -28,6 +34,11 @@ type DashboardContextValue = {
   updateLiveData: (enabled: boolean) => void;
   refreshRankings: () => void;
   seasonLabel: string;
+  pinnedPlayer: { playerId: number; name: string } | null;
+  pinnedSnapshot: PinnedPlayerSnapshot | null;
+  rankHistory: Array<{ rank: number; score: number }>;
+  pinPlayer: (player: RankedPlayerSuggestion | null) => void;
+  unpinPlayer: () => void;
 };
 
 const DashboardContext = createContext<DashboardContextValue | null>(null);
@@ -47,11 +58,20 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [team, setTeamState] = useState("ALL");
   const [tableVersion, setTableVersion] = useState(0);
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
+  const [pinnedPlayer, setPinnedPlayer] = useState<{ playerId: number; name: string } | null>(null);
+  const [pinnedSnapshot, setPinnedSnapshot] = useState<PinnedPlayerSnapshot | null>(null);
+  const [rankHistory, setRankHistory] = useState<Array<{ rank: number; score: number }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveGameweek, setLiveGameweek] = useState<LiveGameweekStatus | null>(null);
   const [showLiveData, setShowLiveData] = useState(false);
   const latestRequest = useRef(0);
+  const previousPinnedRank = useRef<number | null>(null);
+  const pinnedPlayerRef = useRef(pinnedPlayer);
+
+  useEffect(() => {
+    pinnedPlayerRef.current = pinnedPlayer;
+  }, [pinnedPlayer]);
 
   const loadLiveGameweek = useCallback(async (): Promise<LiveGameweekStatus | null> => {
     try {
@@ -82,8 +102,34 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam, options);
       if (requestId === latestRequest.current) {
         setData(payload);
-        setSelectedRank(null);
         setTableVersion((version) => version + 1);
+
+        const activePinnedPlayer = pinnedPlayerRef.current;
+        if (activePinnedPlayer) {
+          const snapshot = await getPinnedPlayerRank(activePinnedPlayer.playerId);
+          if (requestId !== latestRequest.current) return;
+
+          if (snapshot) {
+            const delta = previousPinnedRank.current === null
+              ? null
+              : previousPinnedRank.current - snapshot.rank;
+            previousPinnedRank.current = snapshot.rank;
+            setPinnedSnapshot({
+              rank: snapshot.rank,
+              score: snapshot.score,
+              club: snapshot.club,
+              position: snapshot.position,
+              delta,
+            });
+            setRankHistory((history) => [...history.slice(-19), { rank: snapshot.rank, score: snapshot.score }]);
+            setSelectedRank(snapshot.rank);
+          } else {
+            setPinnedSnapshot(null);
+            setSelectedRank(null);
+          }
+        } else {
+          setSelectedRank(null);
+        }
       }
     } catch (reason) {
       if (requestId === latestRequest.current) {
@@ -157,6 +203,37 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     });
   }
 
+  function pinPlayer(player: RankedPlayerSuggestion | null) {
+    const nextPinnedPlayer = player
+      ? { playerId: player.playerId, name: player.player }
+      : null;
+    setPinnedPlayer(nextPinnedPlayer);
+    pinnedPlayerRef.current = nextPinnedPlayer;
+
+    if (!player) {
+      previousPinnedRank.current = null;
+      setPinnedSnapshot(null);
+      setRankHistory([]);
+      setSelectedRank(null);
+      return;
+    }
+
+    previousPinnedRank.current = player.rank;
+    setPinnedSnapshot({
+      rank: player.rank,
+      score: player.score,
+      club: player.club,
+      position: player.position,
+      delta: null,
+    });
+    setRankHistory([{ rank: player.rank, score: player.score }]);
+    setSelectedRank(player.rank);
+  }
+
+  function unpinPlayer() {
+    pinPlayer(null);
+  }
+
   const seasonLabel = data?.season
     ? `${data.season} · ${data.includesLiveGameweek ? `live through GW${data.currentGameweek ?? "?"}` : `after GW${data.currentGameweek ?? "?"}`}`
     : "Awaiting first hydration";
@@ -181,6 +258,11 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         updateLiveData,
         refreshRankings,
         seasonLabel,
+        pinnedPlayer,
+        pinnedSnapshot,
+        rankHistory,
+        pinPlayer,
+        unpinPlayer,
       }}
     >
       {children}
