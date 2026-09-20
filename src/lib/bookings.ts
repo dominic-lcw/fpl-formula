@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
-import path from "node:path";
 import {
   gradeSelection,
   isBookableSelection,
@@ -12,7 +10,7 @@ import {
   type BookingStatus,
 } from "@/lib/booking-settlement";
 import { expectedValue, modelProbabilityForMarket, type FixtureForecast } from "@/lib/match-forecast-model";
-import { getConnection, parquetDirectory, persistUserTable, query, resetReadConnection } from "@/lib/db";
+import { getConnection, persistUserTable, query } from "@/lib/db";
 
 export type { BookingMarket, BookingOutcome, BookingRecord, BookingStatus };
 export { gradeSelection, isBookableSelection, profitAndLoss };
@@ -82,6 +80,7 @@ type SettlementScore = FinishedScore & {
 };
 
 const FPL_FIXTURES_API = "https://fantasy.premierleague.com/api/fixtures/";
+const FPL_FIXTURES_CACHE_TTL_MS = 30_000;
 
 type FplFixtureResponse = {
   id: number;
@@ -91,6 +90,8 @@ type FplFixtureResponse = {
   finished_provisional?: boolean;
   minutes?: number;
 };
+
+let fplFixturesCache: { fetchedAt: number; fixtures: FplFixtureResponse[] } | null = null;
 
 function mapBookingRow(row: BookingRow): BookingRecord {
   return {
@@ -152,21 +153,13 @@ export function buildBookingRecord(input: BookingInput): BookingRecord {
   };
 }
 
-async function finishedScoresFromParquet(includeProvisional = false) {
-  const filePath = path.join(parquetDirectory, "fixtures.parquet");
-  try {
-    await stat(filePath);
-  } catch {
-    return [] as FinishedScore[];
-  }
-
-  const escaped = filePath.replaceAll("'", "''");
+async function finishedScoresFromDatabase(includeProvisional = false) {
   const where = includeProvisional
     ? "team_h_score IS NOT NULL AND team_a_score IS NOT NULL"
     : "finished = true AND team_h_score IS NOT NULL AND team_a_score IS NOT NULL";
   return query<FinishedScore>(
     `SELECT fixture_id, season, team_h_score, team_a_score
-     FROM read_parquet('${escaped}')
+     FROM fixtures
      WHERE ${where}`,
   );
 }
@@ -187,7 +180,7 @@ function mergeSettlementScores(entries: SettlementScore[]) {
 
 async function autoSettlementScores() {
   return mergeSettlementScores([
-    ...(await finishedScoresFromParquet(false)).map((score) => ({
+    ...(await finishedScoresFromDatabase(false)).map((score) => ({
       ...score,
       source: "parquet-finished" as const,
     })),
@@ -229,8 +222,11 @@ function isSettleableFplFixture(fixture: FplFixtureResponse) {
   return fixture.finished || fixture.finished_provisional === true || (fixture.minutes ?? 0) >= 90;
 }
 
-async function liveFixtureScores(fixtureIds: number[]) {
-  if (fixtureIds.length === 0) return new Map<number, Pick<FinishedScore, "team_h_score" | "team_a_score">>();
+async function fetchFplFixtures() {
+  const now = Date.now();
+  if (fplFixturesCache && now - fplFixturesCache.fetchedAt < FPL_FIXTURES_CACHE_TTL_MS) {
+    return fplFixturesCache.fixtures;
+  }
 
   const response = await fetch(FPL_FIXTURES_API, {
     headers: { Accept: "application/json", "User-Agent": "fpl-formula-booking-resolver" },
@@ -240,6 +236,14 @@ async function liveFixtureScores(fixtureIds: number[]) {
   }
 
   const fixtures = await response.json() as FplFixtureResponse[];
+  fplFixturesCache = { fetchedAt: now, fixtures };
+  return fixtures;
+}
+
+async function liveFixtureScores(fixtureIds: number[]) {
+  if (fixtureIds.length === 0) return new Map<number, Pick<FinishedScore, "team_h_score" | "team_a_score">>();
+
+  const fixtures = await fetchFplFixtures();
   const wanted = new Set(fixtureIds);
   const scores = new Map<number, Pick<FinishedScore, "team_h_score" | "team_a_score">>();
   for (const fixture of fixtures) {
@@ -285,7 +289,6 @@ async function settleOpenBookingsWithScores(scoreByFixture: Map<string, Pick<Fin
 
   if (settled > 0) {
     await persistUserTable(connection, "bookings");
-    resetReadConnection();
   }
   return settled;
 }
@@ -298,7 +301,7 @@ export async function resolveOpenBookings(): Promise<ResolveOpenBookingsResult> 
   const scoreByFixture = await autoSettlementScores();
   const newlyResolvedScores: SettlementScore[] = [];
 
-  for (const score of await finishedScoresFromParquet(true)) {
+  for (const score of await finishedScoresFromDatabase(true)) {
     const key = scoreKey(score.season, score.fixture_id);
     if (scoreByFixture.has(key)) continue;
     const entry: SettlementScore = { ...score, source: "parquet-provisional" };
@@ -335,7 +338,6 @@ export async function resolveOpenBookings(): Promise<ResolveOpenBookingsResult> 
   if (newlyResolvedScores.length > 0) {
     const connection = await getConnection();
     await persistResolvedFixtureResults(connection, newlyResolvedScores);
-    resetReadConnection();
   }
 
   const remaining = (await query<{ count: number }>(
@@ -345,8 +347,14 @@ export async function resolveOpenBookings(): Promise<ResolveOpenBookingsResult> 
   return { settled, remaining, persistedFixtures: newlyResolvedScores.length };
 }
 
-export async function listBookings(season?: string) {
-  await settleOpenBookings();
+export type ListBookingsOptions = {
+  skipSettlement?: boolean;
+};
+
+export async function listBookings(season?: string, options?: ListBookingsOptions) {
+  if (!options?.skipSettlement) {
+    await settleOpenBookings();
+  }
   const rows = season
     ? await query<BookingRow>(
         `SELECT * FROM bookings WHERE season = ? ORDER BY booked_at DESC`,
@@ -356,39 +364,54 @@ export async function listBookings(season?: string) {
   return rows.map(mapBookingRow);
 }
 
-async function insertBooking(connection: Awaited<ReturnType<typeof getConnection>>, booking: BookingRecord) {
+const BOOKING_INSERT_COLUMNS = `
+  id, fixture_id, season, home_team, away_team, market, selection, stake, odds,
+  expected_home_goals, expected_away_goals, model_prob, expected_value, notes, booked_at,
+  status, home_score, away_score, outcome, pnl, settled_at
+`;
+
+function bookingInsertValues(booking: BookingRecord) {
+  return [
+    booking.id,
+    booking.fixtureId,
+    booking.season,
+    booking.homeTeam,
+    booking.awayTeam,
+    booking.market,
+    booking.selection,
+    booking.stake,
+    booking.odds,
+    booking.expectedHomeGoals,
+    booking.expectedAwayGoals,
+    booking.modelProb,
+    booking.expectedValue,
+    booking.notes,
+    booking.bookedAt,
+    "open",
+    null,
+    null,
+    null,
+    null,
+    null,
+  ];
+}
+
+async function insertBookings(connection: Awaited<ReturnType<typeof getConnection>>, bookings: BookingRecord[]) {
+  if (bookings.length === 0) return;
+
+  const placeholders = bookings.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+  const values = bookings.flatMap((booking) => bookingInsertValues(booking));
   await connection.run(
-    `INSERT INTO bookings (
-      id, fixture_id, season, home_team, away_team, market, selection, stake, odds,
-      expected_home_goals, expected_away_goals, model_prob, expected_value, notes, booked_at,
-      status, home_score, away_score, outcome, pnl, settled_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', NULL, NULL, NULL, NULL, NULL)`,
-    [
-      booking.id,
-      booking.fixtureId,
-      booking.season,
-      booking.homeTeam,
-      booking.awayTeam,
-      booking.market,
-      booking.selection,
-      booking.stake,
-      booking.odds,
-      booking.expectedHomeGoals,
-      booking.expectedAwayGoals,
-      booking.modelProb,
-      booking.expectedValue,
-      booking.notes,
-      booking.bookedAt,
-    ],
+    `INSERT INTO bookings (${BOOKING_INSERT_COLUMNS}) VALUES ${placeholders}`,
+    values,
   );
 }
 
 export async function bookSelection(input: BookingInput) {
   const booking = buildBookingRecord(input);
   const connection = await getConnection();
-  await insertBooking(connection, booking);
+  await insertBookings(connection, [booking]);
   await persistUserTable(connection, "bookings");
-  resetReadConnection();
   return booking;
 }
 
@@ -405,11 +428,8 @@ export async function bookSelections(inputs: BookingInput[]) {
   if (records.length === 0) return [];
 
   const connection = await getConnection();
-  for (const booking of records) {
-    await insertBooking(connection, booking);
-  }
+  await insertBookings(connection, records);
   await persistUserTable(connection, "bookings");
-  resetReadConnection();
   return records;
 }
 
@@ -424,5 +444,4 @@ export async function cancelBooking(id: string) {
   const connection = await getConnection();
   await connection.run(`DELETE FROM bookings WHERE id = ? AND status = 'open'`, [id]);
   await persistUserTable(connection, "bookings");
-  resetReadConnection();
 }
