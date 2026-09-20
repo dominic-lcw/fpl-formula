@@ -794,6 +794,7 @@ export function MatchForecastPanel() {
     season?: string | null,
     gameweek?: number,
     forecastParams: ForecastParams = DEFAULT_FORECAST_PARAMS,
+    options?: { skipSettlement?: boolean },
   ) => {
     if (!season) return;
     const query = new URLSearchParams({
@@ -805,6 +806,7 @@ export function MatchForecastPanel() {
       fplBlend: String(forecastParams.fplStrengthBlend),
     });
     if (gameweek) query.set("gameweek", String(gameweek));
+    if (options?.skipSettlement) query.set("skipSettlement", "1");
 
     const response = await fetch(`/api/bookings?${query.toString()}`, { cache: "no-store" });
     if (!response.ok) return;
@@ -929,7 +931,7 @@ export function MatchForecastPanel() {
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to book the gameweek.");
-      await loadBookings(data.season, resolvedGameweek, params);
+      await loadBookings(data.season, resolvedGameweek, params, { skipSettlement: true });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to book the gameweek.");
     } finally {
@@ -963,7 +965,7 @@ export function MatchForecastPanel() {
       if (!response.ok) throw new Error(payload.error ?? "Unable to resolve open bookings.");
 
       if (data?.season) {
-        await loadBookings(data.season, resolvedGameweek, params);
+        await loadBookings(data.season, resolvedGameweek, params, { skipSettlement: true });
       } else if (payload.bookings) {
         setBookings(payload.bookings);
       }

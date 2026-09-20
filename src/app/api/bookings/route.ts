@@ -59,18 +59,16 @@ export async function GET(request: NextRequest) {
   const gameweekParam = request.nextUrl.searchParams.get("gameweek");
   const gameweek = gameweekParam ? Number(gameweekParam) : NaN;
 
+  const skipSettlement = request.nextUrl.searchParams.get("skipSettlement") === "1";
+
   try {
     if (season && Number.isInteger(gameweek) && gameweek > 0) {
-      const bookings = await listBookings(season);
-      const slate = await getGameweekSlate(
-        season,
-        gameweek,
-        forecastParamsFromQuery(request.nextUrl.searchParams),
-        bookings,
-      );
+      const forecastParams = forecastParamsFromQuery(request.nextUrl.searchParams);
+      const bookings = await listBookings(season, { skipSettlement });
+      const slate = await getGameweekSlate(season, gameweek, forecastParams, bookings);
       return NextResponse.json({ bookings, ...slate });
     }
-    return NextResponse.json({ bookings: await listBookings(season) });
+    return NextResponse.json({ bookings: await listBookings(season, { skipSettlement }) });
   } catch (error) {
     return errorResponse(error, "Unable to load bookings.");
   }
@@ -229,7 +227,7 @@ export async function PATCH() {
     const result = await resolveOpenBookings();
     return NextResponse.json({
       ...result,
-      bookings: await listBookings(),
+      bookings: await listBookings(undefined, { skipSettlement: true }),
     });
   } catch (error) {
     return errorResponse(error, "Unable to resolve open bookings.");
