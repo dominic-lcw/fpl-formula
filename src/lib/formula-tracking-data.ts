@@ -1,60 +1,15 @@
-import { loadMosaicDataset } from "@/lib/mosaic-rankings";
+import { query } from "@/lib/db";
 import { sanitiseParams } from "@/lib/scoring";
-import type { RankingParams } from "@/lib/fpl-types";
+import type { FormulaStrategy, StrategyBacktest } from "@/lib/formula-tracking-types";
 
-export type FormulaStrategy = {
-  id: string;
-  name: string;
-  description: string;
-  params: RankingParams;
-  source: "starter" | "saved";
-};
-
-export type BacktestRound = {
-  gameweek: number;
-  pickedPlayers: number;
-  points: number;
-};
-
-export type StrategyBacktest = {
-  strategyId: string;
-  totalPoints: number;
-  averagePoints: number;
-  completeSelections: number;
-  rounds: BacktestRound[];
-};
+export type { BacktestRound, FormulaStrategy, StrategyBacktest } from "@/lib/formula-tracking-types";
+export { STARTER_STRATEGIES } from "@/lib/formula-tracking-types";
 
 type BacktestRow = {
   target_gw: number;
   picked_players: number;
   round_points: number;
 };
-
-const starterStrategies = [
-  ["balanced", "Balanced", "A practical blend of recent form, team momentum, and the next three fixtures.", 5, 3, 45, 20, 35],
-  ["form-surge", "Form surge", "Rewards the sharpest recent player and team form over a short horizon.", 3, 2, 65, 25, 10],
-  ["fixture-hunter", "Fixture hunter", "Leans hard into the upcoming schedule while retaining a form check.", 4, 5, 25, 15, 60],
-  ["steady-signal", "Steady signal", "Uses a longer form window to soften one-gameweek volatility.", 8, 4, 50, 30, 20],
-  ["player-first", "Player first", "Prioritises individual underlying numbers and FPL returns.", 6, 3, 75, 15, 10],
-  ["team-momentum", "Team momentum", "Gives more weight to attacking and defensive team performance.", 5, 3, 35, 50, 15],
-  ["next-up", "Next up", "Optimises for the immediate two-gameweek fixture opportunity.", 4, 2, 35, 15, 50],
-  ["all-rounder", "All-rounder", "A diversified signal designed to avoid any single component dominating.", 6, 4, 40, 30, 30],
-] as const;
-
-export const STARTER_STRATEGIES: FormulaStrategy[] = starterStrategies.map(
-  ([id, name, description, formWindow, fixtureHorizon, individual, team, fixtures]) => ({
-    id,
-    name,
-    description,
-    params: {
-      formWindow,
-      fixtureHorizon,
-      minMinutes: 0,
-      weights: { individual, team, fixtures },
-    },
-    source: "starter",
-  }),
-);
 
 function escapedSqlString(value: string) {
   return value.replaceAll("'", "''");
@@ -77,32 +32,29 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
     context AS (
       SELECT
         sync.season,
-        concat(cast(cast(substr(sync.season, 1, 4) AS INTEGER) - 1 AS VARCHAR), '-', substr(sync.season, 3, 2)) AS prior_season,
+        concat(cast(cast(substring(sync.season, 1, 4) AS INTEGER) - 1 AS VARCHAR), '-', substring(sync.season, 3, 2)) AS prior_season,
         coalesce(max(f.event), 0) AS completed_gameweek
       FROM current_sync sync
       LEFT JOIN fixtures f ON f.season = sync.season AND f.finished = true
-      GROUP BY ALL
+      GROUP BY sync.season
     ),
     rounds AS (
       SELECT target_gw
-      FROM context, range(1, completed_gameweek + 1) AS gameweeks(target_gw)
+      FROM context, generate_series(1, context.completed_gameweek) AS gameweeks(target_gw)
     ),
     player_features AS (
       SELECT
         r.target_gw,
         p.player_id,
         p.position,
+        max(p.team_id) AS team_id,
         coalesce(sum(history.minutes), 0) AS minutes,
         coalesce(sum(history.total_points), 0) AS form_points,
         coalesce(sum(history.expected_goals), 0) AS xg,
         coalesce(sum(history.expected_assists), 0) AS xa,
         coalesce(sum(history.defensive_contribution), 0) AS defcon,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN summary.total_points / summary.minutes * 90 END), 0) AS last_year_per_90,
-        coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_year_xgi_per_90,
-        coalesce(
-          arg_max(CASE WHEN history.was_home THEN played_fixture.team_h ELSE played_fixture.team_a END, history.event),
-          any_value(p.team_id)
-        ) AS team_id
+        coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_year_xgi_per_90
       FROM players p
       CROSS JOIN context c
       CROSS JOIN rounds r
@@ -112,10 +64,8 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
         ON history.season = c.season
         AND history.player_id = p.player_id
         AND history.event BETWEEN greatest(1, r.target_gw - ${params.formWindow}) AND r.target_gw - 1
-      LEFT JOIN fixtures played_fixture
-        ON played_fixture.season = history.season AND played_fixture.fixture_id = history.fixture_id
       WHERE p.season = c.season
-      GROUP BY ALL
+      GROUP BY r.target_gw, p.player_id, p.position
     ),
     match_form AS (
       SELECT r.target_gw, f.team_h AS team_id,
@@ -145,7 +95,7 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
         ON history.season = c.season
         AND history.event BETWEEN greatest(1, r.target_gw - ${params.formWindow}) AND r.target_gw - 1
       JOIN fixtures fixture ON fixture.season = history.season AND fixture.fixture_id = history.fixture_id
-      GROUP BY ALL
+      GROUP BY r.target_gw, CASE WHEN history.was_home THEN fixture.team_h ELSE fixture.team_a END
     ),
     team_form AS (
       SELECT
@@ -155,7 +105,7 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
         (3 - avg(m.conceded)) + coalesce(max(p.defcon), 0) * 0.03 AS defence
       FROM match_form m
       LEFT JOIN player_team_form p ON p.target_gw = m.target_gw AND p.team_id = m.team_id
-      GROUP BY ALL
+      GROUP BY m.target_gw, m.team_id
     ),
     upcoming AS (
       SELECT r.target_gw, f.team_h AS team_id, f.team_h_difficulty AS difficulty, true AS was_home
@@ -176,7 +126,7 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
         team_id,
         avg((6 - difficulty + CASE WHEN was_home THEN 0.5 ELSE -0.5 END) * 20) AS fixture_raw
       FROM upcoming
-      GROUP BY ALL
+      GROUP BY target_gw, team_id
     ),
     round_outcomes AS (
       SELECT
@@ -186,7 +136,7 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
       FROM context c CROSS JOIN rounds r
       JOIN player_fixture_stats outcome
         ON outcome.season = c.season AND outcome.event = r.target_gw
-      GROUP BY ALL
+      GROUP BY r.target_gw, outcome.player_id
     ),
     raw_scores AS (
       SELECT
@@ -231,7 +181,7 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
       coalesce(sum(selected.actual_points), 0) AS round_points
     FROM rounds r
     LEFT JOIN selected ON selected.target_gw = r.target_gw AND selected.pick_rank <= 15
-    GROUP BY ALL
+    GROUP BY r.target_gw
     ORDER BY target_gw
   `;
 }
@@ -239,15 +189,9 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
 export async function calculateFormulaBacktests(
   strategies: FormulaStrategy[],
 ): Promise<StrategyBacktest[]> {
-  const dataset = await loadMosaicDataset();
-  const coordinator = dataset.coordinator();
-
   const reports: StrategyBacktest[] = [];
   for (const strategy of strategies) {
-    const rows = await coordinator.query(buildFormulaBacktestQuery(strategy), {
-      type: "json",
-      cache: false,
-    }) as BacktestRow[];
+    const rows = await query<BacktestRow>(buildFormulaBacktestQuery(strategy));
     const rounds = rows.map((row) => ({
       gameweek: Number(row.target_gw),
       pickedPlayers: Number(row.picked_players),

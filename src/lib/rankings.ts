@@ -8,6 +8,12 @@ import type {
 } from "@/lib/fpl-types";
 import { scorePlayers } from "@/lib/scoring";
 
+export type RankingQueryOptions = {
+  liveGameweek?: number | null;
+  position?: Position | "ALL";
+  team?: string;
+};
+
 type PlayerRow = {
   player_id: number;
   player_code: number | null;
@@ -44,7 +50,7 @@ type FixtureRow = {
 
 export async function getRankingData(
   params: RankingParams,
-  options: { liveGameweek?: number | null } = {},
+  options: RankingQueryOptions = {},
 ): Promise<RankingResponse> {
   const sync = await query<{ season: string; synced_at: Date | string }>(
     `SELECT season, max(completed_at) AS synced_at
@@ -86,7 +92,7 @@ export async function getRankingData(
          ON s.season = p.season AND s.player_id = p.player_id
          AND s.event BETWEEN ? AND ?
        WHERE p.season = ?
-       GROUP BY ALL`,
+       GROUP BY p.player_id, p.player_code, p.web_name, t.name, t.short_name, p.position, p.now_cost, p.status, p.chance_of_playing_next_round, p.team_id`,
       [priorSeason, startGameweek, currentGameweek, season],
     ),
     query<TeamFormRow>(
@@ -182,13 +188,21 @@ export async function getRankingData(
     };
   });
 
+  let rankings = scorePlayers(playerFeatures, params);
+  if (options.position && options.position !== "ALL") {
+    rankings = rankings.filter((player) => player.position === options.position);
+  }
+  if (options.team && options.team !== "ALL") {
+    rankings = rankings.filter((player) => player.team === options.team);
+  }
+
   return {
     season,
     currentGameweek,
     includesLiveGameweek,
     syncedAt:
       current.synced_at instanceof Date ? current.synced_at.toISOString() : String(current.synced_at),
-    rankings: scorePlayers(playerFeatures, params),
+    rankings,
     availableTeams: teams.map((team) => team.name),
   };
 }

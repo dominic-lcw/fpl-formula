@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
-import path from "node:path";
 import {
   gradeSelection,
   isBookableSelection,
@@ -12,7 +10,7 @@ import {
   type BookingStatus,
 } from "@/lib/booking-settlement";
 import { expectedValue, modelProbabilityForMarket, type FixtureForecast } from "@/lib/match-forecast-model";
-import { getConnection, parquetDirectory, persistUserTable, query, resetReadConnection } from "@/lib/db";
+import { query, run } from "@/lib/db";
 
 export type { BookingMarket, BookingOutcome, BookingRecord, BookingStatus };
 export { gradeSelection, isBookableSelection, profitAndLoss };
@@ -78,7 +76,7 @@ type ResolveOpenBookingsResult = {
 };
 
 type SettlementScore = FinishedScore & {
-  source: "parquet-finished" | "parquet-provisional" | "persisted" | "fpl-live";
+  source: "postgres-finished" | "postgres-provisional" | "persisted" | "fpl-live";
 };
 
 const FPL_FIXTURES_API = "https://fantasy.premierleague.com/api/fixtures/";
@@ -152,22 +150,12 @@ export function buildBookingRecord(input: BookingInput): BookingRecord {
   };
 }
 
-async function finishedScoresFromParquet(includeProvisional = false) {
-  const filePath = path.join(parquetDirectory, "fixtures.parquet");
-  try {
-    await stat(filePath);
-  } catch {
-    return [] as FinishedScore[];
-  }
-
-  const escaped = filePath.replaceAll("'", "''");
+async function finishedScoresFromDatabase(includeProvisional = false) {
   const where = includeProvisional
     ? "team_h_score IS NOT NULL AND team_a_score IS NOT NULL"
     : "finished = true AND team_h_score IS NOT NULL AND team_a_score IS NOT NULL";
   return query<FinishedScore>(
-    `SELECT fixture_id, season, team_h_score, team_a_score
-     FROM read_parquet('${escaped}')
-     WHERE ${where}`,
+    `SELECT fixture_id, season, team_h_score, team_a_score FROM fixtures WHERE ${where}`,
   );
 }
 
@@ -187,9 +175,9 @@ function mergeSettlementScores(entries: SettlementScore[]) {
 
 async function autoSettlementScores() {
   return mergeSettlementScores([
-    ...(await finishedScoresFromParquet(false)).map((score) => ({
+    ...(await finishedScoresFromDatabase(false)).map((score) => ({
       ...score,
-      source: "parquet-finished" as const,
+      source: "postgres-finished" as const,
     })),
     ...(await persistedFixtureResults()).map((score) => ({
       ...score,
@@ -198,19 +186,20 @@ async function autoSettlementScores() {
   ]);
 }
 
-async function persistResolvedFixtureResults(
-  connection: Awaited<ReturnType<typeof getConnection>>,
-  results: SettlementScore[],
-) {
+async function persistResolvedFixtureResults(results: SettlementScore[]) {
   if (results.length === 0) return;
 
   const resolvedAt = new Date().toISOString();
   for (const result of results) {
     if (result.team_h_score === null || result.team_a_score === null) continue;
-    await connection.run(
-      `INSERT OR REPLACE INTO fixture_results
-        (season, fixture_id, team_h_score, team_a_score, resolved_at, source)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+    await run(
+      `INSERT INTO fixture_results (season, fixture_id, team_h_score, team_a_score, resolved_at, source)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (season, fixture_id) DO UPDATE SET
+         team_h_score = EXCLUDED.team_h_score,
+         team_a_score = EXCLUDED.team_a_score,
+         resolved_at = EXCLUDED.resolved_at,
+         source = EXCLUDED.source`,
       [
         result.season,
         result.fixture_id,
@@ -221,7 +210,6 @@ async function persistResolvedFixtureResults(
       ],
     );
   }
-  await persistUserTable(connection, "fixture_results");
 }
 
 function isSettleableFplFixture(fixture: FplFixtureResponse) {
@@ -260,7 +248,6 @@ async function settleOpenBookingsWithScores(scoreByFixture: Map<string, Pick<Fin
   const open = await query<BookingRow>(`SELECT * FROM bookings WHERE status = 'open'`);
   if (open.length === 0) return 0;
 
-  const connection = await getConnection();
   const settledAt = new Date().toISOString();
   let settled = 0;
 
@@ -274,7 +261,7 @@ async function settleOpenBookingsWithScores(scoreByFixture: Map<string, Pick<Fin
     const outcome = gradeSelection(row.market, row.selection, homeScore, awayScore);
     if (!outcome) continue;
 
-    await connection.run(
+    await run(
       `UPDATE bookings
        SET status = 'settled', home_score = ?, away_score = ?, outcome = ?, pnl = ?, settled_at = ?
        WHERE id = ? AND status = 'open'`,
@@ -283,10 +270,6 @@ async function settleOpenBookingsWithScores(scoreByFixture: Map<string, Pick<Fin
     settled += 1;
   }
 
-  if (settled > 0) {
-    await persistUserTable(connection, "bookings");
-    resetReadConnection();
-  }
   return settled;
 }
 
@@ -298,10 +281,10 @@ export async function resolveOpenBookings(): Promise<ResolveOpenBookingsResult> 
   const scoreByFixture = await autoSettlementScores();
   const newlyResolvedScores: SettlementScore[] = [];
 
-  for (const score of await finishedScoresFromParquet(true)) {
+  for (const score of await finishedScoresFromDatabase(true)) {
     const key = scoreKey(score.season, score.fixture_id);
     if (scoreByFixture.has(key)) continue;
-    const entry: SettlementScore = { ...score, source: "parquet-provisional" };
+    const entry: SettlementScore = { ...score, source: "postgres-provisional" };
     scoreByFixture.set(key, entry);
     newlyResolvedScores.push(entry);
   }
@@ -333,9 +316,7 @@ export async function resolveOpenBookings(): Promise<ResolveOpenBookingsResult> 
   const settled = await settleOpenBookingsWithScores(scoreByFixture);
 
   if (newlyResolvedScores.length > 0) {
-    const connection = await getConnection();
-    await persistResolvedFixtureResults(connection, newlyResolvedScores);
-    resetReadConnection();
+    await persistResolvedFixtureResults(newlyResolvedScores);
   }
 
   const remaining = (await query<{ count: number }>(
@@ -356,8 +337,8 @@ export async function listBookings(season?: string) {
   return rows.map(mapBookingRow);
 }
 
-async function insertBooking(connection: Awaited<ReturnType<typeof getConnection>>, booking: BookingRecord) {
-  await connection.run(
+async function insertBooking(booking: BookingRecord) {
+  await run(
     `INSERT INTO bookings (
       id, fixture_id, season, home_team, away_team, market, selection, stake, odds,
       expected_home_goals, expected_away_goals, model_prob, expected_value, notes, booked_at,
@@ -385,10 +366,7 @@ async function insertBooking(connection: Awaited<ReturnType<typeof getConnection
 
 export async function bookSelection(input: BookingInput) {
   const booking = buildBookingRecord(input);
-  const connection = await getConnection();
-  await insertBooking(connection, booking);
-  await persistUserTable(connection, "bookings");
-  resetReadConnection();
+  await insertBooking(booking);
   return booking;
 }
 
@@ -404,12 +382,9 @@ export async function bookSelections(inputs: BookingInput[]) {
     .map((input) => buildBookingRecord(input));
   if (records.length === 0) return [];
 
-  const connection = await getConnection();
   for (const booking of records) {
-    await insertBooking(connection, booking);
+    await insertBooking(booking);
   }
-  await persistUserTable(connection, "bookings");
-  resetReadConnection();
   return records;
 }
 
@@ -421,8 +396,5 @@ export async function cancelBooking(id: string) {
     throw new BookingRequestError("Settled bookings stay on the ledger.", 409);
   }
 
-  const connection = await getConnection();
-  await connection.run(`DELETE FROM bookings WHERE id = ? AND status = 'open'`, [id]);
-  await persistUserTable(connection, "bookings");
-  resetReadConnection();
+  await run(`DELETE FROM bookings WHERE id = ? AND status = 'open'`, [id]);
 }

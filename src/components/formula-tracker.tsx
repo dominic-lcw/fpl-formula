@@ -4,11 +4,10 @@ import { BookmarkPlus, Database, LoaderCircle, Play, SlidersHorizontal, Trash2, 
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  calculateFormulaBacktests,
   STARTER_STRATEGIES,
   type FormulaStrategy,
   type StrategyBacktest,
-} from "@/lib/formula-tracking-data";
+} from "@/lib/formula-tracking-types";
 import { sanitiseParams } from "@/lib/scoring";
 import type { RankingParams } from "@/lib/fpl-types";
 
@@ -154,7 +153,14 @@ export function FormulaTracker({
     setIsRunning(true);
     setError(null);
     try {
-      setReports(await calculateFormulaBacktests(selectedStrategies));
+      const response = await fetch("/api/formula-backtest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strategies: selectedStrategies }),
+      });
+      const payload = await response.json() as { reports?: StrategyBacktest[]; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to run the formula tracker.");
+      setReports(payload.reports ?? []);
     } catch (reason) {
       setReports([]);
       setError(reason instanceof Error ? reason.message : "Unable to run the formula tracker.");

@@ -15,6 +15,10 @@ param githubRepository string = 'dominic-lcw@42367021/fpl-formula@1350268343'
 @description('GitHub Actions environment used by the deployment job.')
 param githubEnvironment string = 'production'
 
+@description('Administrator password for the PostgreSQL flexible server.')
+@secure()
+param postgresAdminPassword string = uniqueString(subscription().id, appResourceGroupName, 'fpl-postgres-admin')
+
 var resourceToken = toLower(uniqueString(subscription().id, location, environmentName))
 var cicdResourceGroupName = 'azrg${resourceToken}'
 var tags = {
@@ -32,6 +36,17 @@ resource cicdResourceGroup 'Microsoft.Resources/resourceGroups@2023-07-01-previe
   tags: tags
 }
 
+module postgres './modules/postgresql.bicep' = {
+  name: 'azdeppg${resourceToken}'
+  scope: appResourceGroup
+  params: {
+    location: location
+    resourceToken: resourceToken
+    tags: tags
+    administratorLoginPassword: postgresAdminPassword
+  }
+}
+
 module appService './modules/app-service.bicep' = {
   name: 'azdepapp${resourceToken}'
   scope: appResourceGroup
@@ -39,6 +54,7 @@ module appService './modules/app-service.bicep' = {
     location: location
     resourceToken: resourceToken
     tags: tags
+    databaseUrl: postgres.outputs.connectionString
   }
 }
 
@@ -65,6 +81,9 @@ module pipelineRoles './modules/pipeline-roles.bicep' = {
 
 output webAppName string = appService.outputs.webAppName
 output webAppUrl string = appService.outputs.webAppUrl
+output postgresServerName string = postgres.outputs.serverName
+output postgresFqdn string = postgres.outputs.serverFqdn
+output databaseName string = postgres.outputs.databaseName
 output resourceGroupName string = appResourceGroup.name
 output cicdResourceGroupName string = cicdResourceGroup.name
 output pipelineClientId string = pipelineIdentity.outputs.clientId

@@ -3,6 +3,8 @@ targetScope = 'resourceGroup'
 param location string
 param resourceToken string
 param tags object
+@secure()
+param databaseUrl string
 
 var appServicePlanName = 'azasp${resourceToken}'
 var webAppName = 'azweb${resourceToken}'
@@ -87,12 +89,8 @@ resource webApp 'Microsoft.Web/sites@2026-07-15' = {
           value: applicationInsights.properties.ConnectionString
         }
         {
-          name: 'FPL_PARQUET_DIR'
-          value: '/home/site/wwwroot/data/parquet'
-        }
-        {
-          name: 'FPL_USER_DATA_DIR'
-          value: '/home/fpl-formula'
+          name: 'DATABASE_URL'
+          value: databaseUrl
         }
         {
           name: 'NODE_ENV'
