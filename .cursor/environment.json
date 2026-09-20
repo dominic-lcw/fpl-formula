@@ -1,0 +1,6 @@
+{
+  "install": "pnpm install",
+  "repositoryDependencies": [
+    "github.com/dominic-lcw/fpl-assistant"
+  ]
+}
