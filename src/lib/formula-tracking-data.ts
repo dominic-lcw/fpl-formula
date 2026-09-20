@@ -1,11 +1,20 @@
 import { query } from "@/lib/db";
-import { sanitiseParams } from "@/lib/scoring";
-import type { FormulaStrategy, StrategyBacktest } from "@/lib/formula-tracking-types";
+import {
+  sanitiseParams,
+  TRACKER_PRESET_STRATEGIES,
+  type FormulaStrategy,
+} from "@/lib/scoring";
+import type { BacktestRound, StrategyBacktest } from "@/lib/formula-tracking-cache";
 
-export type { BacktestRound, FormulaStrategy, StrategyBacktest } from "@/lib/formula-tracking-types";
-export { STARTER_STRATEGIES } from "@/lib/formula-tracking-types";
+export type { BacktestRound, StrategyBacktest } from "@/lib/formula-tracking-cache";
+export type { FormulaStrategy } from "@/lib/scoring";
+export { TRACKER_PRESET_STRATEGIES };
+
+/** @deprecated Use TRACKER_PRESET_STRATEGIES instead. */
+export const STARTER_STRATEGIES = TRACKER_PRESET_STRATEGIES;
 
 type BacktestRow = {
+  strategy_id: string;
   target_gw: number;
   picked_players: number;
   round_points: number;
@@ -15,11 +24,30 @@ function escapedSqlString(value: string) {
   return value.replaceAll("'", "''");
 }
 
-export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
-  const params = sanitiseParams(strategy.params);
-  const totalWeight =
-    params.weights.individual + params.weights.team + params.weights.fixtures || 1;
-  const strategyId = escapedSqlString(strategy.id);
+function buildStrategyValuesClause(strategies: FormulaStrategy[]) {
+  return strategies
+    .map((strategy) => {
+      const params = sanitiseParams(strategy.params);
+      const totalWeight =
+        params.weights.individual + params.weights.team + params.weights.fixtures || 1;
+      return `(
+        '${escapedSqlString(strategy.id)}',
+        ${params.formWindow},
+        ${params.fixtureHorizon},
+        ${params.minMinutes},
+        ${params.weights.individual},
+        ${params.weights.team},
+        ${params.weights.fixtures},
+        ${totalWeight}
+      )`;
+    })
+    .join(",\n      ");
+}
+
+export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
+  if (strategies.length === 0) {
+    throw new Error("At least one formula is required for a backtest.");
+  }
 
   return `
     WITH current_sync AS (
@@ -42,8 +70,24 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
       SELECT target_gw
       FROM context, generate_series(1, context.completed_gameweek) AS gameweeks(target_gw)
     ),
+    strategies AS (
+      SELECT *
+      FROM (VALUES
+      ${buildStrategyValuesClause(strategies)}
+      ) AS configured(
+        strategy_id,
+        form_window,
+        fixture_horizon,
+        min_minutes,
+        w_individual,
+        w_team,
+        w_fixtures,
+        total_weight
+      )
+    ),
     player_features AS (
       SELECT
+        s.strategy_id,
         r.target_gw,
         p.player_id,
         p.position,
@@ -58,75 +102,80 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
       FROM players p
       CROSS JOIN context c
       CROSS JOIN rounds r
+      CROSS JOIN strategies s
       LEFT JOIN player_season_summaries summary
         ON summary.season = c.prior_season AND summary.player_code = p.player_code
       LEFT JOIN player_fixture_stats history
         ON history.season = c.season
         AND history.player_id = p.player_id
-        AND history.event BETWEEN greatest(1, r.target_gw - ${params.formWindow}) AND r.target_gw - 1
+        AND history.event BETWEEN greatest(1, r.target_gw - s.form_window) AND r.target_gw - 1
       WHERE p.season = c.season
-      GROUP BY r.target_gw, p.player_id, p.position
+      GROUP BY s.strategy_id, r.target_gw, p.player_id, p.position
     ),
     match_form AS (
-      SELECT r.target_gw, f.team_h AS team_id,
+      SELECT s.strategy_id, r.target_gw, f.team_h AS team_id,
              CASE WHEN f.team_h_score > f.team_a_score THEN 3 WHEN f.team_h_score = f.team_a_score THEN 1 ELSE 0 END AS points,
              f.team_h_score AS scored, f.team_a_score AS conceded
-      FROM context c CROSS JOIN rounds r
+      FROM context c CROSS JOIN rounds r CROSS JOIN strategies s
       JOIN fixtures f ON f.season = c.season
         AND f.finished = true
-        AND f.event BETWEEN greatest(1, r.target_gw - ${params.formWindow}) AND r.target_gw - 1
+        AND f.event BETWEEN greatest(1, r.target_gw - s.form_window) AND r.target_gw - 1
       UNION ALL
-      SELECT r.target_gw, f.team_a AS team_id,
+      SELECT s.strategy_id, r.target_gw, f.team_a AS team_id,
              CASE WHEN f.team_a_score > f.team_h_score THEN 3 WHEN f.team_a_score = f.team_h_score THEN 1 ELSE 0 END AS points,
              f.team_a_score AS scored, f.team_h_score AS conceded
-      FROM context c CROSS JOIN rounds r
+      FROM context c CROSS JOIN rounds r CROSS JOIN strategies s
       JOIN fixtures f ON f.season = c.season
         AND f.finished = true
-        AND f.event BETWEEN greatest(1, r.target_gw - ${params.formWindow}) AND r.target_gw - 1
+        AND f.event BETWEEN greatest(1, r.target_gw - s.form_window) AND r.target_gw - 1
     ),
     player_team_form AS (
       SELECT
+        s.strategy_id,
         r.target_gw,
         CASE WHEN history.was_home THEN fixture.team_h ELSE fixture.team_a END AS team_id,
         coalesce(sum(history.expected_goals + history.expected_assists), 0) AS xgi,
         coalesce(sum(history.defensive_contribution), 0) AS defcon
-      FROM context c CROSS JOIN rounds r
+      FROM context c CROSS JOIN rounds r CROSS JOIN strategies s
       JOIN player_fixture_stats history
         ON history.season = c.season
-        AND history.event BETWEEN greatest(1, r.target_gw - ${params.formWindow}) AND r.target_gw - 1
+        AND history.event BETWEEN greatest(1, r.target_gw - s.form_window) AND r.target_gw - 1
       JOIN fixtures fixture ON fixture.season = history.season AND fixture.fixture_id = history.fixture_id
-      GROUP BY r.target_gw, CASE WHEN history.was_home THEN fixture.team_h ELSE fixture.team_a END
+      GROUP BY s.strategy_id, r.target_gw, CASE WHEN history.was_home THEN fixture.team_h ELSE fixture.team_a END
     ),
     team_form AS (
       SELECT
+        m.strategy_id,
         m.target_gw,
         m.team_id,
         avg(m.points) + avg(m.scored) * 0.35 + coalesce(max(p.xgi), 0) * 0.1 AS attack,
         (3 - avg(m.conceded)) + coalesce(max(p.defcon), 0) * 0.03 AS defence
       FROM match_form m
-      LEFT JOIN player_team_form p ON p.target_gw = m.target_gw AND p.team_id = m.team_id
-      GROUP BY m.target_gw, m.team_id
+      LEFT JOIN player_team_form p
+        ON p.strategy_id = m.strategy_id AND p.target_gw = m.target_gw AND p.team_id = m.team_id
+      GROUP BY m.strategy_id, m.target_gw, m.team_id
     ),
     upcoming AS (
-      SELECT r.target_gw, f.team_h AS team_id, f.team_h_difficulty AS difficulty, true AS was_home
-      FROM context c CROSS JOIN rounds r
+      SELECT s.strategy_id, r.target_gw, f.team_h AS team_id, f.team_h_difficulty AS difficulty, true AS was_home
+      FROM context c CROSS JOIN rounds r CROSS JOIN strategies s
       JOIN fixtures f ON f.season = c.season
         AND f.event >= r.target_gw
-        AND f.event < r.target_gw + ${params.fixtureHorizon}
+        AND f.event < r.target_gw + s.fixture_horizon
       UNION ALL
-      SELECT r.target_gw, f.team_a AS team_id, f.team_a_difficulty AS difficulty, false AS was_home
-      FROM context c CROSS JOIN rounds r
+      SELECT s.strategy_id, r.target_gw, f.team_a AS team_id, f.team_a_difficulty AS difficulty, false AS was_home
+      FROM context c CROSS JOIN rounds r CROSS JOIN strategies s
       JOIN fixtures f ON f.season = c.season
         AND f.event >= r.target_gw
-        AND f.event < r.target_gw + ${params.fixtureHorizon}
+        AND f.event < r.target_gw + s.fixture_horizon
     ),
     fixture_metrics AS (
       SELECT
+        strategy_id,
         target_gw,
         team_id,
         avg((6 - difficulty + CASE WHEN was_home THEN 0.5 ELSE -0.5 END) * 20) AS fixture_raw
       FROM upcoming
-      GROUP BY target_gw, team_id
+      GROUP BY strategy_id, target_gw, team_id
     ),
     round_outcomes AS (
       SELECT
@@ -141,6 +190,11 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
     raw_scores AS (
       SELECT
         pf.*,
+        s.min_minutes,
+        s.w_individual,
+        s.w_team,
+        s.w_fixtures,
+        s.total_weight,
         coalesce(outcome.actual_points, 0) AS actual_points,
         (pf.xg + pf.xa) * 0.55
           + pf.form_points * 0.3
@@ -150,62 +204,87 @@ export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
           + coalesce(tf.defence, 0) * CASE WHEN pf.position IN ('GKP', 'DEF') THEN 0.6 ELSE 0.2 END AS team_raw,
         coalesce(fm.fixture_raw, 0) AS fixture_raw
       FROM player_features pf
-      LEFT JOIN team_form tf ON tf.target_gw = pf.target_gw AND tf.team_id = pf.team_id
-      LEFT JOIN fixture_metrics fm ON fm.target_gw = pf.target_gw AND fm.team_id = pf.team_id
+      JOIN strategies s ON s.strategy_id = pf.strategy_id
+      LEFT JOIN team_form tf
+        ON tf.strategy_id = pf.strategy_id AND tf.target_gw = pf.target_gw AND tf.team_id = pf.team_id
+      LEFT JOIN fixture_metrics fm
+        ON fm.strategy_id = pf.strategy_id AND fm.target_gw = pf.target_gw AND fm.team_id = pf.team_id
       LEFT JOIN round_outcomes outcome ON outcome.target_gw = pf.target_gw AND outcome.player_id = pf.player_id
     ),
     scaled_scores AS (
       SELECT
         *,
-        CASE WHEN max(individual_raw) OVER (PARTITION BY target_gw) = min(individual_raw) OVER (PARTITION BY target_gw) THEN 50 ELSE (individual_raw - min(individual_raw) OVER (PARTITION BY target_gw)) * 100 / (max(individual_raw) OVER (PARTITION BY target_gw) - min(individual_raw) OVER (PARTITION BY target_gw)) END AS individual_score,
-        CASE WHEN max(team_raw) OVER (PARTITION BY target_gw) = min(team_raw) OVER (PARTITION BY target_gw) THEN 50 ELSE (team_raw - min(team_raw) OVER (PARTITION BY target_gw)) * 100 / (max(team_raw) OVER (PARTITION BY target_gw) - min(team_raw) OVER (PARTITION BY target_gw)) END AS team_score,
-        CASE WHEN max(fixture_raw) OVER (PARTITION BY target_gw) = min(fixture_raw) OVER (PARTITION BY target_gw) THEN 50 ELSE (fixture_raw - min(fixture_raw) OVER (PARTITION BY target_gw)) * 100 / (max(fixture_raw) OVER (PARTITION BY target_gw) - min(fixture_raw) OVER (PARTITION BY target_gw)) END AS fixture_score
+        CASE WHEN max(individual_raw) OVER (PARTITION BY strategy_id, target_gw) = min(individual_raw) OVER (PARTITION BY strategy_id, target_gw) THEN 50 ELSE (individual_raw - min(individual_raw) OVER (PARTITION BY strategy_id, target_gw)) * 100 / (max(individual_raw) OVER (PARTITION BY strategy_id, target_gw) - min(individual_raw) OVER (PARTITION BY strategy_id, target_gw)) END AS individual_score,
+        CASE WHEN max(team_raw) OVER (PARTITION BY strategy_id, target_gw) = min(team_raw) OVER (PARTITION BY strategy_id, target_gw) THEN 50 ELSE (team_raw - min(team_raw) OVER (PARTITION BY strategy_id, target_gw)) * 100 / (max(team_raw) OVER (PARTITION BY strategy_id, target_gw) - min(team_raw) OVER (PARTITION BY strategy_id, target_gw)) END AS team_score,
+        CASE WHEN max(fixture_raw) OVER (PARTITION BY strategy_id, target_gw) = min(fixture_raw) OVER (PARTITION BY strategy_id, target_gw) THEN 50 ELSE (fixture_raw - min(fixture_raw) OVER (PARTITION BY strategy_id, target_gw)) * 100 / (max(fixture_raw) OVER (PARTITION BY strategy_id, target_gw) - min(fixture_raw) OVER (PARTITION BY strategy_id, target_gw)) END AS fixture_score
       FROM raw_scores
     ),
     selected AS (
       SELECT
         *,
         row_number() OVER (
-          PARTITION BY target_gw
+          PARTITION BY strategy_id, target_gw
           ORDER BY
-            (individual_score * ${params.weights.individual} + team_score * ${params.weights.team} + fixture_score * ${params.weights.fixtures}) / ${totalWeight} DESC,
+            (individual_score * w_individual + team_score * w_team + fixture_score * w_fixtures) / total_weight DESC,
             xg + xa DESC
         ) AS pick_rank
       FROM scaled_scores
-      WHERE minutes >= ${params.minMinutes}
+      WHERE minutes >= min_minutes
     )
     SELECT
-      '${strategyId}' AS strategy_id,
+      s.strategy_id,
       r.target_gw,
       count(selected.player_id) AS picked_players,
       coalesce(sum(selected.actual_points), 0) AS round_points
-    FROM rounds r
-    LEFT JOIN selected ON selected.target_gw = r.target_gw AND selected.pick_rank <= 15
-    GROUP BY r.target_gw
-    ORDER BY target_gw
+    FROM strategies s
+    CROSS JOIN rounds r
+    LEFT JOIN selected
+      ON selected.strategy_id = s.strategy_id
+      AND selected.target_gw = r.target_gw
+      AND selected.pick_rank <= 15
+    GROUP BY s.strategy_id, r.target_gw
+    ORDER BY strategy_id, target_gw
   `;
 }
 
-export async function calculateFormulaBacktests(
-  strategies: FormulaStrategy[],
-): Promise<StrategyBacktest[]> {
-  const reports: StrategyBacktest[] = [];
-  for (const strategy of strategies) {
-    const rows = await query<BacktestRow>(buildFormulaBacktestQuery(strategy));
-    const rounds = rows.map((row) => ({
+export function buildFormulaBacktestQuery(strategy: FormulaStrategy) {
+  return buildMultiFormulaBacktestQuery([strategy]);
+}
+
+function summariseBacktestRows(rows: BacktestRow[]): StrategyBacktest[] {
+  const roundsByStrategy = new Map<string, BacktestRound[]>();
+  for (const row of rows) {
+    const rounds = roundsByStrategy.get(row.strategy_id) ?? [];
+    rounds.push({
       gameweek: Number(row.target_gw),
       pickedPlayers: Number(row.picked_players),
       points: Number(row.round_points),
-    }));
+    });
+    roundsByStrategy.set(row.strategy_id, rounds);
+  }
+
+  return [...roundsByStrategy.entries()].map(([strategyId, rounds]) => {
     const totalPoints = rounds.reduce((total, round) => total + round.points, 0);
-    reports.push({
-      strategyId: strategy.id,
+    return {
+      strategyId,
       totalPoints,
       averagePoints: rounds.length ? totalPoints / rounds.length : 0,
       completeSelections: rounds.filter((round) => round.pickedPlayers === 15).length,
       rounds,
-    });
-  }
+    };
+  });
+}
 
-  return reports;
+export async function getDatasetSyncKey() {
+  const rows = await query<{ synced_at: string | null }>(
+    `SELECT cast(max(completed_at) AS VARCHAR) AS synced_at
+     FROM sync_runs
+     WHERE status = 'complete' AND source = 'official-fpl-api'`,
+  );
+  return rows[0]?.synced_at ?? "unknown";
+}
+
+export async function calculateFormulaBacktests(strategies: FormulaStrategy[]): Promise<StrategyBacktest[]> {
+  const rows = await query<BacktestRow>(buildMultiFormulaBacktestQuery(strategies));
+  return summariseBacktestRows(rows);
 }

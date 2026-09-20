@@ -52,6 +52,33 @@ export const FORMULA_PRESETS = [
   },
 ] as const;
 
+export type FormulaPreset = (typeof FORMULA_PRESETS)[number];
+
+export type FormulaStrategy = {
+  id: string;
+  name: string;
+  description: string;
+  params: RankingParams;
+  source: "preset" | "saved";
+};
+
+export function presetToStrategy(preset: FormulaPreset): FormulaStrategy {
+  return {
+    id: preset.id,
+    name: preset.name,
+    description: preset.description,
+    params: {
+      formWindow: preset.formWindow,
+      fixtureHorizon: preset.fixtureHorizon,
+      minMinutes: 0,
+      weights: { ...preset.weights },
+    },
+    source: "preset",
+  };
+}
+
+export const TRACKER_PRESET_STRATEGIES: FormulaStrategy[] = FORMULA_PRESETS.map(presetToStrategy);
+
 export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }

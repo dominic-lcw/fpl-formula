@@ -101,7 +101,7 @@ export async function getGameweekSlate(
        ORDER BY f.kickoff_time NULLS LAST, f.fixture_id`,
       [season, gameweek],
     ),
-    getForecastData(params),
+    getForecastData(params, { gameweek }),
     listBookingGameweeks(season),
   ]);
 
