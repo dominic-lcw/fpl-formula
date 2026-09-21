@@ -2,7 +2,7 @@
 
 import { ChevronDown, RefreshCw, Settings2, SlidersHorizontal } from "lucide-react";
 import { useDashboard } from "@/components/dashboard-provider";
-import { MosaicRankingsTable } from "@/components/mosaic-rankings-table";
+import { RankingsTable } from "@/components/rankings-table";
 import { PlayerRankSearch } from "@/components/player-rank-search";
 import { PlayerRankTracker } from "@/components/player-rank-tracker";
 import { ScoreFormula } from "@/components/score-formula";
@@ -50,6 +50,7 @@ export function RankingsView() {
     team,
     setTeam,
     tableVersion,
+    rankings,
     selectedRank,
     setSelectedRank,
     isLoading,
@@ -147,6 +148,7 @@ export function RankingsView() {
             {data?.season ? (
               <PlayerRankSearch
                 key={tableVersion}
+                rankings={rankings}
                 pinnedPlayer={pinnedPlayer}
                 onSelectRank={setSelectedRank}
                 onPinPlayer={pinPlayer}
@@ -194,7 +196,7 @@ export function RankingsView() {
           <CardContent className={isLoading && data ? "opacity-60 transition-opacity" : "transition-opacity"}>
             {isLoading && !data ? <p className="py-12 text-center text-muted-foreground">Calculating the player pool…</p> : error && !data ? <p className="py-12 text-center text-destructive">{error}</p> : !data?.season ? (
               <div className="py-12 text-center"><p className="font-medium">No FPL data has been hydrated yet.</p><p className="mt-2 text-sm text-muted-foreground">Run <code className="rounded bg-muted px-1.5 py-0.5">pnpm hydrate</code> to download the archive and current season.</p></div>
-            ) : data.count ? <MosaicRankingsTable version={tableVersion} selectedRank={selectedRank} /> : <p className="py-12 text-center text-muted-foreground">No players match these filters.</p>}
+            ) : data.count ? <RankingsTable rankings={rankings} selectedRank={selectedRank} /> : <p className="py-12 text-center text-muted-foreground">No players match these filters.</p>}
           </CardContent>
         </Card>
       </div>

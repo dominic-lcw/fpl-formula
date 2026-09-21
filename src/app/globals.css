@@ -116,7 +116,8 @@ input {
   font: inherit;
 }
 
-.mosaic-rankings-table {
+.mosaic-rankings-table,
+.rankings-table {
   width: 100%;
   min-height: 9rem;
   overflow: auto;
@@ -126,7 +127,8 @@ input {
   animation: mosaic-table-enter 120ms ease-out;
 }
 
-.mosaic-rankings-table table {
+.mosaic-rankings-table table,
+.rankings-table table {
   width: 100%;
   min-width: 1350px;
   border-collapse: collapse;
@@ -134,7 +136,8 @@ input {
   font-size: 0.875rem;
 }
 
-.mosaic-rankings-table th {
+.mosaic-rankings-table th,
+.rankings-table th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -150,37 +153,45 @@ input {
   user-select: none;
 }
 
-.mosaic-rankings-table th:hover {
+.mosaic-rankings-table th:hover,
+.rankings-table th:hover {
   color: var(--foreground);
 }
 
-.mosaic-rankings-table td {
+.mosaic-rankings-table td,
+.rankings-table td {
   padding: 0.8rem 0.75rem;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
-.mosaic-rankings-table tr:hover td {
+.mosaic-rankings-table tr:hover td,
+.rankings-table tr:hover td {
   background: var(--muted);
 }
 
-.mosaic-rankings-table tr.mosaic-rankings-table-selected td {
+.mosaic-rankings-table tr.mosaic-rankings-table-selected td,
+.rankings-table tr.rankings-table-selected td {
   background: var(--accent);
 }
 
-.mosaic-rankings-table tr.mosaic-rankings-table-selected td:first-child {
+.mosaic-rankings-table tr.mosaic-rankings-table-selected td:first-child,
+.rankings-table tr.rankings-table-selected td:first-child {
   box-shadow: inset 2px 0 0 var(--foreground);
 }
 
-.mosaic-rankings-table th:nth-child(2) {
+.mosaic-rankings-table th:nth-child(2),
+.rankings-table th:nth-child(2) {
   color: var(--foreground);
 }
 
-.mosaic-rankings-table td:nth-child(2) {
+.mosaic-rankings-table td:nth-child(2),
+.rankings-table td:nth-child(2) {
   background: color-mix(in oklch, var(--muted) 70%, transparent);
 }
 
-.mosaic-rankings-table tr:hover td:nth-child(2) {
+.mosaic-rankings-table tr:hover td:nth-child(2),
+.rankings-table tr:hover td:nth-child(2) {
   background: var(--accent);
 }
 

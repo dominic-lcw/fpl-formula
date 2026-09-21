@@ -6,13 +6,15 @@ An explainable Fantasy Premier League player-ranking dashboard. It only uses FPL
 
 ```bash
 pnpm install
+export DATABASE_URL=postgresql://localhost:5432/fplformula
+pnpm migrate
 pnpm hydrate          # previous-season summaries, then the live season
 pnpm dev
 ```
 
-Open `http://localhost:3000`. Re-run `pnpm hydrate:current` after a Gameweek to refresh current-season data. Hydration writes a normalized Parquet dataset to `data/parquet/`; the app loads those files into an in-memory DuckDB instance on startup. Override the dataset location with `FPL_PARQUET_DIR`.
+Open `http://localhost:3000`. Re-run `pnpm hydrate:current` after a Gameweek to refresh current-season data. Hydration upserts directly into PostgreSQL; the app reads rankings, forecasts, and bookings from the database at runtime.
 
-Match bookings are stored apart from that dataset, in `data/user/` locally. Override the location with `FPL_USER_DATA_DIR`. On App Service the path is `/home/fpl-formula`, on the persistent disk, because the deployed package at `wwwroot` is read-only. A booking stays open until the fixture result is hydrated; profit and loss is then settled from the final score.
+Manager news is fetched separately from BBC Sport RSS feeds and written to `data/manager-words/latest.json`. Override the location with `FPL_MANAGER_WORDS_DIR`. Production deploys run `pnpm fetch:manager-words` after hydration so the Manager news page is populated on startup.
 
 ## Data sources
 
@@ -40,14 +42,13 @@ Choose from Balanced, Form first, Fixture led, or Steady presets, or tune the ro
 ## Commands
 
 ```bash
-pnpm hydrate          # previous-season player summaries + current season
-pnpm hydrate:current  # current season only
+pnpm migrate            # apply db/schema.sql
+pnpm hydrate            # previous-season player summaries + current season
+pnpm hydrate:current    # current season only
 pnpm fetch:manager-words  # BBC manager press quotes for the Manager news page
 pnpm test
 pnpm lint
 pnpm build
 ```
 
-For routine updates, schedule `pnpm hydrate:current` after each FPL Gameweek completes. The previous-season summary refresh is idempotent and runs only with `pnpm hydrate`. Restart the app process after hydration so its in-memory DuckDB query layer reloads the new Parquet dataset.
-
-Manager news is fetched separately from BBC Sport RSS feeds and written to `data/manager-words/latest.json`. Override the location with `FPL_MANAGER_WORDS_DIR`. Production deploys run `pnpm fetch:manager-words` after hydration so the Manager news page is populated on startup.
+For routine updates, schedule `pnpm hydrate:current` after each FPL Gameweek completes. The previous-season summary refresh is idempotent and runs only with `pnpm hydrate`. Match bookings are stored in PostgreSQL and settle automatically when fixture results are available.
