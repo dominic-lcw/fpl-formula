@@ -40,10 +40,13 @@ export function BookingProbabilityScatter({ rows }: { rows: GameweekSlateRow[] }
 
   if (points.length === 0) return null;
 
-  const maxProb = Math.min(1, Math.max(0.55, ...points.map((point) => Math.max(point.modelProb, point.impliedProb))) + 0.05);
-  const minProb = Math.max(0, Math.min(...points.map((point) => Math.min(point.modelProb, point.impliedProb))) - 0.05);
-  const scaleX = (value: number) => margin.left + ((value - minProb) / (maxProb - minProb)) * innerWidth;
-  const scaleY = (value: number) => margin.top + innerHeight - ((value - minProb) / (maxProb - minProb)) * innerHeight;
+  const values = points.flatMap((point) => [point.modelProb, point.impliedProb]);
+  const padding = 0.05;
+  const minProb = Math.max(0, Math.min(...values) - padding);
+  const maxProb = Math.min(1, Math.max(...values) + padding);
+  const range = maxProb - minProb || 0.1;
+  const scaleX = (value: number) => margin.left + ((value - minProb) / range) * innerWidth;
+  const scaleY = (value: number) => margin.top + innerHeight - ((value - minProb) / range) * innerHeight;
   const ticks = [minProb, (minProb + maxProb) / 2, maxProb];
   const activePoint = points.find((point) => point.id === activePointId) ?? null;
 
