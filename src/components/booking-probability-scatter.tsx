@@ -9,6 +9,8 @@ type ScatterPoint = {
   label: string;
   modelProb: number;
   impliedProb: number;
+  status: "open" | "settled";
+  pnl: number | null;
 };
 
 const plotWidth = 520;
@@ -30,8 +32,21 @@ function buildPoints(rows: GameweekSlateRow[]): ScatterPoint[] {
       label: `${row.homeShortName} vs ${row.awayShortName}`,
       modelProb: booking.modelProb,
       impliedProb: 1 / booking.odds,
+      status: booking.status,
+      pnl: booking.pnl,
     }];
   });
+}
+
+function pointFillClass(point: ScatterPoint) {
+  if (point.status !== "settled" || point.pnl === null) return "fill-primary";
+  if (point.pnl >= 0) return "fill-emerald-500";
+  return "fill-destructive";
+}
+
+function formatPnl(value: number) {
+  const sign = value > 0 ? "+" : "";
+  return `${sign}$${value.toFixed(2)}`;
 }
 
 export function BookingProbabilityScatter({ rows }: { rows: GameweekSlateRow[] }) {
@@ -55,7 +70,7 @@ export function BookingProbabilityScatter({ rows }: { rows: GameweekSlateRow[] }
       <CardHeader className="gap-1">
         <CardTitle>Model vs implied probability</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Booked selections only. Implied probability is 1 / decimal odds. Points above the diagonal suggest positive expected value.
+          Booked selections only. Implied probability is 1 / decimal odds. Settled bets are green for profit and red for loss; open bets stay blue.
         </p>
       </CardHeader>
       <CardContent>
@@ -108,13 +123,13 @@ export function BookingProbabilityScatter({ rows }: { rows: GameweekSlateRow[] }
                   cx={scaleX(point.impliedProb)}
                   cy={scaleY(point.modelProb)}
                   r={activePointId === point.id ? 6 : 5}
-                  className="fill-primary stroke-background stroke-2"
+                  className={`${pointFillClass(point)} stroke-background stroke-2`}
                   onMouseEnter={() => setActivePointId(point.id)}
                   onMouseLeave={() => setActivePointId((current) => (current === point.id ? null : current))}
                   onFocus={() => setActivePointId(point.id)}
                   onBlur={() => setActivePointId((current) => (current === point.id ? null : current))}
                   tabIndex={0}
-                  aria-label={`${point.label}: model ${formatAxisPercent(point.modelProb)}, implied ${formatAxisPercent(point.impliedProb)}`}
+                  aria-label={`${point.label}: model ${formatAxisPercent(point.modelProb)}, implied ${formatAxisPercent(point.impliedProb)}${point.pnl === null ? "" : `, PnL ${formatPnl(point.pnl)}`}`}
                 />
               </g>
             ))}
@@ -140,6 +155,16 @@ export function BookingProbabilityScatter({ rows }: { rows: GameweekSlateRow[] }
             model {formatAxisPercent(activePoint.modelProb)}
             {" · "}
             implied {formatAxisPercent(activePoint.impliedProb)}
+            {activePoint.pnl === null ? (
+              <>{" · "}open</>
+            ) : (
+              <>
+                {" · "}
+                <span className={activePoint.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
+                  {formatPnl(activePoint.pnl)}
+                </span>
+              </>
+            )}
           </p>
         ) : (
           <p className="mt-3 text-center text-sm text-muted-foreground">Hover a point to see the match.</p>
