@@ -23,18 +23,10 @@ The federated credential uses the subject claim emitted by this repository's Git
    gh variable set AZURE_WEBAPP_NAME --body "<webAppName>" --repo dominic-lcw/fpl-formula
    ```
 
-4. Add the PostgreSQL connection string as a repository secret. After provisioning, build it from the Bicep outputs:
-
-   ```bash
-   gh secret set DATABASE_URL --body "postgresql://fpladmin:<password>@<postgresFqdn>:5432/fplformula?sslmode=require" --repo dominic-lcw/fpl-formula
-   ```
-
-   App Service receives the same connection string from Bicep. GitHub Actions needs the secret so `pnpm migrate` and `pnpm hydrate` can update the live database during deploy.
-
 ## Normal release flow
 
 - Merge a pull request into `main`.
-- The `Deploy FPL Formula` workflow runs tests and linting, migrates the PostgreSQL schema, hydrates FPL data into PostgreSQL, fetches BBC manager press quotes, builds the Node.js package, and ZIP-deploys it.
-- App Service restarts and serves rankings, forecasts, and bookings from PostgreSQL.
+- The `Deploy FPL Formula` workflow runs tests and linting, downloads fresh FPL data, fetches BBC manager press quotes, builds the Linux standalone Node.js package, and ZIP-deploys it.
+- App Service restarts the process and loads the refreshed Parquet data.
 
 The infrastructure workflow is intentionally manual (`workflow_dispatch`) because it can change Azure resources. Run it only after reviewing an infrastructure change.

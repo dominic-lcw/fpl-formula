@@ -43,14 +43,7 @@ jobs:
           pnpm test
           pnpm lint
 
-      - name: Migrate database schema
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: pnpm migrate
-
       - name: Hydrate FPL data
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: pnpm hydrate
 
       - name: Fetch manager news
@@ -65,7 +58,7 @@ jobs:
           pnpm --dir deployment install --prod --frozen-lockfile --node-linker=hoisted
           cp -R .next deployment/.next
           if [ -d public ]; then cp -R public deployment/public; fi
-          if [ -d data/manager-words ]; then mkdir -p deployment/data/manager-words && cp -R data/manager-words deployment/data/; fi
+          cp -R data deployment/data
           cd deployment
           zip -qr ../fpl-formula.zip .
 

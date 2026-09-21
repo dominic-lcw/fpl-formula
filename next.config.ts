@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["pg"],
+  serverExternalPackages: ["@duckdb/node-api"],
   async redirects() {
     return [
       { source: "/rankings", destination: "/", permanent: false },

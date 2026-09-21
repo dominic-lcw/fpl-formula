@@ -1,7 +1,12 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { bookSelection } from "../src/lib/bookings";
-import { getGameweekSlate } from "../src/lib/gameweek-slate";
-import { resetTestDatabase, run } from "../src/lib/db";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { tmpdir } from "node:os";
+import { beforeAll, describe, expect, it } from "vitest";
+
+const testParquetDirectory = path.join(tmpdir(), `fpl-formula-slate-${randomUUID()}`);
+const testUserDirectory = path.join(tmpdir(), `fpl-formula-slate-user-${randomUUID()}`);
+process.env.FPL_PARQUET_DIR = testParquetDirectory;
+process.env.FPL_USER_DATA_DIR = testUserDirectory;
 
 const forecast = {
   expectedHomeGoals: 1.7,
@@ -14,23 +19,36 @@ const forecast = {
   topScorelines: [{ home: 2, away: 1, prob: 0.12 }],
 };
 
-beforeEach(async () => {
-  await resetTestDatabase();
+let bookSelection: typeof import("../src/lib/bookings").bookSelection;
+let createHydrationConnection: typeof import("../src/lib/db").createHydrationConnection;
+let exportParquetDataset: typeof import("../src/lib/db").exportParquetDataset;
+let getGameweekSlate: typeof import("../src/lib/gameweek-slate").getGameweekSlate;
+let resetReadConnection: typeof import("../src/lib/db").resetReadConnection;
+
+beforeAll(async () => {
+  ({ bookSelection } = await import("../src/lib/bookings"));
+  ({ createHydrationConnection, exportParquetDataset, resetReadConnection } = await import("../src/lib/db"));
+  ({ getGameweekSlate } = await import("../src/lib/gameweek-slate"));
 });
 
 describe("gameweek slate", () => {
   it("keeps played fixtures on the slate and shows settled profit and loss", async () => {
-    await run(
+    resetReadConnection();
+    const connection = await createHydrationConnection();
+    await connection.run(
       `INSERT INTO teams (season, team_id, name, short_name) VALUES
        ('2025-26', 1, 'Alpha FC', 'ALP'),
        ('2025-26', 2, 'Beta FC', 'BET')`,
     );
-    await run(
+    await connection.run(
       `INSERT INTO fixtures (season, fixture_id, event, team_h, team_a, team_h_score, team_a_score, finished)
        VALUES
        ('2025-26', 501, 5, 1, 2, 2, 1, true),
        ('2025-26', 502, 5, 1, 2, NULL, NULL, false)`,
     );
+    await exportParquetDataset(connection);
+    connection.closeSync();
+    resetReadConnection();
 
     await bookSelection({
       fixtureId: 501,
@@ -44,6 +62,7 @@ describe("gameweek slate", () => {
       forecast,
     });
 
+    resetReadConnection();
     const slate = await getGameweekSlate("2025-26", 5, {
       lookbackGameweeks: 8,
       homeAdvantage: 1.12,
