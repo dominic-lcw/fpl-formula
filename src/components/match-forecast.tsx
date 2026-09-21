@@ -5,12 +5,11 @@ import {
   ChevronDown,
   LoaderCircle,
   Receipt,
-  RefreshCw,
   Target,
-  Trash2,
   TrendingUp,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BookingProbabilityScatter } from "@/components/booking-probability-scatter";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -57,24 +56,6 @@ function selectionLabel(market: BookingMarket, selection: string) {
     default:
       return selection;
   }
-}
-
-function bookingTotals(bookings: BookingRecord[]) {
-  return bookings.reduce(
-    (totals, booking) => {
-      if (booking.status === "open") {
-        totals.openCount += 1;
-        totals.openStake += booking.stake;
-      } else {
-        totals.settledCount += 1;
-        totals.pnl += booking.pnl ?? 0;
-        if (booking.outcome === "won") totals.won += 1;
-        if (booking.outcome === "lost") totals.lost += 1;
-      }
-      return totals;
-    },
-    { openCount: 0, openStake: 0, settledCount: 0, pnl: 0, won: 0, lost: 0 },
-  );
 }
 
 function formatKickoff(kickoffTime: string | null) {
@@ -440,146 +421,39 @@ function TeamStrengthsPanel({
   );
 }
 
-function BookingRows({
-  bookings,
-  onCancel,
-}: {
-  bookings: BookingRecord[];
-  onCancel: (id: string) => void;
-}) {
-  if (bookings.length === 0) {
-    return <p className="py-8 text-center text-sm text-muted-foreground">No bookings yet.</p>;
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm">
-        <thead>
-          <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <th className="py-2 pr-3">Selection</th>
-            <th className="py-2 pr-3">Stake</th>
-            <th className="py-2 pr-3">Odds</th>
-            <th className="py-2 pr-3">Status</th>
-            <th className="py-2 pr-3">Score</th>
-            <th className="py-2 pr-3">PnL</th>
-            <th className="py-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {bookings.map((booking) => (
-            <tr key={booking.id} className="border-b border-border/60">
-              <td className="py-2 pr-3">
-                <p className="font-medium">{selectionLabel(booking.market, booking.selection)}</p>
-                <p className="text-xs text-muted-foreground">{booking.homeTeam} vs {booking.awayTeam}</p>
-              </td>
-              <td className="py-2 pr-3">${booking.stake.toFixed(2)}</td>
-              <td className="py-2 pr-3">{booking.odds.toFixed(2)}</td>
-              <td className="py-2 pr-3">
-                {booking.status === "open" ? "Open" : booking.outcome === "won" ? "Won" : "Lost"}
-              </td>
-              <td className="py-2 pr-3">
-                {booking.homeScore === null || booking.awayScore === null ? "—" : `${booking.homeScore}–${booking.awayScore}`}
-              </td>
-              <td className={`py-2 pr-3 ${booking.pnl === null ? "text-muted-foreground" : booking.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
-                {booking.pnl === null ? "—" : formatPnl(booking.pnl)}
-              </td>
-              <td className="py-2 text-right">
-                {booking.status === "open" ? (
-                  <button
-                    type="button"
-                    onClick={() => onCancel(booking.id)}
-                    className="inline-flex size-8 items-center justify-center rounded-md border border-input hover:bg-accent"
-                    aria-label="Cancel booking"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                ) : null}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function BookingLedger({
-  bookings,
-  isResolving,
-  resolveMessage,
-  onCancel,
-  onResolve,
-}: {
-  bookings: BookingRecord[];
-  isResolving: boolean;
-  resolveMessage: string | null;
-  onCancel: (id: string) => void;
-  onResolve: () => void;
-}) {
-  const totals = bookingTotals(bookings);
-
-  return (
-    <div className="grid gap-5">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Open stake</p>
-          <p className="mt-2 text-xl font-semibold">${totals.openStake.toFixed(2)}</p>
-          <p className="text-sm text-muted-foreground">{totals.openCount} open</p>
-        </div>
-        <div className="rounded-xl border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Settled PnL</p>
-          <p className={`mt-2 text-xl font-semibold ${totals.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
-            {formatPnl(totals.pnl)}
-          </p>
-          <p className="text-sm text-muted-foreground">{totals.settledCount} settled</p>
-        </div>
-        <div className="rounded-xl border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Record</p>
-          <p className="mt-2 text-xl font-semibold">{totals.won}–{totals.lost}</p>
-          <p className="text-sm text-muted-foreground">Won–lost</p>
-        </div>
-      </div>
-      <Card>
-        <CardHeader className="gap-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <CardTitle>Booking ledger</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Bookings settle automatically once FPL marks a fixture finished. Resolve checks provisional or live results and saves scores to disk.
-              </p>
-            </div>
-            {totals.openCount > 0 ? (
-              <button
-                type="button"
-                disabled={isResolving}
-                onClick={onResolve}
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
-              >
-                {isResolving ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                Resolve open
-              </button>
-            ) : null}
-          </div>
-          {resolveMessage ? <p className="text-sm text-muted-foreground">{resolveMessage}</p> : null}
-        </CardHeader>
-        <CardContent>
-          <BookingRows bookings={bookings} onCancel={onCancel} />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
 function resultLabel(homeShortName: string, awayShortName: string, selection: "home" | "draw" | "away") {
   if (selection === "home") return `${homeShortName} win`;
   if (selection === "away") return `${awayShortName} win`;
   return "Draw";
 }
 
+function BookingSummaryCards({ summary }: { summary: GameweekSlateSummary }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <div className="rounded-xl border p-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">Open stake</p>
+        <p className="mt-2 text-xl font-semibold">${summary.openStake.toFixed(2)}</p>
+        <p className="text-sm text-muted-foreground">{summary.openCount} open</p>
+      </div>
+      <div className="rounded-xl border p-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">Settled PnL</p>
+        <p className={`mt-2 text-xl font-semibold ${summary.settledPnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+          {formatPnl(summary.settledPnl)}
+        </p>
+        <p className="text-sm text-muted-foreground">{summary.settledCount} settled</p>
+      </div>
+      <div className="rounded-xl border p-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">Record</p>
+        <p className="mt-2 text-xl font-semibold">{summary.won}–{summary.lost}</p>
+        <p className="text-sm text-muted-foreground">Won–lost</p>
+      </div>
+    </div>
+  );
+}
+
 function GameweekBookingTable({
   gameweek,
   rows,
-  summary,
   stake,
   defaultOdds,
   rowOdds,
@@ -591,7 +465,6 @@ function GameweekBookingTable({
 }: {
   gameweek: number;
   rows: GameweekSlateRow[];
-  summary: GameweekSlateSummary;
   stake: string;
   defaultOdds: string;
   rowOdds: Record<number, string>;
@@ -612,19 +485,6 @@ function GameweekBookingTable({
             <p className="text-sm text-muted-foreground">
               Played matches show the final score and profit and loss from your booked odds.
             </p>
-            {summary.settledCount > 0 || summary.openCount > 0 ? (
-              <p className="mt-2 text-sm">
-                {summary.settledCount > 0 ? (
-                  <span className={summary.settledPnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
-                    Settled {formatPnl(summary.settledPnl)}
-                  </span>
-                ) : null}
-                {summary.settledCount > 0 && summary.openCount > 0 ? " · " : null}
-                {summary.openCount > 0 ? (
-                  <span className="text-muted-foreground">${summary.openStake.toFixed(2)} still open</span>
-                ) : null}
-              </p>
-            ) : null}
           </div>
           <button
             type="button"
@@ -747,9 +607,7 @@ export function MatchForecastPanel() {
   const [bookingGameweeks, setBookingGameweeks] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isBooking, setIsBooking] = useState(false);
-  const [isResolving, setIsResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resolveMessage, setResolveMessage] = useState<string | null>(null);
   const [stake, setStake] = useState("10");
   const [defaultOdds, setDefaultOdds] = useState("2.10");
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
@@ -939,58 +797,6 @@ export function MatchForecastPanel() {
     }
   }
 
-  async function removeBet(id: string) {
-    const response = await fetch(`/api/bookings?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (!response.ok) {
-      const payload = await response.json() as { error?: string };
-      setError(payload.error ?? "Unable to cancel booking.");
-      return;
-    }
-    if (data?.season) await loadBookings(data.season, resolvedGameweek, params);
-  }
-
-  async function resolveOpenBookings() {
-    setIsResolving(true);
-    setError(null);
-    setResolveMessage(null);
-    try {
-      const response = await fetch("/api/bookings", { method: "PATCH", cache: "no-store" });
-      const payload = await response.json() as {
-        settled?: number;
-        remaining?: number;
-        persistedFixtures?: number;
-        bookings?: BookingRecord[];
-        error?: string;
-      };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to resolve open bookings.");
-
-      if (data?.season) {
-        await loadBookings(data.season, resolvedGameweek, params, { skipSettlement: true });
-      } else if (payload.bookings) {
-        setBookings(payload.bookings);
-      }
-
-      const settled = payload.settled ?? 0;
-      const remaining = payload.remaining ?? 0;
-      const persistedFixtures = payload.persistedFixtures ?? 0;
-      if (settled === 0 && remaining > 0) {
-        setResolveMessage(`No results were available yet. ${remaining} booking${remaining === 1 ? "" : "s"} still open.`);
-      } else if (settled > 0) {
-        setResolveMessage(
-          `Settled and saved ${settled} booking${settled === 1 ? "" : "s"}`
-          + (persistedFixtures > 0 ? ` and ${persistedFixtures} match result${persistedFixtures === 1 ? "" : "s"}` : "")
-          + `.${remaining > 0 ? ` ${remaining} still open.` : " Results persist across reloads."}`,
-        );
-      } else {
-        setResolveMessage("All bookings are already settled.");
-      }
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to resolve open bookings.");
-    } finally {
-      setIsResolving(false);
-    }
-  }
-
   if (isLoading && !data) {
     return (
       <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">
@@ -1050,30 +856,26 @@ export function MatchForecastPanel() {
                 <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
               </div>
             ) : (
-              <GameweekBookingTable
-                gameweek={resolvedGameweek}
-                rows={slateRows}
-                summary={slateSummary}
-                stake={stake}
-                defaultOdds={defaultOdds}
-                rowOdds={rowOdds}
-                isBooking={isBooking}
-                onStakeChange={setStake}
-                onDefaultOddsChange={(value) => {
-                  setDefaultOdds(value);
-                  setRowOdds({});
-                }}
-                onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
-                onBookAll={() => void bookGameweek()}
-              />
+              <>
+                <BookingSummaryCards summary={slateSummary} />
+                <BookingProbabilityScatter rows={slateRows} />
+                <GameweekBookingTable
+                  gameweek={resolvedGameweek}
+                  rows={slateRows}
+                  stake={stake}
+                  defaultOdds={defaultOdds}
+                  rowOdds={rowOdds}
+                  isBooking={isBooking}
+                  onStakeChange={setStake}
+                  onDefaultOddsChange={(value) => {
+                    setDefaultOdds(value);
+                    setRowOdds({});
+                  }}
+                  onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
+                  onBookAll={() => void bookGameweek()}
+                />
+              </>
             )}
-            <BookingLedger
-              bookings={bookings}
-              isResolving={isResolving}
-              resolveMessage={resolveMessage}
-              onCancel={(id) => void removeBet(id)}
-              onResolve={() => void resolveOpenBookings()}
-            />
           </div>
         ) : subView === "strengths" ? (
           <TeamStrengthsPanel data={data} />
