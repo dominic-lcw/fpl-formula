@@ -9,6 +9,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BookingProbabilityScatter } from "@/components/booking-probability-scatter";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -426,10 +427,33 @@ function resultLabel(homeShortName: string, awayShortName: string, selection: "h
   return "Draw";
 }
 
+function BookingSummaryCards({ summary }: { summary: GameweekSlateSummary }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <div className="rounded-xl border p-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">Open stake</p>
+        <p className="mt-2 text-xl font-semibold">${summary.openStake.toFixed(2)}</p>
+        <p className="text-sm text-muted-foreground">{summary.openCount} open</p>
+      </div>
+      <div className="rounded-xl border p-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">Settled PnL</p>
+        <p className={`mt-2 text-xl font-semibold ${summary.settledPnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+          {formatPnl(summary.settledPnl)}
+        </p>
+        <p className="text-sm text-muted-foreground">{summary.settledCount} settled</p>
+      </div>
+      <div className="rounded-xl border p-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">Record</p>
+        <p className="mt-2 text-xl font-semibold">{summary.won}–{summary.lost}</p>
+        <p className="text-sm text-muted-foreground">Won–lost</p>
+      </div>
+    </div>
+  );
+}
+
 function GameweekBookingTable({
   gameweek,
   rows,
-  summary,
   stake,
   defaultOdds,
   rowOdds,
@@ -441,7 +465,6 @@ function GameweekBookingTable({
 }: {
   gameweek: number;
   rows: GameweekSlateRow[];
-  summary: GameweekSlateSummary;
   stake: string;
   defaultOdds: string;
   rowOdds: Record<number, string>;
@@ -462,19 +485,6 @@ function GameweekBookingTable({
             <p className="text-sm text-muted-foreground">
               Played matches show the final score and profit and loss from your booked odds.
             </p>
-            {summary.settledCount > 0 || summary.openCount > 0 ? (
-              <p className="mt-2 text-sm">
-                {summary.settledCount > 0 ? (
-                  <span className={summary.settledPnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}>
-                    Settled {formatPnl(summary.settledPnl)}
-                  </span>
-                ) : null}
-                {summary.settledCount > 0 && summary.openCount > 0 ? " · " : null}
-                {summary.openCount > 0 ? (
-                  <span className="text-muted-foreground">${summary.openStake.toFixed(2)} still open</span>
-                ) : null}
-              </p>
-            ) : null}
           </div>
           <button
             type="button"
@@ -846,22 +856,25 @@ export function MatchForecastPanel() {
                 <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
               </div>
             ) : (
-              <GameweekBookingTable
-                gameweek={resolvedGameweek}
-                rows={slateRows}
-                summary={slateSummary}
-                stake={stake}
-                defaultOdds={defaultOdds}
-                rowOdds={rowOdds}
-                isBooking={isBooking}
-                onStakeChange={setStake}
-                onDefaultOddsChange={(value) => {
-                  setDefaultOdds(value);
-                  setRowOdds({});
-                }}
-                onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
-                onBookAll={() => void bookGameweek()}
-              />
+              <>
+                <BookingSummaryCards summary={slateSummary} />
+                <BookingProbabilityScatter rows={slateRows} />
+                <GameweekBookingTable
+                  gameweek={resolvedGameweek}
+                  rows={slateRows}
+                  stake={stake}
+                  defaultOdds={defaultOdds}
+                  rowOdds={rowOdds}
+                  isBooking={isBooking}
+                  onStakeChange={setStake}
+                  onDefaultOddsChange={(value) => {
+                    setDefaultOdds(value);
+                    setRowOdds({});
+                  }}
+                  onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
+                  onBookAll={() => void bookGameweek()}
+                />
+              </>
             )}
           </div>
         ) : subView === "strengths" ? (
