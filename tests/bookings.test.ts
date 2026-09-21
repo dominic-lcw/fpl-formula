@@ -1,14 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
-import path from "node:path";
-import { tmpdir } from "node:os";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { beforeEach } from "vitest";
 import { gradeSelection, highestMatchOutcome, profitAndLoss } from "../src/lib/booking-settlement";
-
-const testParquetDirectory = path.join(tmpdir(), `fpl-formula-bookings-${randomUUID()}`);
-const testUserDirectory = path.join(tmpdir(), `fpl-formula-user-${randomUUID()}`);
-process.env.FPL_PARQUET_DIR = testParquetDirectory;
-process.env.FPL_USER_DATA_DIR = testUserDirectory;
+import { bookSelection, bookSelections, cancelBooking, listBookings, resolveOpenBookings } from "../src/lib/bookings";
+import { query, resetTestDatabase, run } from "../src/lib/db";
 
 const forecast = {
   expectedHomeGoals: 1.7,
@@ -21,22 +15,21 @@ const forecast = {
   topScorelines: [{ home: 2, away: 1, prob: 0.12 }],
 };
 
-let bookSelection: typeof import("../src/lib/bookings").bookSelection;
-let bookSelections: typeof import("../src/lib/bookings").bookSelections;
-let cancelBooking: typeof import("../src/lib/bookings").cancelBooking;
-let listBookings: typeof import("../src/lib/bookings").listBookings;
-let resolveOpenBookings: typeof import("../src/lib/bookings").resolveOpenBookings;
-let createHydrationConnection: typeof import("../src/lib/db").createHydrationConnection;
-let exportParquetDataset: typeof import("../src/lib/db").exportParquetDataset;
-let resetReadConnection: typeof import("../src/lib/db").resetReadConnection;
-
-beforeAll(async () => {
-  ({ bookSelection, bookSelections, cancelBooking, listBookings, resolveOpenBookings } = await import("../src/lib/bookings"));
-  ({ createHydrationConnection, exportParquetDataset, resetReadConnection } = await import("../src/lib/db"));
+beforeEach(async () => {
+  await resetTestDatabase();
 });
 
+async function seedFixtures() {
+  await run(
+    `INSERT INTO fixtures (season, fixture_id, event, team_h, team_a, team_h_score, team_a_score, finished)
+     VALUES
+       ('2025-26', 101, 4, 1, 2, 2, 1, true),
+       ('2025-26', 202, 5, 3, 4, NULL, NULL, false)`,
+  );
+}
+
 describe("booking settlement", () => {
-  it("grades each market from the final score and books net profit", () => {
+  it("grades each market from the final score and books net profit", async () => {
     expect(gradeSelection("1X2", "home", 2, 1)).toBe("won");
     expect(gradeSelection("1X2", "draw", 0, 0)).toBe("won");
     expect(gradeSelection("1X2", "away", 2, 1)).toBe("lost");
@@ -56,19 +49,7 @@ describe("booking settlement", () => {
   });
 
   it("keeps an open booking until the match result is available, then persists PnL", async () => {
-    resetReadConnection();
-    const connection = await createHydrationConnection();
-    await connection.run(
-      `INSERT INTO fixtures (season, fixture_id, event, team_h, team_a, team_h_score, team_a_score, finished)
-       VALUES ('2025-26', 101, 4, 1, 2, 2, 1, true)`,
-    );
-    await connection.run(
-      `INSERT INTO fixtures (season, fixture_id, event, team_h, team_a, finished)
-       VALUES ('2025-26', 202, 5, 3, 4, false)`,
-    );
-    await exportParquetDataset(connection);
-    connection.closeSync();
-    resetReadConnection();
+    await seedFixtures();
 
     const won = await bookSelection({
       fixtureId: 101,
@@ -105,10 +86,9 @@ describe("booking settlement", () => {
       notes: "Still to be played",
     });
 
-    await expect(stat(path.join(testUserDirectory, "bookings.parquet"))).resolves.toBeTruthy();
-    await expect(stat(path.join(testParquetDirectory, "bookings.parquet"))).rejects.toThrow();
+    const stored = await query<{ count: number }>(`SELECT count(*)::INTEGER AS count FROM bookings`);
+    expect(stored[0]?.count).toBe(3);
 
-    resetReadConnection();
     const settled = await listBookings("2025-26");
     const wonRow = settled.find((entry) => entry.id === won.id);
     const lostRow = settled.find((entry) => entry.id === lost.id);
@@ -119,26 +99,19 @@ describe("booking settlement", () => {
     expect(lostRow).toMatchObject({ status: "settled", outcome: "lost", pnl: -10 });
     expect(openRow).toMatchObject({ status: "open", outcome: null, pnl: null, homeScore: null });
 
-    resetReadConnection();
     const reloaded = await listBookings("2025-26");
     expect(reloaded.find((entry) => entry.id === won.id)?.pnl).toBeCloseTo(11, 5);
 
     await cancelBooking(open.id);
-    resetReadConnection();
     expect((await listBookings("2025-26")).some((entry) => entry.id === open.id)).toBe(false);
     await expect(cancelBooking(won.id)).rejects.toMatchObject({ status: 409 });
   });
 
   it("keeps provisional results open until resolve is called", async () => {
-    resetReadConnection();
-    const connection = await createHydrationConnection();
-    await connection.run(
+    await run(
       `INSERT INTO fixtures (season, fixture_id, event, team_h, team_a, team_h_score, team_a_score, finished)
        VALUES ('2025-26', 303, 5, 4, 6, 3, 0, false)`,
     );
-    await exportParquetDataset(connection);
-    connection.closeSync();
-    resetReadConnection();
 
     const provisional = await bookSelection({
       fixtureId: 303,
@@ -159,13 +132,9 @@ describe("booking settlement", () => {
       awayScore: null,
     });
 
-    resetReadConnection();
     const resolved = await resolveOpenBookings();
     expect(resolved).toMatchObject({ settled: 1, remaining: 0, persistedFixtures: 1 });
-    await expect(stat(path.join(testUserDirectory, "bookings.parquet"))).resolves.toBeTruthy();
-    await expect(stat(path.join(testUserDirectory, "fixture_results.parquet"))).resolves.toBeTruthy();
 
-    resetReadConnection();
     const settled = await listBookings("2025-26");
     expect(settled.find((entry) => entry.id === provisional.id)).toMatchObject({
       status: "settled",

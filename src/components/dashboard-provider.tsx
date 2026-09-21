@@ -2,13 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
-import type { Position, RankingParams } from "@/lib/fpl-types";
+import type { Position, RankedPlayer, RankingParams } from "@/lib/fpl-types";
 import {
-  calculateMosaicRankings,
+  fetchRankings,
   getPinnedPlayerRank,
-  type MosaicRankingData,
+  type DashboardRankingData,
   type RankedPlayerSuggestion,
-} from "@/lib/mosaic-rankings";
+} from "@/lib/rankings-client";
 import type { PinnedPlayerSnapshot } from "@/components/player-rank-tracker";
 import { DEFAULT_PARAMS, sanitiseParams } from "@/lib/scoring";
 
@@ -23,7 +23,8 @@ type StatusResponse = {
 type DashboardContextValue = {
   params: RankingParams;
   updateParams: (nextParams: RankingParams) => void;
-  data: MosaicRankingData | null;
+  data: DashboardRankingData | null;
+  rankings: RankedPlayer[];
   position: Position | "ALL";
   setPosition: (position: Position | "ALL") => void;
   team: string;
@@ -56,7 +57,7 @@ export function useDashboard() {
 }
 
 function buildSeasonLabel(
-  data: MosaicRankingData | null,
+  data: DashboardRankingData | null,
   syncSeason: string | null,
   liveGameweek: LiveGameweekStatus | null,
 ) {
@@ -80,7 +81,7 @@ function buildSeasonLabel(
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [params, setParams] = useState<RankingParams>(DEFAULT_PARAMS);
-  const [data, setData] = useState<MosaicRankingData | null>(null);
+  const [data, setData] = useState<DashboardRankingData | null>(null);
   const [position, setPositionState] = useState<Position | "ALL">("ALL");
   const [team, setTeamState] = useState("ALL");
   const [tableVersion, setTableVersion] = useState(0);
@@ -120,7 +121,6 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     nextPosition: Position | "ALL",
     nextTeam: string,
     options: {
-      refreshDataset?: boolean;
       liveGameweek?: number | null;
     } = {},
   ) => {
@@ -128,14 +128,18 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
-      const payload = await calculateMosaicRankings(nextParams, nextPosition, nextTeam, options);
+      const payload = await fetchRankings(nextParams, {
+        position: nextPosition,
+        team: nextTeam,
+        liveGameweek: options.liveGameweek,
+      });
       if (requestId === latestRequest.current) {
         setData(payload);
         setTableVersion((version) => version + 1);
 
         const activePinnedPlayer = pinnedPlayerRef.current;
         if (activePinnedPlayer) {
-          const snapshot = await getPinnedPlayerRank(activePinnedPlayer.playerId);
+          const snapshot = getPinnedPlayerRank(payload.rankings, activePinnedPlayer.playerId);
           if (requestId !== latestRequest.current) return;
 
           if (snapshot) {
@@ -162,7 +166,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (reason) {
       if (requestId === latestRequest.current) {
-        setError(reason instanceof Error ? reason.message : "Unable to calculate rankings locally.");
+        setError(reason instanceof Error ? reason.message : "Unable to load rankings.");
       }
     } finally {
       if (requestId === latestRequest.current) setIsLoading(false);
@@ -226,7 +230,6 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   function refreshRankings() {
     void loadLiveGameweek().then((nextLiveGameweek) => {
       void loadRankings(params, position, team, {
-        refreshDataset: true,
         liveGameweek: showLiveData ? liveGameweekForRankings(nextLiveGameweek) : null,
       });
     });
@@ -271,6 +274,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         params,
         updateParams,
         data,
+        rankings: data?.rankings ?? [],
         position,
         setPosition,
         team,
