@@ -2,37 +2,53 @@
 
 import { Pin, Search, Trophy } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import type { RankedPlayer } from "@/lib/fpl-types";
 import {
   searchRankedPlayers,
   type RankedPlayerSuggestion,
-} from "@/lib/rankings-client";
+} from "@/lib/mosaic-rankings";
 
 type PlayerRankSearchProps = {
-  rankings: RankedPlayer[];
   pinnedPlayer: { playerId: number; name: string } | null;
   onSelectRank: (rank: number | null) => void;
   onPinPlayer: (player: RankedPlayerSuggestion | null) => void;
 };
 
-export function PlayerRankSearch({ rankings, pinnedPlayer, onSelectRank, onPinPlayer }: PlayerRankSearchProps) {
+export function PlayerRankSearch({ pinnedPlayer, onSelectRank, onPinPlayer }: PlayerRankSearchProps) {
   const listboxId = useId();
+  const requestId = useRef(0);
   const skipNextSearch = useRef(false);
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<RankedPlayerSuggestion[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     const trimmedQuery = query.trim();
     if (!trimmedQuery || skipNextSearch.current) {
       skipNextSearch.current = false;
-      setSuggestions([]);
       return;
     }
 
-    setSuggestions(searchRankedPlayers(rankings, trimmedQuery));
-    setIsOpen(true);
-  }, [query, rankings]);
+    const currentRequest = ++requestId.current;
+    let cancelled = false;
+    void searchRankedPlayers(trimmedQuery).then(
+      (nextSuggestions) => {
+        if (cancelled || currentRequest !== requestId.current) return;
+        setSuggestions(nextSuggestions);
+        setIsOpen(true);
+      },
+      () => {
+        if (cancelled || currentRequest !== requestId.current) return;
+        setSuggestions([]);
+      },
+    ).finally(() => {
+      if (!cancelled && currentRequest === requestId.current) setIsSearching(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [query]);
 
   function selectSuggestion(suggestion: RankedPlayerSuggestion) {
     skipNextSearch.current = true;
@@ -65,9 +81,12 @@ export function PlayerRankSearch({ rankings, pinnedPlayer, onSelectRank, onPinPl
             setQuery(nextQuery);
             onSelectRank(null);
             if (nextQuery.trim()) {
+              setIsSearching(true);
               setIsOpen(true);
             } else {
+              requestId.current += 1;
               setSuggestions([]);
+              setIsSearching(false);
               setIsOpen(false);
             }
           }}
@@ -98,7 +117,8 @@ export function PlayerRankSearch({ rankings, pinnedPlayer, onSelectRank, onPinPl
           aria-label="Player rank suggestions"
           className="absolute z-10 mt-2 w-full overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md"
         >
-          {!suggestions.length ? <p className="px-3 py-2 text-sm text-muted-foreground">No ranked players found.</p> : null}
+          {isSearching ? <p className="px-3 py-2 text-sm text-muted-foreground">Searching rankings…</p> : null}
+          {!isSearching && !suggestions.length ? <p className="px-3 py-2 text-sm text-muted-foreground">No ranked players found.</p> : null}
           {suggestions.map((suggestion) => (
             <button
               key={`${suggestion.playerId}-${suggestion.rank}`}

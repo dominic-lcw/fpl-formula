@@ -1,17 +1,29 @@
-import { query } from "@/lib/db";
+import { loadMosaicDataset } from "@/lib/mosaic-rankings";
 import {
   sanitiseParams,
   TRACKER_PRESET_STRATEGIES,
   type FormulaStrategy,
 } from "@/lib/scoring";
-import type { BacktestRound, StrategyBacktest } from "@/lib/formula-tracking-cache";
 
-export type { BacktestRound, StrategyBacktest } from "@/lib/formula-tracking-cache";
 export type { FormulaStrategy } from "@/lib/scoring";
 export { TRACKER_PRESET_STRATEGIES };
 
 /** @deprecated Use TRACKER_PRESET_STRATEGIES instead. */
 export const STARTER_STRATEGIES = TRACKER_PRESET_STRATEGIES;
+
+export type BacktestRound = {
+  gameweek: number;
+  pickedPlayers: number;
+  points: number;
+};
+
+export type StrategyBacktest = {
+  strategyId: string;
+  totalPoints: number;
+  averagePoints: number;
+  completeSelections: number;
+  rounds: BacktestRound[];
+};
 
 type BacktestRow = {
   strategy_id: string;
@@ -19,6 +31,8 @@ type BacktestRow = {
   picked_players: number;
   round_points: number;
 };
+
+const backtestCacheKey = "fpl-formula-backtest-v2";
 
 function escapedSqlString(value: string) {
   return value.replaceAll("'", "''");
@@ -60,15 +74,15 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
     context AS (
       SELECT
         sync.season,
-        concat(cast(cast(substring(sync.season, 1, 4) AS INTEGER) - 1 AS VARCHAR), '-', substring(sync.season, 3, 2)) AS prior_season,
+        concat(cast(cast(substr(sync.season, 1, 4) AS INTEGER) - 1 AS VARCHAR), '-', substr(sync.season, 3, 2)) AS prior_season,
         coalesce(max(f.event), 0) AS completed_gameweek
       FROM current_sync sync
       LEFT JOIN fixtures f ON f.season = sync.season AND f.finished = true
-      GROUP BY sync.season
+      GROUP BY ALL
     ),
     rounds AS (
       SELECT target_gw
-      FROM context, generate_series(1, context.completed_gameweek) AS gameweeks(target_gw)
+      FROM context, range(1, completed_gameweek + 1) AS gameweeks(target_gw)
     ),
     strategies AS (
       SELECT *
@@ -91,14 +105,17 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         r.target_gw,
         p.player_id,
         p.position,
-        max(p.team_id) AS team_id,
         coalesce(sum(history.minutes), 0) AS minutes,
         coalesce(sum(history.total_points), 0) AS form_points,
         coalesce(sum(history.expected_goals), 0) AS xg,
         coalesce(sum(history.expected_assists), 0) AS xa,
         coalesce(sum(history.defensive_contribution), 0) AS defcon,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN summary.total_points / summary.minutes * 90 END), 0) AS last_year_per_90,
-        coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_year_xgi_per_90
+        coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_year_xgi_per_90,
+        coalesce(
+          arg_max(CASE WHEN history.was_home THEN played_fixture.team_h ELSE played_fixture.team_a END, history.event),
+          any_value(p.team_id)
+        ) AS team_id
       FROM players p
       CROSS JOIN context c
       CROSS JOIN rounds r
@@ -109,8 +126,10 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         ON history.season = c.season
         AND history.player_id = p.player_id
         AND history.event BETWEEN greatest(1, r.target_gw - s.form_window) AND r.target_gw - 1
+      LEFT JOIN fixtures played_fixture
+        ON played_fixture.season = history.season AND played_fixture.fixture_id = history.fixture_id
       WHERE p.season = c.season
-      GROUP BY s.strategy_id, r.target_gw, p.player_id, p.position
+      GROUP BY ALL
     ),
     match_form AS (
       SELECT s.strategy_id, r.target_gw, f.team_h AS team_id,
@@ -141,7 +160,7 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         ON history.season = c.season
         AND history.event BETWEEN greatest(1, r.target_gw - s.form_window) AND r.target_gw - 1
       JOIN fixtures fixture ON fixture.season = history.season AND fixture.fixture_id = history.fixture_id
-      GROUP BY s.strategy_id, r.target_gw, CASE WHEN history.was_home THEN fixture.team_h ELSE fixture.team_a END
+      GROUP BY ALL
     ),
     team_form AS (
       SELECT
@@ -153,7 +172,7 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
       FROM match_form m
       LEFT JOIN player_team_form p
         ON p.strategy_id = m.strategy_id AND p.target_gw = m.target_gw AND p.team_id = m.team_id
-      GROUP BY m.strategy_id, m.target_gw, m.team_id
+      GROUP BY ALL
     ),
     upcoming AS (
       SELECT s.strategy_id, r.target_gw, f.team_h AS team_id, f.team_h_difficulty AS difficulty, true AS was_home
@@ -175,7 +194,7 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         team_id,
         avg((6 - difficulty + CASE WHEN was_home THEN 0.5 ELSE -0.5 END) * 20) AS fixture_raw
       FROM upcoming
-      GROUP BY strategy_id, target_gw, team_id
+      GROUP BY ALL
     ),
     round_outcomes AS (
       SELECT
@@ -185,7 +204,7 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
       FROM context c CROSS JOIN rounds r
       JOIN player_fixture_stats outcome
         ON outcome.season = c.season AND outcome.event = r.target_gw
-      GROUP BY r.target_gw, outcome.player_id
+      GROUP BY ALL
     ),
     raw_scores AS (
       SELECT
@@ -242,7 +261,7 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
       ON selected.strategy_id = s.strategy_id
       AND selected.target_gw = r.target_gw
       AND selected.pick_rank <= 15
-    GROUP BY s.strategy_id, r.target_gw
+    GROUP BY ALL
     ORDER BY strategy_id, target_gw
   `;
 }
@@ -275,16 +294,56 @@ function summariseBacktestRows(rows: BacktestRow[]): StrategyBacktest[] {
   });
 }
 
-export async function getDatasetSyncKey() {
-  const rows = await query<{ synced_at: string | null }>(
+export async function getMosaicDatasetSyncKey() {
+  const dataset = await loadMosaicDataset();
+  const rows = await dataset.coordinator().query(
     `SELECT cast(max(completed_at) AS VARCHAR) AS synced_at
      FROM sync_runs
      WHERE status = 'complete' AND source = 'official-fpl-api'`,
-  );
+    { type: "json" },
+  ) as Array<{ synced_at: string | null }>;
   return rows[0]?.synced_at ?? "unknown";
 }
 
-export async function calculateFormulaBacktests(strategies: FormulaStrategy[]): Promise<StrategyBacktest[]> {
-  const rows = await query<BacktestRow>(buildMultiFormulaBacktestQuery(strategies));
-  return summariseBacktestRows(rows);
+export function buildBacktestCacheKey(syncKey: string, strategyIds: string[]) {
+  return `${syncKey}:${[...strategyIds].sort().join(",")}`;
+}
+
+export function readCachedBacktests(cacheKey: string): StrategyBacktest[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(backtestCacheKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { cacheKey: string; reports: StrategyBacktest[] };
+    return parsed.cacheKey === cacheKey ? parsed.reports : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedBacktests(cacheKey: string, reports: StrategyBacktest[]) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(backtestCacheKey, JSON.stringify({ cacheKey, reports }));
+}
+
+export async function calculateFormulaBacktests(
+  strategies: FormulaStrategy[],
+  options?: { cacheKey?: string },
+): Promise<StrategyBacktest[]> {
+  if (options?.cacheKey) {
+    const cached = readCachedBacktests(options.cacheKey);
+    if (cached) return cached;
+  }
+
+  const dataset = await loadMosaicDataset();
+  const rows = await dataset.coordinator().query(buildMultiFormulaBacktestQuery(strategies), {
+    type: "json",
+    cache: false,
+  }) as BacktestRow[];
+
+  const reports = summariseBacktestRows(rows);
+  if (options?.cacheKey) {
+    writeCachedBacktests(options.cacheKey, reports);
+  }
+  return reports;
 }

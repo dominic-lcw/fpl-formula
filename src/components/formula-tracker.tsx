@@ -6,11 +6,15 @@ import { ScoreFormula } from "@/components/score-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   buildBacktestCacheKey,
+  calculateFormulaBacktests,
+  getMosaicDatasetSyncKey,
   readCachedBacktests,
-  writeCachedBacktests,
+  TRACKER_PRESET_STRATEGIES,
+  type FormulaStrategy,
   type StrategyBacktest,
-} from "@/lib/formula-tracking-cache";
-import { FORMULA_PRESETS, sanitiseParams, TRACKER_PRESET_STRATEGIES, type FormulaStrategy } from "@/lib/scoring";
+} from "@/lib/formula-tracking-data";
+import { loadMosaicDataset } from "@/lib/mosaic-rankings";
+import { FORMULA_PRESETS, sanitiseParams } from "@/lib/scoring";
 import type { RankingParams } from "@/lib/fpl-types";
 
 const storageKey = "fpl-saved-formulas-v1";
@@ -73,13 +77,6 @@ function paramsMatch(left: RankingParams, right: RankingParams) {
     && safeLeft.weights.fixtures === safeRight.weights.fixtures;
 }
 
-async function fetchDatasetSyncKey() {
-  const response = await fetch("/api/status", { cache: "no-store" });
-  if (!response.ok) return "unknown";
-  const payload = await response.json() as { latest?: { completed_at?: string | null } | null };
-  return payload.latest?.completed_at ?? "unknown";
-}
-
 export function FormulaTracker({
   currentParams,
   onApplyParams,
@@ -102,13 +99,9 @@ export function FormulaTracker({
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/status", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Unable to read sync status.");
-        const payload = await response.json() as { latest?: { status?: string } | null };
-        if (!cancelled) {
-          setIsDatasetReady(payload.latest?.status === "complete");
-        }
+    void loadMosaicDataset()
+      .then(() => {
+        if (!cancelled) setIsDatasetReady(true);
       })
       .catch(() => {
         if (!cancelled) setError("Unable to prepare the ranking dataset.");
@@ -157,7 +150,7 @@ export function FormulaTracker({
     let cancelled = false;
     void (async () => {
       try {
-        const syncKey = await fetchDatasetSyncKey();
+        const syncKey = await getMosaicDatasetSyncKey();
         const cacheKey = buildBacktestCacheKey(syncKey, selectedStrategies.map((strategy) => strategy.id));
         const cached = readCachedBacktests(cacheKey);
         if (cached && !cancelled) {
@@ -216,17 +209,9 @@ export function FormulaTracker({
     setIsRunning(true);
     setError(null);
     try {
-      const syncKey = await fetchDatasetSyncKey();
+      const syncKey = await getMosaicDatasetSyncKey();
       const cacheKey = buildBacktestCacheKey(syncKey, selectedStrategies.map((strategy) => strategy.id));
-      const response = await fetch("/api/formula-backtest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ strategies: selectedStrategies }),
-      });
-      const payload = await response.json() as { reports?: StrategyBacktest[]; error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to run the formula tracker.");
-      const nextReports = payload.reports ?? [];
-      writeCachedBacktests(cacheKey, nextReports);
+      const nextReports = await calculateFormulaBacktests(selectedStrategies, { cacheKey });
       setReports(nextReports);
       const best = [...selectedStrategies].sort(
         (left, right) => (nextReports.find((report) => report.strategyId === right.id)?.totalPoints ?? 0)
