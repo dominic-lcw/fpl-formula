@@ -68,6 +68,8 @@ describe("shared individual expression", () => {
     expect(expression).toContain(`attack_con * ${FORMULA.attackCon}`);
     expect(expression).toContain(`defcon * ${FORMULA.defcon}`);
     expect(expression).toContain(`bonus_points * ${FORMULA.bonus}`);
+    expect(expression).toContain(`last_year_per_90) * ${FORMULA.priorWeight}`);
+    expect(FORMULA.priorWeight).toBe(0.1);
     expect(expression).not.toContain("CASE WHEN");
     expect(backtest).toContain(expression);
     expect(backtest).toContain(`* ${FORMULA.teamDefcon}`);

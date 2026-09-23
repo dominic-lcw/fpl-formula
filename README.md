@@ -31,7 +31,7 @@ Default total score:
 
 Each component is normalized against the eligible player pool (0–100), so the table represents a relative expected ranking rather than projected FPL points.
 
-- **Individual:** rolling xG + xA, FPL points, attack contribution (threat + creativity), defensive contribution, a 3-point match bonus, a previous-season per-90 reference, and a minutes eligibility threshold.
+- **Individual:** rolling xG + xA, FPL points, attack contribution (threat + creativity), defensive contribution, a 3-point match bonus, a previous-season per-90 reference at 10%, and a minutes eligibility threshold.
 - **Team:** recent FPL match points/goals plus player xG/xA, attack-contribution, and defensive-contribution aggregates.
 - **Match bonus:** each completed fixture awards 3 points to the player with the highest match claim. The claim mixes xG + xA, threat + creativity, and defensive actions. It is separate from total FPL points and from the official FPL bonus.
 - **Fixtures:** next 3 Gameweeks’ FPL fixture difficulty, including doubles and blanks. Home fixtures receive a +0.5 FDR adjustment and away fixtures a −0.5 adjustment.

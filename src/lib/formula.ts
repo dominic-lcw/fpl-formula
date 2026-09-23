@@ -13,7 +13,8 @@ import type { PlayerFeature } from "@/lib/fpl-types";
  * raw points: about 3 xGI, ~300 threat+creativity, or ~90 defensive actions.
  * FPL points stay the largest term because they are the realised return.
  * Official FPL bonus is left inside those points. The bonus term is a separate
- * 3-point award we assign once per fixture.
+ * 3-point award we assign once per fixture. The previous-season reference is
+ * weighted at 10%.
  */
 export const FORMULA = {
   xgi: 1,
@@ -22,7 +23,7 @@ export const FORMULA = {
   defcon: 0.04,
   bonus: 1,
   priorXgiScale: 4,
-  priorWeight: 0.25,
+  priorWeight: 0.1,
   bonusAward: 3,
   bonusClaimXgi: 25,
   bonusClaimAttack: 0.08,

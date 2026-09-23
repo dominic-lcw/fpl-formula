@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlayerFeature } from "../src/lib/fpl-types";
-import { individualRaw } from "../src/lib/formula";
+import { FORMULA, individualRaw } from "../src/lib/formula";
 import { DEFAULT_PARAMS, sanitiseParams, scorePlayers } from "../src/lib/scoring";
 
 const basePlayer: PlayerFeature = {
@@ -131,6 +131,19 @@ describe("scorePlayers", () => {
 
     expect(individualRaw(forward)).toBeGreaterThan(individualRaw(defender));
     expect(rankings[0].name).toBe("Finisher");
+  });
+
+  it("weights the previous season at 10%", () => {
+    const prior =
+      basePlayer.lastSeasonXgiPer90 * FORMULA.priorXgiScale + basePlayer.lastSeasonPointsPer90;
+    const withoutPrior = {
+      ...basePlayer,
+      lastSeasonPointsPer90: 0,
+      lastSeasonXgiPer90: 0,
+    };
+
+    expect(FORMULA.priorWeight).toBe(0.1);
+    expect(individualRaw(basePlayer) - individualRaw(withoutPrior)).toBeCloseTo(prior * 0.1);
   });
 
   it("adds the 3-point match bonus on top of otherwise equal players", () => {
