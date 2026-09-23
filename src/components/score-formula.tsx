@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import type { RankingParams } from "@/lib/fpl-types";
+import { FORMULA, INDIVIDUAL_FORMULA_NOTE, INDIVIDUAL_FORMULA_TEXT, TEAM_FORMULA_NOTE } from "@/lib/formula";
 
 const weightLabels = [
   { key: "individual", label: "Individual form", symbol: "I" },
@@ -87,14 +88,20 @@ export function ScoreFormula({ params }: { params: RankingParams }) {
             <FormulaDefinition
               symbol="I"
               title="Individual form"
-              formula="(xG + xA) × 0.55 + FPL points × 0.30 + DefCon × position factor × 0.15 + (last-season xGI/90 × 4 + last-season points/90) × 0.25"
-              note="DefCon factors: DEF 1.00, MID 0.55, all other positions 0.15."
+              formula={INDIVIDUAL_FORMULA_TEXT}
+              note={INDIVIDUAL_FORMULA_NOTE}
             />
             <FormulaDefinition
               symbol="T"
               title="Team form"
               formula="team attack × attack factor + team defence × defence factor"
-              note="Attack = avg match points + avg goals scored × 0.35 + team xGI × 0.10. Defence = 3 − avg goals conceded + team DefCon × 0.03. GKP/DEF use 0.40 attack + 0.60 defence; MID/FWD use 0.80 + 0.20."
+              note={TEAM_FORMULA_NOTE}
+            />
+            <FormulaDefinition
+              symbol="B"
+              title="Match bonus"
+              formula={`highest match claim in the fixture receives ${FORMULA.bonusAward} points`}
+              note={`Claim = (xG + xA) × ${FORMULA.bonusClaimXgi} + (threat + creativity) × ${FORMULA.bonusClaimAttack} + defensive actions × ${FORMULA.bonusClaimDefcon}. Players with no minutes are skipped. Ties go to higher xGI, then higher threat + creativity, then the lower player id.`}
             />
             <FormulaDefinition
               symbol="F"

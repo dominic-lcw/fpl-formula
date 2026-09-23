@@ -6,6 +6,13 @@ import type {
   RankingResponse,
   UpcomingFixture,
 } from "@/lib/fpl-types";
+import {
+  attackConSumSql,
+  bonusPointsSumSql,
+  fixtureBonusSubquerySql,
+  teamAttackSelectSql,
+  teamDefenceSelectSql,
+} from "@/lib/formula";
 import { scorePlayers } from "@/lib/scoring";
 
 type PlayerRow = {
@@ -22,7 +29,9 @@ type PlayerRow = {
   form_points: number | null;
   xg: number | null;
   xa: number | null;
+  attack_con: number | null;
   defcon: number | null;
+  bonus_points: number | null;
   last_season_points_per_90: number | null;
   last_season_xgi_per_90: number | null;
 };
@@ -75,7 +84,9 @@ export async function getRankingData(
               coalesce(sum(s.total_points), 0) AS form_points,
               coalesce(sum(s.expected_goals), 0) AS xg,
               coalesce(sum(s.expected_assists), 0) AS xa,
+              ${attackConSumSql("s")} AS attack_con,
               coalesce(sum(s.defensive_contribution), 0) AS defcon,
+              ${bonusPointsSumSql("bonus")} AS bonus_points,
               coalesce(max(CASE WHEN summary.minutes >= 450 THEN summary.total_points / summary.minutes * 90 END), 0) AS last_season_points_per_90,
               coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_season_xgi_per_90
        FROM players p
@@ -85,6 +96,8 @@ export async function getRankingData(
        LEFT JOIN player_fixture_stats s
          ON s.season = p.season AND s.player_id = p.player_id
          AND s.event BETWEEN ? AND ?
+       LEFT JOIN (${fixtureBonusSubquerySql()}) bonus
+         ON bonus.season = s.season AND bonus.fixture_id = s.fixture_id AND bonus.player_id = s.player_id
        WHERE p.season = ?
        GROUP BY ALL`,
       [priorSeason, startGameweek, currentGameweek, season],
@@ -104,6 +117,7 @@ export async function getRankingData(
        player_form AS (
          SELECT p.team_id,
                 coalesce(sum(s.expected_goals + s.expected_assists), 0) AS xgi,
+                ${attackConSumSql("s")} AS attack_con,
                 coalesce(sum(s.defensive_contribution), 0) AS defcon
          FROM players p
          LEFT JOIN player_fixture_stats s ON s.season = p.season AND s.player_id = p.player_id
@@ -111,8 +125,8 @@ export async function getRankingData(
          WHERE p.season = ? GROUP BY p.team_id
        )
        SELECT m.team_id,
-              avg(m.points) + avg(m.scored) * 0.35 + coalesce(max(p.xgi), 0) * 0.1 AS attack,
-              (3 - avg(m.conceded)) + coalesce(max(p.defcon), 0) * 0.03 AS defence
+              ${teamAttackSelectSql()} AS attack,
+              ${teamDefenceSelectSql()} AS defence
        FROM match_form m LEFT JOIN player_form p ON p.team_id = m.team_id
        GROUP BY m.team_id`,
       [season, startGameweek, currentGameweek, season, startGameweek, currentGameweek, startGameweek, currentGameweek, season],
@@ -173,7 +187,9 @@ export async function getRankingData(
       formPoints: Number(player.form_points ?? 0),
       xg: Number(player.xg ?? 0),
       xa: Number(player.xa ?? 0),
+      attackCon: Number(player.attack_con ?? 0),
       defcon: Number(player.defcon ?? 0),
+      bonusPoints: Number(player.bonus_points ?? 0),
       lastSeasonPointsPer90: Number(player.last_season_points_per_90 ?? 0),
       lastSeasonXgiPer90: Number(player.last_season_xgi_per_90 ?? 0),
       teamAttack: Number(teamScore?.attack ?? 0),

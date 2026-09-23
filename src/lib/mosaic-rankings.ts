@@ -1,4 +1,13 @@
 import type { Position, RankingParams } from "@/lib/fpl-types";
+import {
+  attackConSumSql,
+  bonusPointsSumSql,
+  fixtureBonusSubquerySql,
+  individualRawSql,
+  teamAttackSelectSql,
+  teamDefenceSelectSql,
+  teamRawSql,
+} from "@/lib/formula";
 
 const parquetTables = [
   "teams",
@@ -150,8 +159,10 @@ function rankingQuery(
       minutes,
       xg,
       xa,
-      last_year_per_90,
+      attack_con,
       defcon,
+      bonus_points,
+      last_year_per_90,
       next_fixtures`;
 
   return `
@@ -184,7 +195,9 @@ function rankingQuery(
         coalesce(sum(s.total_points), 0) AS form_points,
         coalesce(sum(s.expected_goals), 0) AS xg,
         coalesce(sum(s.expected_assists), 0) AS xa,
+        ${attackConSumSql("s")} AS attack_con,
         coalesce(sum(s.defensive_contribution), 0) AS defcon,
+        ${bonusPointsSumSql("bonus")} AS bonus_points,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN summary.total_points / summary.minutes * 90 END), 0) AS last_year_per_90,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_year_xgi_per_90
       FROM players p
@@ -195,6 +208,8 @@ function rankingQuery(
       LEFT JOIN player_fixture_stats s
         ON s.season = p.season AND s.player_id = p.player_id
         AND s.event BETWEEN ${startGameweek} AND c.current_gameweek
+      LEFT JOIN (${fixtureBonusSubquerySql()}) bonus
+        ON bonus.season = s.season AND bonus.fixture_id = s.fixture_id AND bonus.player_id = s.player_id
       WHERE p.season = c.season
       GROUP BY ALL
     ),
@@ -221,6 +236,7 @@ function rankingQuery(
       SELECT
         p.team_id,
         coalesce(sum(s.expected_goals + s.expected_assists), 0) AS xgi,
+        ${attackConSumSql("s")} AS attack_con,
         coalesce(sum(s.defensive_contribution), 0) AS defcon
       FROM players p
       CROSS JOIN context c
@@ -233,8 +249,8 @@ function rankingQuery(
     team_form AS (
       SELECT
         m.team_id,
-        avg(m.points) + avg(m.scored) * 0.35 + coalesce(max(p.xgi), 0) * 0.1 AS attack,
-        (3 - avg(m.conceded)) + coalesce(max(p.defcon), 0) * 0.03 AS defence
+        ${teamAttackSelectSql()} AS attack,
+        ${teamDefenceSelectSql()} AS defence
       FROM match_form m
       LEFT JOIN player_form p ON p.team_id = m.team_id
       GROUP BY m.team_id
@@ -280,12 +296,8 @@ function rankingQuery(
     raw_scores AS (
       SELECT
         p.*,
-        (p.xg + p.xa) * 0.55
-          + p.form_points * 0.3
-          + p.defcon * CASE WHEN p.position = 'DEF' THEN 1 WHEN p.position = 'MID' THEN 0.55 ELSE 0.15 END * 0.15
-          + (p.last_year_xgi_per_90 * 4 + p.last_year_per_90) * 0.25 AS individual_raw,
-        coalesce(tf.attack, 0) * CASE WHEN p.position IN ('GKP', 'DEF') THEN 0.4 ELSE 0.8 END
-          + coalesce(tf.defence, 0) * CASE WHEN p.position IN ('GKP', 'DEF') THEN 0.6 ELSE 0.2 END AS team_raw,
+        ${individualRawSql("p")} AS individual_raw,
+        ${teamRawSql("p.position", "tf.attack", "tf.defence")} AS team_raw,
         coalesce(fm.fixture_raw, 0) AS fixture_raw,
         coalesce(fm.next_fixtures, '—') AS next_fixtures
       FROM player_features p

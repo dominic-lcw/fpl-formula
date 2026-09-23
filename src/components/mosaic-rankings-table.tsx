@@ -15,8 +15,10 @@ const rankingColumns = [
   "minutes",
   "xg",
   "xa",
-  "last_year_per_90",
+  "attack_con",
   "defcon",
+  "bonus_points",
+  "last_year_per_90",
   "next_fixtures",
 ] as const;
 
@@ -93,8 +95,10 @@ export function MosaicRankingsTable({
           minutes: 82,
           xg: 66,
           xa: 66,
-          last_year_per_90: 130,
+          attack_con: 88,
           defcon: 76,
+          bonus_points: 88,
+          last_year_per_90: 130,
           next_fixtures: 158,
         },
         align: {
@@ -106,8 +110,10 @@ export function MosaicRankingsTable({
           minutes: (value: unknown) => `${formatNumber(value)}m`,
           xg: (value: unknown) => formatNumber(value, 2),
           xa: (value: unknown) => formatNumber(value, 2),
-          last_year_per_90: (value: unknown) => `${formatNumber(value, 1)} pts`,
+          attack_con: (value: unknown) => formatNumber(value),
           defcon: (value: unknown) => formatNumber(value),
+          bonus_points: (value: unknown) => formatNumber(value),
+          last_year_per_90: (value: unknown) => `${formatNumber(value, 1)} pts`,
           score: (value: unknown) => formatNumber(value, 1),
         },
       }) as TableElement;

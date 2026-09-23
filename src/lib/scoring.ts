@@ -5,6 +5,7 @@ import type {
   ScoreBreakdown,
   ScoreWeights,
 } from "@/lib/fpl-types";
+import { fixtureRaw, individualRaw, teamRaw } from "@/lib/formula";
 
 type RankingParamInput = Omit<Partial<RankingParams>, "weights"> & {
   weights?: Partial<ScoreWeights> & { venue?: unknown };
@@ -115,35 +116,6 @@ function scale(values: number[]): (value: number) => number {
   const high = Math.max(...finite);
   if (!finite.length || low === high) return () => 50;
   return (value) => clamp(((value - low) / (high - low)) * 100, 0, 100);
-}
-
-function individualRaw(player: PlayerFeature) {
-  const attacking = player.xg + player.xa;
-  const defconWeight = player.position === "DEF" ? 1 : player.position === "MID" ? 0.55 : 0.15;
-  const priorSeasonReference = player.lastSeasonXgiPer90 * 4 + player.lastSeasonPointsPer90;
-  return (
-    attacking * 0.55 +
-    player.formPoints * 0.3 +
-    player.defcon * defconWeight * 0.15 +
-    priorSeasonReference * 0.25
-  );
-}
-
-function teamRaw(player: PlayerFeature) {
-  const defenceWeight = player.position === "GKP" || player.position === "DEF" ? 0.6 : 0.2;
-  return player.teamAttack * (1 - defenceWeight) + player.teamDefence * defenceWeight;
-}
-
-function fixtureRaw(player: PlayerFeature) {
-  if (!player.fixtures.length) return 0;
-  return (
-    player.fixtures.reduce(
-      (sum, fixture) =>
-        sum + (6 - fixture.difficulty + (fixture.wasHome ? 0.5 : -0.5)) * 20,
-      0,
-    ) /
-    player.fixtures.length
-  );
 }
 
 export function scorePlayers(

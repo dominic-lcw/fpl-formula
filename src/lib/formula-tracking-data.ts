@@ -1,3 +1,12 @@
+import {
+  attackConSumSql,
+  bonusPointsSumSql,
+  fixtureBonusSubquerySql,
+  individualRawSql,
+  teamAttackSelectSql,
+  teamDefenceSelectSql,
+  teamRawSql,
+} from "@/lib/formula";
 import { loadMosaicDataset } from "@/lib/mosaic-rankings";
 import {
   sanitiseParams,
@@ -32,7 +41,7 @@ type BacktestRow = {
   round_points: number;
 };
 
-const backtestCacheKey = "fpl-formula-backtest-v2";
+const backtestCacheKey = "fpl-formula-backtest-v3";
 
 function escapedSqlString(value: string) {
   return value.replaceAll("'", "''");
@@ -109,7 +118,9 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         coalesce(sum(history.total_points), 0) AS form_points,
         coalesce(sum(history.expected_goals), 0) AS xg,
         coalesce(sum(history.expected_assists), 0) AS xa,
+        ${attackConSumSql("history")} AS attack_con,
         coalesce(sum(history.defensive_contribution), 0) AS defcon,
+        ${bonusPointsSumSql("bonus")} AS bonus_points,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN summary.total_points / summary.minutes * 90 END), 0) AS last_year_per_90,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_year_xgi_per_90,
         coalesce(
@@ -128,6 +139,8 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         AND history.event BETWEEN greatest(1, r.target_gw - s.form_window) AND r.target_gw - 1
       LEFT JOIN fixtures played_fixture
         ON played_fixture.season = history.season AND played_fixture.fixture_id = history.fixture_id
+      LEFT JOIN (${fixtureBonusSubquerySql()}) bonus
+        ON bonus.season = history.season AND bonus.fixture_id = history.fixture_id AND bonus.player_id = history.player_id
       WHERE p.season = c.season
       GROUP BY ALL
     ),
@@ -154,6 +167,7 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         r.target_gw,
         CASE WHEN history.was_home THEN fixture.team_h ELSE fixture.team_a END AS team_id,
         coalesce(sum(history.expected_goals + history.expected_assists), 0) AS xgi,
+        ${attackConSumSql("history")} AS attack_con,
         coalesce(sum(history.defensive_contribution), 0) AS defcon
       FROM context c CROSS JOIN rounds r CROSS JOIN strategies s
       JOIN player_fixture_stats history
@@ -167,8 +181,8 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         m.strategy_id,
         m.target_gw,
         m.team_id,
-        avg(m.points) + avg(m.scored) * 0.35 + coalesce(max(p.xgi), 0) * 0.1 AS attack,
-        (3 - avg(m.conceded)) + coalesce(max(p.defcon), 0) * 0.03 AS defence
+        ${teamAttackSelectSql()} AS attack,
+        ${teamDefenceSelectSql()} AS defence
       FROM match_form m
       LEFT JOIN player_team_form p
         ON p.strategy_id = m.strategy_id AND p.target_gw = m.target_gw AND p.team_id = m.team_id
@@ -215,12 +229,8 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         s.w_fixtures,
         s.total_weight,
         coalesce(outcome.actual_points, 0) AS actual_points,
-        (pf.xg + pf.xa) * 0.55
-          + pf.form_points * 0.3
-          + pf.defcon * CASE WHEN pf.position = 'DEF' THEN 1 WHEN pf.position = 'MID' THEN 0.55 ELSE 0.15 END * 0.15
-          + (pf.last_year_xgi_per_90 * 4 + pf.last_year_per_90) * 0.25 AS individual_raw,
-        coalesce(tf.attack, 0) * CASE WHEN pf.position IN ('GKP', 'DEF') THEN 0.4 ELSE 0.8 END
-          + coalesce(tf.defence, 0) * CASE WHEN pf.position IN ('GKP', 'DEF') THEN 0.6 ELSE 0.2 END AS team_raw,
+        ${individualRawSql("pf")} AS individual_raw,
+        ${teamRawSql("pf.position", "tf.attack", "tf.defence")} AS team_raw,
         coalesce(fm.fixture_raw, 0) AS fixture_raw
       FROM player_features pf
       JOIN strategies s ON s.strategy_id = pf.strategy_id
