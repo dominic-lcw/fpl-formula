@@ -120,7 +120,7 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         coalesce(sum(history.expected_assists), 0) AS xa,
         ${attackConSumSql("history")} AS attack_con,
         coalesce(sum(history.defensive_contribution), 0) AS defcon,
-        ${bonusPointsSumSql("bonus")} AS bonus_points,
+        ${bonusPointsSumSql("bonus", "history")} AS bonus_points,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN summary.total_points / summary.minutes * 90 END), 0) AS last_year_per_90,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_year_xgi_per_90,
         coalesce(

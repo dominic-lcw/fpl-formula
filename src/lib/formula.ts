@@ -98,8 +98,9 @@ export function attackConSumSql(alias: string) {
   return `coalesce(sum(coalesce(${alias}.threat, 0) + coalesce(${alias}.creativity, 0)), 0)`;
 }
 
-export function bonusPointsSumSql(alias: string) {
-  return `coalesce(sum(${alias}.bonus_points), 0)`;
+/** Mean match-bonus points per appearance in the form window (0–3), not the window total. */
+export function bonusPointsSumSql(bonusAlias: string, fixtureStatsAlias = "s") {
+  return `coalesce(sum(${bonusAlias}.bonus_points) / nullif(count(distinct ${fixtureStatsAlias}.fixture_id), 0), 0)`;
 }
 
 export function teamAttackSelectSql() {
@@ -151,7 +152,7 @@ export const INDIVIDUAL_FORMULA_TEXT =
   `(xG + xA) × ${FORMULA.xgi} + FPL points × ${FORMULA.formPoints} + AtkCon × ${FORMULA.attackCon} + DefCon × ${FORMULA.defcon} + bonus × ${FORMULA.bonus} + (last-season xGI/90 × ${FORMULA.priorXgiScale} + last-season points/90) × ${FORMULA.priorWeight}`;
 
 export const INDIVIDUAL_FORMULA_NOTE =
-  `AtkCon is threat + creativity over the form window. DefCon is the defensive-action count on the same scale, with no extra position multiplier. Bonus adds ${FORMULA.bonusAward} points for the player with the highest match claim in each fixture: (xG + xA) × ${FORMULA.bonusClaimXgi} + AtkCon × ${FORMULA.bonusClaimAttack} + DefCon × ${FORMULA.bonusClaimDefcon}. That award is separate from total FPL points.`;
+  `AtkCon is threat + creativity over the form window. DefCon is the defensive-action count on the same scale, with no extra position multiplier. Bonus is the average per appearance of a ${FORMULA.bonusAward}-point award for the highest match claim in each fixture: (xG + xA) × ${FORMULA.bonusClaimXgi} + AtkCon × ${FORMULA.bonusClaimAttack} + DefCon × ${FORMULA.bonusClaimDefcon}. That award is separate from total FPL points.`;
 
 export const TEAM_FORMULA_NOTE =
   `Attack = avg match points + avg goals scored × ${FORMULA.teamGoals} + team xGI × ${FORMULA.teamXgi} + team AtkCon × ${FORMULA.teamAttackCon}. Defence = ${FORMULA.teamDefenceBase} − avg goals conceded + team DefCon × ${FORMULA.teamDefcon}. GKP/DEF use 0.40 attack + 0.60 defence; MID/FWD use 0.80 + 0.20.`;

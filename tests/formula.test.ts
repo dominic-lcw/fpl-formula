@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { beforeAll, describe, expect, it } from "vitest";
-import { FORMULA, fixtureBonusSubquerySql, individualRawSql, matchBonusClaim } from "../src/lib/formula";
+import {
+  FORMULA,
+  bonusPointsSumSql,
+  fixtureBonusSubquerySql,
+  individualRawSql,
+  matchBonusClaim,
+} from "../src/lib/formula";
 import { buildMultiFormulaBacktestQuery, TRACKER_PRESET_STRATEGIES } from "../src/lib/formula-tracking-data";
 
 const testParquetDirectory = path.join(tmpdir(), `fpl-formula-balance-${randomUUID()}`);
@@ -68,6 +74,7 @@ describe("shared individual expression", () => {
     expect(expression).toContain(`attack_con * ${FORMULA.attackCon}`);
     expect(expression).toContain(`defcon * ${FORMULA.defcon}`);
     expect(expression).toContain(`bonus_points * ${FORMULA.bonus}`);
+    expect(bonusPointsSumSql("bonus")).toContain("count(distinct");
     expect(expression).not.toContain("CASE WHEN");
     expect(backtest).toContain(expression);
     expect(backtest).toContain(`* ${FORMULA.teamDefcon}`);
