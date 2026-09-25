@@ -11,22 +11,16 @@ import type { PlayerFeature } from "@/lib/fpl-types";
  *
  * Each term below is calibrated so a strong five-game sample lands near 3–4
  * raw points: about 3 xGI, ~300 threat+creativity, or ~90 defensive actions.
- * FPL points stay the largest term because they are the realised return.
- * Official FPL bonus is left inside those points. The bonus term is a separate
- * 3-point award we assign once per fixture.
+ * FPL points stay the largest term because they are the realised return,
+ * including official FPL bonus (0–3) from BPS.
  */
 export const FORMULA = {
   xgi: 1,
   formPoints: 0.3,
   attackCon: 0.012,
   defcon: 0.04,
-  bonus: 1,
   priorXgiScale: 4,
   priorWeight: 0.25,
-  bonusAward: 3,
-  bonusClaimXgi: 25,
-  bonusClaimAttack: 0.08,
-  bonusClaimDefcon: 0.35,
   teamGoals: 0.35,
   teamXgi: 0.1,
   teamAttackCon: 0.0004,
@@ -34,30 +28,13 @@ export const FORMULA = {
   teamDefenceBase: 3,
 } as const;
 
-export type BonusClaimInput = {
-  xg: number;
-  xa: number;
-  threat: number;
-  creativity: number;
-  defcon: number;
-};
-
 export function attackContribution(threat: number, creativity: number) {
   return threat + creativity;
 }
 
-/** Per-fixture claim used only to choose who receives the 3-point award. */
-export function matchBonusClaim(input: BonusClaimInput) {
-  return (
-    (input.xg + input.xa) * FORMULA.bonusClaimXgi +
-    attackContribution(input.threat, input.creativity) * FORMULA.bonusClaimAttack +
-    input.defcon * FORMULA.bonusClaimDefcon
-  );
-}
-
 export function individualRaw(player: Pick<
   PlayerFeature,
-  "xg" | "xa" | "formPoints" | "attackCon" | "defcon" | "bonusPoints" | "lastSeasonXgiPer90" | "lastSeasonPointsPer90"
+  "xg" | "xa" | "formPoints" | "attackCon" | "defcon" | "lastSeasonXgiPer90" | "lastSeasonPointsPer90"
 >) {
   const priorSeasonReference = player.lastSeasonXgiPer90 * FORMULA.priorXgiScale + player.lastSeasonPointsPer90;
   return (
@@ -65,7 +42,6 @@ export function individualRaw(player: Pick<
     player.formPoints * FORMULA.formPoints +
     player.attackCon * FORMULA.attackCon +
     player.defcon * FORMULA.defcon +
-    player.bonusPoints * FORMULA.bonus +
     priorSeasonReference * FORMULA.priorWeight
   );
 }
@@ -90,7 +66,6 @@ export function individualRawSql(alias: string) {
           + ${alias}.form_points * ${FORMULA.formPoints}
           + ${alias}.attack_con * ${FORMULA.attackCon}
           + ${alias}.defcon * ${FORMULA.defcon}
-          + ${alias}.bonus_points * ${FORMULA.bonus}
           + (${alias}.last_year_xgi_per_90 * ${FORMULA.priorXgiScale} + ${alias}.last_year_per_90) * ${FORMULA.priorWeight}`;
 }
 
@@ -98,8 +73,9 @@ export function attackConSumSql(alias: string) {
   return `coalesce(sum(coalesce(${alias}.threat, 0) + coalesce(${alias}.creativity, 0)), 0)`;
 }
 
-export function bonusPointsSumSql(alias: string) {
-  return `coalesce(sum(${alias}.bonus_points), 0)`;
+/** Official FPL bonus (0–3 per fixture) summed over the form window — display only, already in FPL points. */
+export function fplBonusSumSql(alias: string) {
+  return `coalesce(sum(coalesce(${alias}.bonus, 0)), 0)`;
 }
 
 export function teamAttackSelectSql() {
@@ -115,43 +91,11 @@ export function teamRawSql(position: string, attack: string, defence: string) {
           + coalesce(${defence}, 0) * CASE WHEN ${position} IN ('GKP', 'DEF') THEN 0.6 ELSE 0.2 END`;
 }
 
-export function bonusClaimSql(alias: string) {
-  return `(
-            (coalesce(${alias}.expected_goals, 0) + coalesce(${alias}.expected_assists, 0)) * ${FORMULA.bonusClaimXgi}
-            + (coalesce(${alias}.threat, 0) + coalesce(${alias}.creativity, 0)) * ${FORMULA.bonusClaimAttack}
-            + coalesce(${alias}.defensive_contribution, 0) * ${FORMULA.bonusClaimDefcon}
-          )`;
-}
-
-/** One row per fixture: the player with the highest match claim receives 3 points. */
-export function fixtureBonusSubquerySql() {
-  return `
-    SELECT season, fixture_id, player_id, ${FORMULA.bonusAward} AS bonus_points
-    FROM (
-      SELECT
-        season,
-        fixture_id,
-        player_id,
-        row_number() OVER (
-          PARTITION BY season, fixture_id
-          ORDER BY
-            ${bonusClaimSql("stats")} DESC,
-            (coalesce(stats.expected_goals, 0) + coalesce(stats.expected_assists, 0)) DESC,
-            (coalesce(stats.threat, 0) + coalesce(stats.creativity, 0)) DESC,
-            stats.player_id
-        ) AS bonus_rank
-      FROM player_fixture_stats stats
-      WHERE coalesce(stats.minutes, 0) > 0
-    ) ranked_bonus
-    WHERE bonus_rank = 1
-  `;
-}
-
 export const INDIVIDUAL_FORMULA_TEXT =
-  `(xG + xA) × ${FORMULA.xgi} + FPL points × ${FORMULA.formPoints} + AtkCon × ${FORMULA.attackCon} + DefCon × ${FORMULA.defcon} + bonus × ${FORMULA.bonus} + (last-season xGI/90 × ${FORMULA.priorXgiScale} + last-season points/90) × ${FORMULA.priorWeight}`;
+  `(xG + xA) × ${FORMULA.xgi} + FPL points × ${FORMULA.formPoints} + AtkCon × ${FORMULA.attackCon} + DefCon × ${FORMULA.defcon} + (last-season xGI/90 × ${FORMULA.priorXgiScale} + last-season points/90) × ${FORMULA.priorWeight}`;
 
 export const INDIVIDUAL_FORMULA_NOTE =
-  `AtkCon is threat + creativity over the form window. DefCon is the defensive-action count on the same scale, with no extra position multiplier. Bonus adds ${FORMULA.bonusAward} points for the player with the highest match claim in each fixture: (xG + xA) × ${FORMULA.bonusClaimXgi} + AtkCon × ${FORMULA.bonusClaimAttack} + DefCon × ${FORMULA.bonusClaimDefcon}. That award is separate from total FPL points.`;
+  `AtkCon is threat + creativity over the form window. DefCon is the defensive-action count on the same scale, with no extra position multiplier. FPL points are total_points from the API, which already include official bonus from BPS.`;
 
 export const TEAM_FORMULA_NOTE =
   `Attack = avg match points + avg goals scored × ${FORMULA.teamGoals} + team xGI × ${FORMULA.teamXgi} + team AtkCon × ${FORMULA.teamAttackCon}. Defence = ${FORMULA.teamDefenceBase} − avg goals conceded + team DefCon × ${FORMULA.teamDefcon}. GKP/DEF use 0.40 attack + 0.60 defence; MID/FWD use 0.80 + 0.20.`;

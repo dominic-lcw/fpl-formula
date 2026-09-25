@@ -8,8 +8,6 @@ import type {
 } from "@/lib/fpl-types";
 import {
   attackConSumSql,
-  bonusPointsSumSql,
-  fixtureBonusSubquerySql,
   teamAttackSelectSql,
   teamDefenceSelectSql,
 } from "@/lib/formula";
@@ -31,7 +29,6 @@ type PlayerRow = {
   xa: number | null;
   attack_con: number | null;
   defcon: number | null;
-  bonus_points: number | null;
   last_season_points_per_90: number | null;
   last_season_xgi_per_90: number | null;
 };
@@ -86,7 +83,6 @@ export async function getRankingData(
               coalesce(sum(s.expected_assists), 0) AS xa,
               ${attackConSumSql("s")} AS attack_con,
               coalesce(sum(s.defensive_contribution), 0) AS defcon,
-              ${bonusPointsSumSql("bonus")} AS bonus_points,
               coalesce(max(CASE WHEN summary.minutes >= 450 THEN summary.total_points / summary.minutes * 90 END), 0) AS last_season_points_per_90,
               coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_season_xgi_per_90
        FROM players p
@@ -96,8 +92,6 @@ export async function getRankingData(
        LEFT JOIN player_fixture_stats s
          ON s.season = p.season AND s.player_id = p.player_id
          AND s.event BETWEEN ? AND ?
-       LEFT JOIN (${fixtureBonusSubquerySql()}) bonus
-         ON bonus.season = s.season AND bonus.fixture_id = s.fixture_id AND bonus.player_id = s.player_id
        WHERE p.season = ?
        GROUP BY ALL`,
       [priorSeason, startGameweek, currentGameweek, season],
@@ -189,7 +183,6 @@ export async function getRankingData(
       xa: Number(player.xa ?? 0),
       attackCon: Number(player.attack_con ?? 0),
       defcon: Number(player.defcon ?? 0),
-      bonusPoints: Number(player.bonus_points ?? 0),
       lastSeasonPointsPer90: Number(player.last_season_points_per_90 ?? 0),
       lastSeasonXgiPer90: Number(player.last_season_xgi_per_90 ?? 0),
       teamAttack: Number(teamScore?.attack ?? 0),

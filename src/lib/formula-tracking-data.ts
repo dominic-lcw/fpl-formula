@@ -1,7 +1,5 @@
 import {
   attackConSumSql,
-  bonusPointsSumSql,
-  fixtureBonusSubquerySql,
   individualRawSql,
   teamAttackSelectSql,
   teamDefenceSelectSql,
@@ -120,7 +118,6 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         coalesce(sum(history.expected_assists), 0) AS xa,
         ${attackConSumSql("history")} AS attack_con,
         coalesce(sum(history.defensive_contribution), 0) AS defcon,
-        ${bonusPointsSumSql("bonus")} AS bonus_points,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN summary.total_points / summary.minutes * 90 END), 0) AS last_year_per_90,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_year_xgi_per_90,
         coalesce(
@@ -139,8 +136,6 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         AND history.event BETWEEN greatest(1, r.target_gw - s.form_window) AND r.target_gw - 1
       LEFT JOIN fixtures played_fixture
         ON played_fixture.season = history.season AND played_fixture.fixture_id = history.fixture_id
-      LEFT JOIN (${fixtureBonusSubquerySql()}) bonus
-        ON bonus.season = history.season AND bonus.fixture_id = history.fixture_id AND bonus.player_id = history.player_id
       WHERE p.season = c.season
       GROUP BY ALL
     ),
