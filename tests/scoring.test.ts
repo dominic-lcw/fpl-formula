@@ -18,7 +18,6 @@ const basePlayer: PlayerFeature = {
   xa: 1.8,
   attackCon: 140,
   defcon: 20,
-  bonusPoints: 3,
   lastSeasonPointsPer90: 5.8,
   lastSeasonXgiPer90: 0.54,
   teamAttack: 8,
@@ -82,7 +81,6 @@ describe("scorePlayers", () => {
       xa: 0,
       attackCon: 0,
       defcon: 0,
-      bonusPoints: 0,
       formPoints: 0,
       lastSeasonPointsPer90: 0,
       lastSeasonXgiPer90: 0,
@@ -109,7 +107,6 @@ describe("scorePlayers", () => {
       xa: 0.05,
       attackCon: 25,
       defcon: 110,
-      bonusPoints: 0,
     };
     const forward = {
       ...basePlayer,
@@ -121,7 +118,6 @@ describe("scorePlayers", () => {
       xa: 0.6,
       attackCon: 260,
       defcon: 8,
-      bonusPoints: 3,
     };
 
     const rankings = scorePlayers([defender, forward], {
@@ -131,18 +127,6 @@ describe("scorePlayers", () => {
 
     expect(individualRaw(forward)).toBeGreaterThan(individualRaw(defender));
     expect(rankings[0].name).toBe("Finisher");
-  });
-
-  it("adds the 3-point match bonus on top of otherwise equal players", () => {
-    const awarded = { ...basePlayer, playerId: 1, name: "Awarded", bonusPoints: 3 };
-    const passedOver = { ...basePlayer, playerId: 2, name: "Passed over", bonusPoints: 0 };
-
-    expect(individualRaw(awarded) - individualRaw(passedOver)).toBe(3);
-    const rankings = scorePlayers([passedOver, awarded], {
-      ...DEFAULT_PARAMS,
-      weights: { individual: 100, team: 0, fixtures: 0 },
-    });
-    expect(rankings[0].name).toBe("Awarded");
   });
 
   it("folds a legacy venue weight into fixtures", () => {

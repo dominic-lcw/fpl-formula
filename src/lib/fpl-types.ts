@@ -38,7 +38,6 @@ export type PlayerFeature = {
   xa: number;
   attackCon: number;
   defcon: number;
-  bonusPoints: number;
   lastSeasonPointsPer90: number;
   lastSeasonXgiPer90: number;
   teamAttack: number;

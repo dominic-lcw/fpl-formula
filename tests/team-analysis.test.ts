@@ -18,7 +18,6 @@ function player(id: number, position: RankedPlayer["position"], score: number): 
     xa: 1,
     attackCon: 40,
     defcon: 10,
-    bonusPoints: 0,
     lastSeasonPointsPer90: 5,
     lastSeasonXgiPer90: 0.4,
     teamAttack: 4,

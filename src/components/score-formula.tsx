@@ -98,12 +98,6 @@ export function ScoreFormula({ params }: { params: RankingParams }) {
               note={TEAM_FORMULA_NOTE}
             />
             <FormulaDefinition
-              symbol="B"
-              title="Match bonus"
-              formula={`highest match claim in the fixture receives ${FORMULA.bonusAward} points`}
-              note={`Claim = (xG + xA) × ${FORMULA.bonusClaimXgi} + (threat + creativity) × ${FORMULA.bonusClaimAttack} + defensive actions × ${FORMULA.bonusClaimDefcon}. Players with no minutes are skipped. Ties go to higher xGI, then higher threat + creativity, then the lower player id.`}
-            />
-            <FormulaDefinition
               symbol="F"
               title="Fixture outlook"
               formula="average of (6 − FDR + venue adjustment) × 20 for every upcoming fixture"

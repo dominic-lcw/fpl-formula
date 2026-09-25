@@ -1,8 +1,7 @@
 import type { Position, RankingParams } from "@/lib/fpl-types";
 import {
   attackConSumSql,
-  bonusPointsSumSql,
-  fixtureBonusSubquerySql,
+  fplBonusSumSql,
   individualRawSql,
   teamAttackSelectSql,
   teamDefenceSelectSql,
@@ -161,7 +160,7 @@ function rankingQuery(
       xa,
       attack_con,
       defcon,
-      bonus_points,
+      fpl_bonus,
       last_year_per_90,
       next_fixtures`;
 
@@ -197,7 +196,7 @@ function rankingQuery(
         coalesce(sum(s.expected_assists), 0) AS xa,
         ${attackConSumSql("s")} AS attack_con,
         coalesce(sum(s.defensive_contribution), 0) AS defcon,
-        ${bonusPointsSumSql("bonus")} AS bonus_points,
+        ${fplBonusSumSql("s")} AS fpl_bonus,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN summary.total_points / summary.minutes * 90 END), 0) AS last_year_per_90,
         coalesce(max(CASE WHEN summary.minutes >= 450 THEN (summary.expected_goals + summary.expected_assists) / summary.minutes * 90 END), 0) AS last_year_xgi_per_90
       FROM players p
@@ -208,8 +207,6 @@ function rankingQuery(
       LEFT JOIN player_fixture_stats s
         ON s.season = p.season AND s.player_id = p.player_id
         AND s.event BETWEEN ${startGameweek} AND c.current_gameweek
-      LEFT JOIN (${fixtureBonusSubquerySql()}) bonus
-        ON bonus.season = s.season AND bonus.fixture_id = s.fixture_id AND bonus.player_id = s.player_id
       WHERE p.season = c.season
       GROUP BY ALL
     ),
