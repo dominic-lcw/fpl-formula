@@ -1,5 +1,9 @@
 import {
   attackConSumSql,
+  backtestSampleGameweeksSql,
+  fixtureComponentSql,
+  fixtureMatchScoreSql,
+  fixtureOutlookSql,
   individualRawSql,
   teamAttackSelectSql,
   teamDefenceSelectSql,
@@ -39,7 +43,7 @@ type BacktestRow = {
   round_points: number;
 };
 
-const backtestCacheKey = "fpl-formula-backtest-v3";
+const backtestCacheKey = "fpl-formula-backtest-v4";
 
 function escapedSqlString(value: string) {
   return value.replaceAll("'", "''");
@@ -196,13 +200,23 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         AND f.event >= r.target_gw
         AND f.event < r.target_gw + s.fixture_horizon
     ),
+    fixture_slots AS (
+      SELECT s.strategy_id, r.target_gw, count(DISTINCT f.event) AS slots
+      FROM context c CROSS JOIN rounds r CROSS JOIN strategies s
+      JOIN fixtures f ON f.season = c.season
+        AND f.event >= r.target_gw
+        AND f.event < r.target_gw + s.fixture_horizon
+      GROUP BY ALL
+    ),
     fixture_metrics AS (
       SELECT
-        strategy_id,
-        target_gw,
-        team_id,
-        avg((6 - difficulty + CASE WHEN was_home THEN 0.5 ELSE -0.5 END) * 20) AS fixture_raw
-      FROM upcoming
+        u.strategy_id,
+        u.target_gw,
+        u.team_id,
+        ${fixtureOutlookSql(`sum(${fixtureMatchScoreSql("u.difficulty", "u.was_home")})`, "max(slots.slots)")} AS fixture_outlook
+      FROM upcoming u
+      JOIN fixture_slots slots
+        ON slots.strategy_id = u.strategy_id AND slots.target_gw = u.target_gw
       GROUP BY ALL
     ),
     round_outcomes AS (
@@ -226,7 +240,11 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         coalesce(outcome.actual_points, 0) AS actual_points,
         ${individualRawSql("pf")} AS individual_raw,
         ${teamRawSql("pf.position", "tf.attack", "tf.defence")} AS team_raw,
-        coalesce(fm.fixture_raw, 0) AS fixture_raw
+        ${fixtureComponentSql(
+          "coalesce(fm.fixture_outlook, 0)",
+          "pf.minutes",
+          backtestSampleGameweeksSql("pf.target_gw", "s.form_window"),
+        )} AS fixture_raw
       FROM player_features pf
       JOIN strategies s ON s.strategy_id = pf.strategy_id
       LEFT JOIN team_form tf
@@ -240,7 +258,7 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         *,
         CASE WHEN max(individual_raw) OVER (PARTITION BY strategy_id, target_gw) = min(individual_raw) OVER (PARTITION BY strategy_id, target_gw) THEN 50 ELSE (individual_raw - min(individual_raw) OVER (PARTITION BY strategy_id, target_gw)) * 100 / (max(individual_raw) OVER (PARTITION BY strategy_id, target_gw) - min(individual_raw) OVER (PARTITION BY strategy_id, target_gw)) END AS individual_score,
         CASE WHEN max(team_raw) OVER (PARTITION BY strategy_id, target_gw) = min(team_raw) OVER (PARTITION BY strategy_id, target_gw) THEN 50 ELSE (team_raw - min(team_raw) OVER (PARTITION BY strategy_id, target_gw)) * 100 / (max(team_raw) OVER (PARTITION BY strategy_id, target_gw) - min(team_raw) OVER (PARTITION BY strategy_id, target_gw)) END AS team_score,
-        CASE WHEN max(fixture_raw) OVER (PARTITION BY strategy_id, target_gw) = min(fixture_raw) OVER (PARTITION BY strategy_id, target_gw) THEN 50 ELSE (fixture_raw - min(fixture_raw) OVER (PARTITION BY strategy_id, target_gw)) * 100 / (max(fixture_raw) OVER (PARTITION BY strategy_id, target_gw) - min(fixture_raw) OVER (PARTITION BY strategy_id, target_gw)) END AS fixture_score
+        fixture_raw AS fixture_score
       FROM raw_scores
     ),
     selected AS (

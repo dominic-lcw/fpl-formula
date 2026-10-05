@@ -29,11 +29,11 @@ Default total score:
 45% individual form + 20% team form + 35% fixture outlook
 ```
 
-Each component is normalized against the eligible player pool (0–100), so the table represents a relative expected ranking rather than projected FPL points.
+Individual form and team form are normalized against the eligible player pool (0–100). Fixture outlook uses a fixed difficulty scale and a minutes factor, so the table stays a relative ranking without letting one club's schedule occupy the full 0–100 range.
 
 - **Individual:** rolling xG + xA, FPL points (including official bonus from BPS), attack contribution (threat + creativity), defensive contribution, a previous-season per-90 reference, and a minutes eligibility threshold.
 - **Team:** recent FPL match points/goals plus player xG/xA, attack-contribution, and defensive-contribution aggregates.
-- **Fixtures:** next 3 Gameweeks’ FPL fixture difficulty, including doubles and blanks. Home fixtures receive a +0.5 FDR adjustment and away fixtures a −0.5 adjustment.
+- **Fixtures:** the next Gameweeks’ FPL fixture difficulty on a fixed scale (an FDR 5 away game scores 0, an FDR 2 home game scores 100), with home advantage of +0.5 FDR and away of −0.5. Blanks add nothing and doubles count both matches. The score is then multiplied by minutes in the form window, with full credit at 60 minutes per Gameweek, so unused squad players do not inherit the club’s run.
 
 Choose from Balanced, Form first, Fixture led, or Steady presets, or tune the rolling window, horizon, minutes threshold, and weights directly. Rankings recalculate and settings save locally in the browser as each control changes.
 

@@ -1,8 +1,12 @@
 import type { Position, RankingParams } from "@/lib/fpl-types";
 import {
   attackConSumSql,
+  fixtureComponentSql,
+  fixtureMatchScoreSql,
+  fixtureOutlookSql,
   fplBonusSumSql,
   individualRawSql,
+  liveSampleGameweeksSql,
   teamAttackSelectSql,
   teamDefenceSelectSql,
   teamRawSql,
@@ -279,14 +283,19 @@ function rankingQuery(
         AND f.event > c.current_gameweek
         AND f.event <= c.current_gameweek + ${params.fixtureHorizon}
     ),
+    fixture_slots AS (
+      SELECT count(DISTINCT event) AS slots
+      FROM upcoming
+    ),
     fixture_metrics AS (
       SELECT
         u.team_id,
-        avg((6 - u.difficulty + CASE WHEN u.was_home THEN 0.5 ELSE -0.5 END) * 20) AS fixture_raw,
+        ${fixtureOutlookSql(`sum(${fixtureMatchScoreSql("u.difficulty", "u.was_home")})`, "max(slots.slots)")} AS fixture_outlook,
         string_agg(concat(upper(left(t.short_name, 3)), ' ', CASE WHEN u.was_home THEN 'H' ELSE 'A' END), ' · ' ORDER BY u.event, u.kickoff_time) AS next_fixtures
       FROM upcoming u
       JOIN teams t ON t.team_id = u.opponent_id
       CROSS JOIN context c
+      CROSS JOIN fixture_slots slots
       WHERE t.season = c.season
       GROUP BY u.team_id
     ),
@@ -295,9 +304,14 @@ function rankingQuery(
         p.*,
         ${individualRawSql("p")} AS individual_raw,
         ${teamRawSql("p.position", "tf.attack", "tf.defence")} AS team_raw,
-        coalesce(fm.fixture_raw, 0) AS fixture_raw,
+        ${fixtureComponentSql(
+          "coalesce(fm.fixture_outlook, 0)",
+          "p.minutes",
+          liveSampleGameweeksSql("c.current_gameweek", params.formWindow),
+        )} AS fixture_raw,
         coalesce(fm.next_fixtures, '—') AS next_fixtures
       FROM player_features p
+      CROSS JOIN context c
       LEFT JOIN team_form tf ON tf.team_id = p.team_id
       LEFT JOIN fixture_metrics fm ON fm.team_id = p.team_id
     ),
@@ -306,7 +320,7 @@ function rankingQuery(
         *,
         CASE WHEN max(individual_raw) OVER () = min(individual_raw) OVER () THEN 50 ELSE (individual_raw - min(individual_raw) OVER ()) * 100 / (max(individual_raw) OVER () - min(individual_raw) OVER ()) END AS individual_score,
         CASE WHEN max(team_raw) OVER () = min(team_raw) OVER () THEN 50 ELSE (team_raw - min(team_raw) OVER ()) * 100 / (max(team_raw) OVER () - min(team_raw) OVER ()) END AS team_score,
-        CASE WHEN max(fixture_raw) OVER () = min(fixture_raw) OVER () THEN 50 ELSE (fixture_raw - min(fixture_raw) OVER ()) * 100 / (max(fixture_raw) OVER () - min(fixture_raw) OVER ()) END AS fixture_score
+        fixture_raw AS fixture_score
       FROM raw_scores
     ),
     weighted_scores AS (

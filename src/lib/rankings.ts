@@ -197,7 +197,10 @@ export async function getRankingData(
     includesLiveGameweek,
     syncedAt:
       current.synced_at instanceof Date ? current.synced_at.toISOString() : String(current.synced_at),
-    rankings: scorePlayers(playerFeatures, params),
+    rankings: scorePlayers(playerFeatures, params, {
+      sampleGameweeks: currentGameweek > 0 ? currentGameweek - startGameweek + 1 : 0,
+      fixtureSlots: new Set(upcoming.flatMap((fixture) => (fixture.event == null ? [] : [fixture.event]))).size,
+    }),
     availableTeams: teams.map((team) => team.name),
   };
 }
