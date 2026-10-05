@@ -250,3 +250,16 @@ input {
     animation: none;
   }
 }
+
+@media print {
+  body:has(#matchday-one-pager) > :not(#matchday-one-pager) {
+    display: none !important;
+  }
+
+  #matchday-one-pager {
+    position: static !important;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+  }
+}

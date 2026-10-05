@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { listBookedPnlHistory } from "@/lib/booked-pnl";
 import {
   BookingRequestError,
   bookSelection,
@@ -65,10 +66,15 @@ export async function GET(request: NextRequest) {
     if (season && Number.isInteger(gameweek) && gameweek > 0) {
       const forecastParams = forecastParamsFromQuery(request.nextUrl.searchParams);
       const bookings = await listBookings(season, { skipSettlement });
-      const slate = await getGameweekSlate(season, gameweek, forecastParams, bookings);
-      return NextResponse.json({ bookings, ...slate });
+      const [slate, pnlHistory] = await Promise.all([
+        getGameweekSlate(season, gameweek, forecastParams, bookings),
+        listBookedPnlHistory(season, { skipSettlement: true }),
+      ]);
+      return NextResponse.json({ bookings, ...slate, pnlHistory });
     }
-    return NextResponse.json({ bookings: await listBookings(season, { skipSettlement }) });
+    const bookings = await listBookings(season, { skipSettlement });
+    const pnlHistory = season ? await listBookedPnlHistory(season, { skipSettlement: true }) : [];
+    return NextResponse.json({ bookings, pnlHistory });
   } catch (error) {
     return errorResponse(error, "Unable to load bookings.");
   }
