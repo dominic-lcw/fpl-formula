@@ -1,6 +1,13 @@
 import { ChevronDown } from "lucide-react";
 import type { RankingParams } from "@/lib/fpl-types";
-import { FORMULA, INDIVIDUAL_FORMULA_NOTE, INDIVIDUAL_FORMULA_TEXT, TEAM_FORMULA_NOTE } from "@/lib/formula";
+import {
+  FIXTURE_FORMULA_NOTE,
+  FIXTURE_FORMULA_TEXT,
+  FORMULA,
+  INDIVIDUAL_FORMULA_NOTE,
+  INDIVIDUAL_FORMULA_TEXT,
+  TEAM_FORMULA_NOTE,
+} from "@/lib/formula";
 
 const weightLabels = [
   { key: "individual", label: "Individual form", symbol: "I" },
@@ -40,8 +47,8 @@ export function ScoreFormula({ params }: { params: RankingParams }) {
             {params.weights.fixtures}) ÷ {totalWeight}
           </p>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            I, T, and F are each normalised to a 0–100 score before their relative weights
-            are applied.
+            I and T are normalised to 0–100 against the player pool. F is already a 0–100
+            fixture outlook. Their relative weights are applied after that.
             {isZeroWeighting ? " All weights are zero, so the denominator falls back to 1." : ""}
           </p>
         </div>
@@ -75,9 +82,11 @@ export function ScoreFormula({ params }: { params: RankingParams }) {
           <section>
             <h3 className="font-medium">Normalisation</h3>
             <p className="mt-2 leading-6 text-muted-foreground">
-              Each raw component becomes a 0–100 score using
+              Individual form and team form become 0–100 scores using
               {" "}<span className="font-mono text-foreground">(raw − pool minimum) ÷ (pool maximum − pool minimum) × 100</span>.
-              If every raw value is the same, that component is set to 50.
+              If every raw value is the same, that component is set to 50. Fixture outlook
+              stays on its fixed difficulty scale, so a slightly easier run is not stretched
+              to 100 for the whole squad.
             </p>
           </section>
         </div>
@@ -100,15 +109,15 @@ export function ScoreFormula({ params }: { params: RankingParams }) {
             <FormulaDefinition
               symbol="F"
               title="Fixture outlook"
-              formula="average of (6 − FDR + venue adjustment) × 20 for every upcoming fixture"
-              note="Venue adjustment is +0.5 at home and −0.5 away, equivalent to one FDR step between the same opponent at home and away. Includes double Gameweeks; a team with no fixture gets a raw score of 0."
+              formula={FIXTURE_FORMULA_TEXT}
+              note={FIXTURE_FORMULA_NOTE}
             />
           </div>
         </div>
 
         <p className="border-t pt-4 text-xs leading-5 text-muted-foreground">
-          Position and club filters only change the displayed rows. Component normalisation uses
-          the full player pool before those display filters are applied.
+          Position and club filters only change the displayed rows. Individual and team
+          normalisation uses the full player pool before those display filters are applied.
         </p>
       </div>
     </details>

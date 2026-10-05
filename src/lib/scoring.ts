@@ -38,7 +38,7 @@ export const FORMULA_PRESETS = [
   {
     id: "fixture-led",
     name: "Fixture led",
-    description: "Looks further ahead and gives the schedule the most influence.",
+    description: "Looks further ahead and gives the schedule the most influence, for players who are actually playing.",
     formWindow: 3,
     fixtureHorizon: 5,
     weights: { individual: 25, team: 15, fixtures: 60 },
@@ -121,11 +121,14 @@ function scale(values: number[]): (value: number) => number {
 export function scorePlayers(
   players: PlayerFeature[],
   params: RankingParams = DEFAULT_PARAMS,
+  options: { sampleGameweeks?: number; fixtureSlots?: number } = {},
 ): RankedPlayer[] {
   const safeParams = sanitiseParams(params);
+  const sampleGameweeks = options.sampleGameweeks ?? safeParams.formWindow;
+  const fixtureSlots = options.fixtureSlots ?? safeParams.fixtureHorizon;
+  const fixtureOptions = { slots: fixtureSlots, sampleGameweeks };
   const individualScale = scale(players.map(individualRaw));
   const teamScale = scale(players.map(teamRaw));
-  const fixtureScale = scale(players.map(fixtureRaw));
   const totalWeight = Object.values(safeParams.weights).reduce((sum, weight) => sum + weight, 0) || 1;
 
   return players
@@ -134,7 +137,7 @@ export function scorePlayers(
       const breakdown: ScoreBreakdown = {
         individual: individualScale(individualRaw(player)),
         team: teamScale(teamRaw(player)),
-        fixtures: fixtureScale(fixtureRaw(player)),
+        fixtures: fixtureRaw(player, fixtureOptions),
       };
       const score =
         (breakdown.individual * safeParams.weights.individual +

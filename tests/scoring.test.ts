@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PlayerFeature } from "../src/lib/fpl-types";
-import { individualRaw } from "../src/lib/formula";
-import { DEFAULT_PARAMS, sanitiseParams, scorePlayers } from "../src/lib/scoring";
+import { fixtureRaw, individualRaw } from "../src/lib/formula";
+import { DEFAULT_PARAMS, FORMULA_PRESETS, sanitiseParams, scorePlayers } from "../src/lib/scoring";
 
 const basePlayer: PlayerFeature = {
   playerId: 1,
@@ -127,6 +127,132 @@ describe("scorePlayers", () => {
 
     expect(individualRaw(forward)).toBeGreaterThan(individualRaw(defender));
     expect(rankings[0].name).toBe("Finisher");
+  });
+
+  it("keeps an easy Coventry-style run from ranking the whole squad", () => {
+    const coventryRun = [
+      { event: 6, opponent: "Newcastle", difficulty: 3, wasHome: true, kickoffTime: null },
+      { event: 7, opponent: "Spurs", difficulty: 3, wasHome: false, kickoffTime: null },
+      { event: 8, opponent: "Fulham", difficulty: 2, wasHome: true, kickoffTime: null },
+      { event: 9, opponent: "Sunderland", difficulty: 3, wasHome: true, kickoffTime: null },
+      { event: 10, opponent: "Everton", difficulty: 3, wasHome: false, kickoffTime: null },
+    ];
+    const arsenalRun = [
+      { event: 6, opponent: "Leeds", difficulty: 3, wasHome: true, kickoffTime: null },
+      { event: 7, opponent: "Forest", difficulty: 3, wasHome: false, kickoffTime: null },
+      { event: 8, opponent: "Everton", difficulty: 3, wasHome: true, kickoffTime: null },
+      { event: 9, opponent: "Liverpool", difficulty: 4, wasHome: false, kickoffTime: null },
+      { event: 10, opponent: "Hull", difficulty: 2, wasHome: true, kickoffTime: null },
+    ];
+    const starter = {
+      ...basePlayer,
+      name: "Coventry starter",
+      team: "Coventry City",
+      minutes: 270,
+      xg: 0.4,
+      xa: 0.2,
+      formPoints: 8,
+      attackCon: 40,
+      defcon: 20,
+      lastSeasonPointsPer90: 0,
+      lastSeasonXgiPer90: 0,
+      teamAttack: 2,
+      teamDefence: 2,
+      fixtures: coventryRun,
+    };
+    const unused = {
+      ...starter,
+      playerId: 2,
+      name: "Coventry unused",
+      minutes: 0,
+      xg: 0,
+      xa: 0,
+      formPoints: 0,
+      attackCon: 0,
+      defcon: 0,
+    };
+    const star = {
+      ...basePlayer,
+      playerId: 3,
+      name: "Arsenal starter",
+      team: "Arsenal",
+      minutes: 270,
+      xg: 2.4,
+      xa: 1.2,
+      formPoints: 32,
+      attackCon: 280,
+      defcon: 15,
+      teamAttack: 6,
+      teamDefence: 4,
+      fixtures: arsenalRun,
+    };
+    const preset = FORMULA_PRESETS.find((entry) => entry.id === "fixture-led");
+    const rankings = scorePlayers(
+      [starter, unused, star],
+      {
+        formWindow: preset?.formWindow ?? 3,
+        fixtureHorizon: preset?.fixtureHorizon ?? 5,
+        minMinutes: 0,
+        weights: { ...(preset?.weights ?? { individual: 25, team: 15, fixtures: 60 }) },
+      },
+      { sampleGameweeks: 3, fixtureSlots: 5 },
+    );
+
+    expect(rankings[0]?.name).toBe("Arsenal starter");
+    expect(rankings[2]?.name).toBe("Coventry unused");
+    const coventryStarter = rankings.find((player) => player.name === "Coventry starter");
+    const coventryUnused = rankings.find((player) => player.name === "Coventry unused");
+    const arsenal = rankings.find((player) => player.name === "Arsenal starter");
+    expect(coventryStarter?.breakdown.fixtures).toBeGreaterThan(arsenal?.breakdown.fixtures ?? 0);
+    expect(coventryStarter?.breakdown.fixtures).toBeGreaterThan(coventryUnused?.breakdown.fixtures ?? 0);
+    expect(coventryStarter?.breakdown.fixtures).toBeLessThan(100);
+    expect(coventryUnused?.breakdown.fixtures).toBe(0);
+  });
+
+  it("counts blanks as missed games and doubles as extra games", () => {
+    const options = { slots: 2, sampleGameweeks: 1 };
+    const played = fixtureRaw(
+      {
+        ...basePlayer,
+        minutes: 90,
+        fixtures: [
+          { event: 6, opponent: "Leeds", difficulty: 3, wasHome: true, kickoffTime: null },
+          { event: 7, opponent: "Leeds", difficulty: 3, wasHome: true, kickoffTime: null },
+        ],
+      },
+      options,
+    );
+    const blank = fixtureRaw(
+      {
+        ...basePlayer,
+        minutes: 90,
+        fixtures: [{ event: 6, opponent: "Leeds", difficulty: 3, wasHome: true, kickoffTime: null }],
+      },
+      options,
+    );
+    const double = fixtureRaw(
+      {
+        ...basePlayer,
+        minutes: 90,
+        fixtures: [
+          { event: 6, opponent: "Leeds", difficulty: 4, wasHome: false, kickoffTime: null },
+          { event: 6, opponent: "Burnley", difficulty: 4, wasHome: false, kickoffTime: null },
+        ],
+      },
+      { slots: 1, sampleGameweeks: 1 },
+    );
+    const single = fixtureRaw(
+      {
+        ...basePlayer,
+        minutes: 90,
+        fixtures: [{ event: 6, opponent: "Leeds", difficulty: 4, wasHome: false, kickoffTime: null }],
+      },
+      { slots: 1, sampleGameweeks: 1 },
+    );
+
+    expect(played).toBeGreaterThan(blank);
+    expect(played).toBeCloseTo(blank * 2, 5);
+    expect(double).toBeCloseTo(single * 2, 5);
   });
 
   it("folds a legacy venue weight into fixtures", () => {
