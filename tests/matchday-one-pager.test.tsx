@@ -187,6 +187,7 @@ describe("matchday one-pager", () => {
     );
 
     expect(html).toContain("Matchday one-pager");
+    expect(html).toContain("sticky top-0");
     expect(html).toContain("Save HTML");
     expect(html).not.toContain("Print");
     expect(html).toContain("Gameweek 8");
