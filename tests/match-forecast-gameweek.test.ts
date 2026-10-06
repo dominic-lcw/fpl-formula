@@ -20,6 +20,7 @@ beforeAll(async () => {
 describe("resolveDefaultGameweek", () => {
   it("defaults to the next gameweek after the latest completed one", () => {
     expect(resolveDefaultGameweek([4, 5, 6], 3)).toBe(4);
+    expect(resolveDefaultGameweek([1, 2, 3, 4, 5], 4)).toBe(5);
     expect(resolveDefaultGameweek([5, 6, 7], 4)).toBe(5);
   });
 
@@ -47,7 +48,8 @@ describe("getForecastData default gameweek", () => {
         ('2025-26', 2, 2, 8, 94, 2, 0, true),
         ('2025-26', 3, 3, 94, 8, 0, 2, true),
         ('2025-26', 4, 4, 8, 94, 1, 1, true),
-        ('2025-26', 5, 5, 94, 8, NULL, NULL, false);
+        ('2025-26', 5, 5, 94, 8, 2, 1, true),
+        ('2025-26', 6, 6, 8, 94, NULL, NULL, false);
     `);
     await exportParquetDataset(connection);
     connection.closeSync();
@@ -56,9 +58,10 @@ describe("getForecastData default gameweek", () => {
     const data = await getForecastData();
 
     expect(data.season).toBe("2025-26");
-    expect(data.currentGameweek).toBe(4);
-    expect(data.defaultGameweek).toBe(5);
-    expect(data.availableGameweeks).toContain(5);
+    expect(data.currentGameweek).toBe(5);
+    expect(data.defaultGameweek).toBe(6);
+    expect(data.availableGameweeks).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(data.upcomingFixtures.every((fixture) => fixture.event !== 5)).toBe(true);
 
     const defaultFixtures = data.upcomingFixtures.filter((fixture) => fixture.event === data.defaultGameweek);
     expect(defaultFixtures.length).toBeGreaterThan(0);
