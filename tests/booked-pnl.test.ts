@@ -23,87 +23,53 @@ let bookSelection: typeof import("../src/lib/bookings").bookSelection;
 let createHydrationConnection: typeof import("../src/lib/db").createHydrationConnection;
 let exportParquetDataset: typeof import("../src/lib/db").exportParquetDataset;
 let listBookedPnlHistory: typeof import("../src/lib/booked-pnl").listBookedPnlHistory;
-let settledBookedPnl: typeof import("../src/lib/booked-pnl").settledBookedPnl;
+let gameweekBookedPnl: typeof import("../src/lib/booked-pnl").gameweekBookedPnl;
 let resetReadConnection: typeof import("../src/lib/db").resetReadConnection;
 
 beforeAll(async () => {
   ({ bookSelection } = await import("../src/lib/bookings"));
-  ({ listBookedPnlHistory, settledBookedPnl } = await import("../src/lib/booked-pnl"));
+  ({ listBookedPnlHistory, gameweekBookedPnl } = await import("../src/lib/booked-pnl"));
   ({ createHydrationConnection, exportParquetDataset, resetReadConnection } = await import("../src/lib/db"));
 });
 
-describe("settled booked pnl", () => {
-  it("starts at the first non-null pnl and keeps a running total", () => {
-    const history = settledBookedPnl([
-      {
-        id: "open-early",
-        fixtureId: 1,
-        gameweek: 3,
-        homeShortName: "ALP",
-        awayShortName: "BET",
-        kickoffTime: "2026-01-01T15:00:00.000Z",
-        market: "1X2",
-        selection: "home",
-        odds: 2.1,
-        stake: 10,
-        outcome: null,
-        pnl: null,
-        settledAt: null,
-        bookedAt: "2025-12-01T12:00:00.000Z",
-      },
-      {
-        id: "loss",
-        fixtureId: 3,
-        gameweek: 6,
-        homeShortName: "EPS",
-        awayShortName: "ZET",
-        kickoffTime: "2026-02-01T15:00:00.000Z",
-        market: "1X2",
-        selection: "home",
-        odds: 2.1,
-        stake: 10,
-        outcome: "lost",
-        pnl: -10,
-        settledAt: "2026-02-01T17:00:00.000Z",
-        bookedAt: "2026-02-01T12:00:00.000Z",
-      },
-      {
-        id: "open-middle",
-        fixtureId: 2,
-        gameweek: 5,
-        homeShortName: "GAM",
-        awayShortName: "DEL",
-        kickoffTime: "2026-01-20T15:00:00.000Z",
-        market: "1X2",
-        selection: "home",
-        odds: 2.1,
-        stake: 10,
-        outcome: null,
-        pnl: null,
-        settledAt: null,
-        bookedAt: "2026-01-20T12:00:00.000Z",
-      },
-      {
-        id: "win",
-        fixtureId: 4,
-        gameweek: 4,
-        homeShortName: "GAM",
-        awayShortName: "DEL",
-        kickoffTime: "2026-01-10T15:00:00.000Z",
-        market: "1X2",
-        selection: "home",
-        odds: 2.1,
-        stake: 10,
-        outcome: "won",
-        pnl: 11,
-        settledAt: "2026-01-10T17:00:00.000Z",
-        bookedAt: "2026-01-10T12:00:00.000Z",
-      },
+function record(overrides: {
+  id: string;
+  gameweek: number | null;
+  pnl: number | null;
+  outcome?: "won" | "lost" | null;
+}) {
+  return {
+    id: overrides.id,
+    fixtureId: 1,
+    gameweek: overrides.gameweek,
+    homeShortName: "ALP",
+    awayShortName: "BET",
+    kickoffTime: null,
+    market: "1X2" as const,
+    selection: "home",
+    odds: 2.1,
+    stake: 10,
+    outcome: overrides.outcome ?? (overrides.pnl === null ? null : overrides.pnl >= 0 ? "won" as const : "lost" as const),
+    pnl: overrides.pnl,
+    settledAt: overrides.pnl === null ? null : "2026-01-01T17:00:00.000Z",
+    bookedAt: "2026-01-01T12:00:00.000Z",
+  };
+}
+
+describe("gameweek booked pnl", () => {
+  it("sums each realized gameweek and starts at the first one with a result", () => {
+    const history = gameweekBookedPnl([
+      record({ id: "open-early", gameweek: 3, pnl: null, outcome: null }),
+      record({ id: "gw4-win", gameweek: 4, pnl: 11, outcome: "won" }),
+      record({ id: "gw4-loss", gameweek: 4, pnl: -4, outcome: "lost" }),
+      record({ id: "gw5-settled", gameweek: 5, pnl: 8, outcome: "won" }),
+      record({ id: "gw5-open", gameweek: 5, pnl: null, outcome: null }),
+      record({ id: "gw6-loss", gameweek: 6, pnl: -10, outcome: "lost" }),
     ]);
 
-    expect(history.map((entry) => entry.id)).toEqual(["win", "loss"]);
-    expect(history[0]).toMatchObject({ gameweek: 4, pnl: 11, runningPnl: 11 });
-    expect(history[1]).toMatchObject({ gameweek: 6, pnl: -10, runningPnl: 1 });
+    expect(history.map((entry) => entry.gameweek)).toEqual([4, 6]);
+    expect(history[0]).toMatchObject({ pnl: 7, runningPnl: 7, won: 1, lost: 1, betCount: 2 });
+    expect(history[1]).toMatchObject({ pnl: -10, runningPnl: -3, won: 0, lost: 1, betCount: 1 });
   });
 });
 
@@ -125,6 +91,7 @@ describe("booked pnl history", () => {
        VALUES
        ('2025-26', 301, 3, 1, 2, NULL, NULL, false),
        ('2025-26', 401, 4, 3, 4, 2, 1, true),
+       ('2025-26', 402, 4, 1, 2, 0, 1, true),
        ('2025-26', 601, 6, 5, 6, 0, 1, true)`,
     );
     await exportParquetDataset(connection);
@@ -154,6 +121,17 @@ describe("booked pnl history", () => {
       forecast,
     });
     await bookSelection({
+      fixtureId: 402,
+      season: "2025-26",
+      homeTeam: "Alpha FC",
+      awayTeam: "Beta FC",
+      market: "1X2",
+      selection: "home",
+      stake: 10,
+      odds: 2.1,
+      forecast,
+    });
+    await bookSelection({
       fixtureId: 601,
       season: "2025-26",
       homeTeam: "Epsilon FC",
@@ -168,22 +146,12 @@ describe("booked pnl history", () => {
     resetReadConnection();
     const history = await listBookedPnlHistory("2025-26");
 
-    expect(history.map((entry) => entry.fixtureId)).toEqual([401, 601]);
-    expect(history[0]).toMatchObject({
-      gameweek: 4,
-      homeShortName: "GAM",
-      awayShortName: "DEL",
-      outcome: "won",
-    });
-    expect(history[0]?.pnl).toBeCloseTo(11, 5);
-    expect(history[0]?.runningPnl).toBeCloseTo(11, 5);
-    expect(history[1]).toMatchObject({
-      gameweek: 6,
-      homeShortName: "EPS",
-      awayShortName: "ZET",
-      outcome: "lost",
-    });
+    expect(history.map((entry) => entry.gameweek)).toEqual([4, 6]);
+    expect(history[0]).toMatchObject({ won: 1, lost: 1, betCount: 2 });
+    expect(history[0]?.pnl).toBeCloseTo(1, 5);
+    expect(history[0]?.runningPnl).toBeCloseTo(1, 5);
+    expect(history[1]).toMatchObject({ won: 0, lost: 1, betCount: 1 });
     expect(history[1]?.pnl).toBeCloseTo(-10, 5);
-    expect(history[1]?.runningPnl).toBeCloseTo(1, 5);
+    expect(history[1]?.runningPnl).toBeCloseTo(-9, 5);
   });
 });

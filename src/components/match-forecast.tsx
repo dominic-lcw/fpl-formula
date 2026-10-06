@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { SettledBookedPnl } from "@/lib/booked-pnl";
+import type { GameweekBookedPnl } from "@/lib/booked-pnl";
 import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
 import { buildMatchdayOnePager } from "@/lib/matchday-one-pager";
@@ -599,7 +599,7 @@ export function MatchForecastPanel() {
   const [selectedGameweek, setSelectedGameweek] = useState<number | null>(null);
   const hasInitializedGameweek = useRef(false);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
-  const [pnlHistory, setPnlHistory] = useState<SettledBookedPnl[]>([]);
+  const [pnlHistory, setPnlHistory] = useState<GameweekBookedPnl[]>([]);
   const [onePagerOpen, setOnePagerOpen] = useState(false);
   const [slateRows, setSlateRows] = useState<GameweekSlateRow[]>([]);
   const [slateSummary, setSlateSummary] = useState<GameweekSlateSummary>({
@@ -680,7 +680,7 @@ export function MatchForecastPanel() {
       rows?: GameweekSlateRow[];
       summary?: GameweekSlateSummary;
       availableGameweeks?: number[];
-      pnlHistory?: SettledBookedPnl[];
+      pnlHistory?: GameweekBookedPnl[];
     };
     setBookings(payload.bookings);
     if (payload.pnlHistory) setPnlHistory(payload.pnlHistory);

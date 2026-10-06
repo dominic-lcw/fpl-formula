@@ -20,9 +20,13 @@ export type BookedPnlRecord = {
   bookedAt: string;
 };
 
-export type SettledBookedPnl = BookedPnlRecord & {
+export type GameweekBookedPnl = {
+  gameweek: number;
   pnl: number;
   runningPnl: number;
+  won: number;
+  lost: number;
+  betCount: number;
 };
 
 type BookedPnlRow = {
@@ -42,35 +46,39 @@ type BookedPnlRow = {
   booked_at: Date | string;
 };
 
-function timeValue(value: string | null) {
-  if (!value) return Number.POSITIVE_INFINITY;
-  const time = Date.parse(value);
-  return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
+function hasPnl(record: BookedPnlRecord): record is BookedPnlRecord & { pnl: number } {
+  return record.pnl !== null && Number.isFinite(record.pnl);
 }
 
 /**
- * Chronological settled PnL. Open bookings (null pnl) are dropped, so the
- * series starts at the first record that actually has a result.
+ * One total per gameweek. A gameweek is realized once every booked bet in it
+ * has a PnL. The series starts at the first realized gameweek.
  */
-export function settledBookedPnl(records: BookedPnlRecord[]): SettledBookedPnl[] {
-  const settled = records.filter((record): record is BookedPnlRecord & { pnl: number } => (
-    record.pnl !== null && Number.isFinite(record.pnl)
-  ));
+export function gameweekBookedPnl(records: BookedPnlRecord[]): GameweekBookedPnl[] {
+  const grouped = new Map<number, BookedPnlRecord[]>();
+  for (const record of records) {
+    if (record.gameweek === null || !Number.isInteger(record.gameweek)) continue;
+    const rows = grouped.get(record.gameweek) ?? [];
+    rows.push(record);
+    grouped.set(record.gameweek, rows);
+  }
 
-  settled.sort((left, right) => {
-    const gameweekDelta = (left.gameweek ?? Number.MAX_SAFE_INTEGER) - (right.gameweek ?? Number.MAX_SAFE_INTEGER);
-    if (gameweekDelta !== 0) return gameweekDelta;
-    const kickoffDelta = timeValue(left.kickoffTime) - timeValue(right.kickoffTime);
-    if (kickoffDelta !== 0) return kickoffDelta;
-    const settledDelta = timeValue(left.settledAt) - timeValue(right.settledAt);
-    if (settledDelta !== 0) return settledDelta;
-    return timeValue(left.bookedAt) - timeValue(right.bookedAt);
-  });
+  const realized = [...grouped.entries()]
+    .filter(([, rows]) => rows.length > 0 && rows.every(hasPnl))
+    .sort(([left], [right]) => left - right);
 
   let runningPnl = 0;
-  return settled.map((record) => {
-    runningPnl += record.pnl;
-    return { ...record, runningPnl };
+  return realized.map(([gameweek, rows]) => {
+    const pnl = rows.reduce((total, row) => total + (row.pnl ?? 0), 0);
+    runningPnl += pnl;
+    return {
+      gameweek,
+      pnl,
+      runningPnl,
+      won: rows.filter((row) => row.outcome === "won").length,
+      lost: rows.filter((row) => row.outcome === "lost").length,
+      betCount: rows.length,
+    };
   });
 }
 
@@ -123,5 +131,5 @@ export async function listBookedPnlHistory(season: string, options?: { skipSettl
     [season],
   );
 
-  return settledBookedPnl(rows.map(mapBookedPnlRow));
+  return gameweekBookedPnl(rows.map(mapBookedPnlRow));
 }

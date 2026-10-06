@@ -3,9 +3,8 @@
 import { Printer, X } from "lucide-react";
 import { useEffect, useRef, type Ref } from "react";
 import { createPortal } from "react-dom";
-import type { SettledBookedPnl } from "@/lib/booked-pnl";
+import type { GameweekBookedPnl } from "@/lib/booked-pnl";
 import type { MatchdayOnePager as MatchdayOnePagerData, OnePagerMatch } from "@/lib/matchday-one-pager";
-import { describeSelection } from "@/lib/matchday-one-pager";
 
 function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
@@ -38,36 +37,32 @@ function pnlClass(value: number) {
   return value >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive";
 }
 
-export function BookedPnlStrip({ entries }: { entries: SettledBookedPnl[] }) {
+export function BookedPnlStrip({ entries }: { entries: GameweekBookedPnl[] }) {
   const book = entries.at(-1)?.runningPnl ?? 0;
 
   return (
-    <section aria-label="Previous booked PnL" className="rounded-xl border bg-card p-4">
+    <section aria-label="Booked PnL by gameweek" className="rounded-xl border bg-card p-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">Previous booked PnL</h2>
+        <h2 className="text-sm font-semibold">Booked PnL</h2>
         <p className="text-xs text-muted-foreground">
           {entries.length === 0
-            ? "Starts at the first settled booking"
-            : `${entries.length} settled · book ${formatPnl(book)}`}
+            ? "Per gameweek, from the first realized week"
+            : `${entries.length} gameweek${entries.length === 1 ? "" : "s"} · book ${formatPnl(book)}`}
         </p>
       </div>
       {entries.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No settled bookings yet. Open bets stay off this strip until they have a result.</p>
+        <p className="text-sm text-muted-foreground">No realized gameweeks yet. A week shows here once every booked bet in it has a result.</p>
       ) : (
         <div className="flex gap-2 overflow-x-auto pb-1">
           {entries.map((entry) => (
             <article
-              key={entry.id}
-              className="w-36 shrink-0 rounded-lg border bg-muted/20 px-3 py-2"
-              aria-label={`GW${entry.gameweek ?? "?"} ${entry.homeShortName} versus ${entry.awayShortName}, ${formatPnl(entry.pnl)}`}
+              key={entry.gameweek}
+              className="w-28 shrink-0 rounded-lg border bg-muted/20 px-3 py-2"
+              aria-label={`Gameweek ${entry.gameweek}, ${formatPnl(entry.pnl)}`}
             >
-              <p className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                GW{entry.gameweek ?? "?"} · {entry.homeShortName}–{entry.awayShortName}
-              </p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">GW{entry.gameweek}</p>
               <p className={`mt-1 text-base font-semibold tabular-nums ${pnlClass(entry.pnl)}`}>{formatPnl(entry.pnl)}</p>
-              <p className="truncate text-[11px] text-muted-foreground">
-                {describeSelection(entry.market, entry.selection, entry.homeShortName, entry.awayShortName)} @ {entry.odds.toFixed(2)}
-              </p>
+              <p className="text-[11px] text-muted-foreground">{entry.won}–{entry.lost} · {entry.betCount} bet{entry.betCount === 1 ? "" : "s"}</p>
               <p className={`text-[11px] tabular-nums ${pnlClass(entry.runningPnl)}`}>Book {formatPnl(entry.runningPnl)}</p>
             </article>
           ))}
@@ -170,7 +165,7 @@ export function MatchdayOnePagerView({
   dialogRef,
 }: {
   page: MatchdayOnePagerData;
-  pnlHistory: SettledBookedPnl[];
+  pnlHistory: GameweekBookedPnl[];
   onClose: () => void;
   dialogRef?: Ref<HTMLDivElement>;
 }) {
@@ -192,7 +187,7 @@ export function MatchdayOnePagerView({
             <p className="mt-1 text-sm text-muted-foreground">
               {page.season} · {page.matches.length} match{page.matches.length === 1 ? "" : "es"} · {page.bookedCount} booked
               {page.bookedCount > 0 ? ` · stake $${page.stake.toFixed(2)}` : ""}
-              {page.settledCount > 0 ? ` · settled ${formatPnl(page.settledPnl)}` : ""}
+              {page.realized && page.settledPnl !== null ? ` · PnL ${formatPnl(page.settledPnl)}` : ""}
             </p>
           </div>
           <div className="flex gap-2 print:hidden">
@@ -239,7 +234,7 @@ export function MatchdayOnePager({
   onClose,
 }: {
   page: MatchdayOnePagerData;
-  pnlHistory: SettledBookedPnl[];
+  pnlHistory: GameweekBookedPnl[];
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);

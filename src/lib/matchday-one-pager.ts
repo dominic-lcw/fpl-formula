@@ -278,8 +278,10 @@ export type MatchdayOnePager = {
   matches: OnePagerMatch[];
   bookedCount: number;
   stake: number;
-  settledPnl: number;
+  /** Sum of booked PnL once every bet in the gameweek has a result. */
+  settledPnl: number | null;
   settledCount: number;
+  realized: boolean;
 };
 
 export function buildMatchdayOnePager(input: {
@@ -292,6 +294,7 @@ export function buildMatchdayOnePager(input: {
   const matches = collectMatchdaySources(input.gameweek, input.forecasts, input.bookings, input.slateRows).map(toMatch);
   const booked = matches.filter((match) => match.bookedOdds);
   const settled = booked.filter((match) => match.bookedOdds?.pnl !== null && match.bookedOdds?.pnl !== undefined);
+  const realized = booked.length > 0 && settled.length === booked.length;
 
   return {
     season: input.season,
@@ -299,7 +302,8 @@ export function buildMatchdayOnePager(input: {
     matches,
     bookedCount: booked.length,
     stake: booked.reduce((total, match) => total + (match.bookedOdds?.stake ?? 0), 0),
-    settledPnl: settled.reduce((total, match) => total + (match.bookedOdds?.pnl ?? 0), 0),
+    settledPnl: realized ? settled.reduce((total, match) => total + (match.bookedOdds?.pnl ?? 0), 0) : null,
     settledCount: settled.length,
+    realized,
   };
 }

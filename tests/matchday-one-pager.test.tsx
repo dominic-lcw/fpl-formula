@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { BookedPnlStrip, MatchdayOnePagerView } from "../src/components/matchday-one-pager";
-import type { SettledBookedPnl } from "../src/lib/booked-pnl";
+import type { GameweekBookedPnl } from "../src/lib/booked-pnl";
 import type { BookingRecord } from "../src/lib/booking-settlement";
 import { buildMatchdayOnePager, type MatchdaySlateLike } from "../src/lib/matchday-one-pager";
 import type { FixtureForecast } from "../src/lib/match-forecast-model";
@@ -144,6 +144,7 @@ describe("matchday one-pager", () => {
       predictedWinner: "ALP win",
     });
     expect(page.matches[0]?.bookedOdds).toMatchObject({ odds: 2.1, pnl: 11, homeScore: 2, awayScore: 1 });
+    expect(page.realized).toBe(true);
     expect(page.settledPnl).toBe(11);
   });
 
@@ -158,41 +159,9 @@ describe("matchday one-pager", () => {
       bookings: [booking({ fixtureId: 1, odds: 2.4, stake: 10, selection: "home" })],
       slateRows: [],
     });
-    const history: SettledBookedPnl[] = [
-      {
-        id: "win",
-        fixtureId: 4,
-        gameweek: 4,
-        homeShortName: "GAM",
-        awayShortName: "DEL",
-        kickoffTime: null,
-        market: "1X2",
-        selection: "home",
-        odds: 2.1,
-        stake: 10,
-        outcome: "won",
-        pnl: 11,
-        runningPnl: 11,
-        settledAt: null,
-        bookedAt: "2026-01-10T12:00:00.000Z",
-      },
-      {
-        id: "loss",
-        fixtureId: 6,
-        gameweek: 6,
-        homeShortName: "EPS",
-        awayShortName: "ZET",
-        kickoffTime: null,
-        market: "1X2",
-        selection: "away",
-        odds: 3.2,
-        stake: 10,
-        outcome: "lost",
-        pnl: -10,
-        runningPnl: 1,
-        settledAt: null,
-        bookedAt: "2026-02-01T12:00:00.000Z",
-      },
+    const history: GameweekBookedPnl[] = [
+      { gameweek: 4, pnl: 11, runningPnl: 11, won: 1, lost: 0, betCount: 1 },
+      { gameweek: 6, pnl: -10, runningPnl: 1, won: 0, lost: 1, betCount: 1 },
     ];
 
     const html = renderToStaticMarkup(
@@ -204,14 +173,14 @@ describe("matchday one-pager", () => {
     expect(html).toContain("ARS win");
     expect(html).toContain("Odds booked");
     expect(html).toContain("2.40");
-    expect(html).toContain("Previous booked PnL");
-    expect(html.indexOf("GAM–DEL")).toBeLessThan(html.indexOf("EPS–ZET"));
+    expect(html).toContain("Booked PnL");
+    expect(html.indexOf(">GW4<")).toBeLessThan(html.indexOf(">GW6<"));
     expect(html).toContain("+$11.00");
     expect(html).toContain("-$10.00");
     expect(html.split("Odds booked")).toHaveLength(2);
     expect(html).toContain('class="flex gap-2 overflow-x-auto pb-1"');
 
     const strip = renderToStaticMarkup(<BookedPnlStrip entries={[]} />);
-    expect(strip).toContain("No settled bookings yet");
+    expect(strip).toContain("No realized gameweeks yet");
   });
 });
