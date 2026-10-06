@@ -1,9 +1,10 @@
 "use client";
 
-import { Printer, X } from "lucide-react";
-import { useEffect, useRef, type Ref } from "react";
+import { Download, X } from "lucide-react";
+import { useEffect, useRef, useState, type Ref } from "react";
 import { createPortal } from "react-dom";
 import type { GameweekBookedPnl } from "@/lib/booked-pnl";
+import { matchdayHtmlFilename, renderMatchdayHtml } from "@/lib/matchday-html";
 import type { MatchdayOnePager as MatchdayOnePagerData, OnePagerMatch } from "@/lib/matchday-one-pager";
 
 function formatPercent(value: number) {
@@ -187,9 +188,9 @@ export function MatchdayOnePagerView({
       aria-modal="true"
       aria-label={`Gameweek ${page.gameweek} matchday one-pager`}
       tabIndex={-1}
-      className="fixed inset-0 z-50 overflow-auto bg-background text-foreground outline-none print:static print:overflow-visible print:bg-white print:text-black"
+      className="fixed inset-0 z-50 overflow-auto bg-background text-foreground outline-none"
     >
-      <div className="mx-auto grid max-w-5xl gap-5 px-4 py-6 sm:px-6 print:max-w-none print:px-0 print:py-0">
+      <div className="mx-auto grid max-w-5xl gap-5 px-4 py-6 sm:px-6">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Matchday one-pager</p>
@@ -200,15 +201,8 @@ export function MatchdayOnePagerView({
               {page.realized && page.settledPnl !== null ? ` · PnL ${formatPnl(page.settledPnl)}` : ""}
             </p>
           </div>
-          <div className="flex gap-2 print:hidden">
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
-            >
-              <Printer className="size-4" />
-              Print
-            </button>
+          <div className="flex gap-2">
+            <SaveHtmlButton page={page} pnlHistory={pnlHistory} />
             <button
               type="button"
               onClick={onClose}
@@ -235,6 +229,57 @@ export function MatchdayOnePagerView({
         <BookedPnlStrip entries={pnlHistory} activeGameweek={page.gameweek} />
       </div>
     </div>
+  );
+}
+
+function downloadHtmlFile(filename: string, html: string) {
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+async function saveMatchdayHtml(page: MatchdayOnePagerData, pnlHistory: GameweekBookedPnl[]) {
+  const html = renderMatchdayHtml(page, pnlHistory);
+  const filename = matchdayHtmlFilename(page);
+  const file = new File([html], filename, { type: "text/html" });
+
+  try {
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: `GW ${page.gameweek} matchday` });
+      return;
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+  }
+
+  downloadHtmlFile(filename, html);
+}
+
+function SaveHtmlButton({
+  page,
+  pnlHistory,
+}: {
+  page: MatchdayOnePagerData;
+  pnlHistory: GameweekBookedPnl[];
+}) {
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <button
+      type="button"
+      disabled={saving}
+      onClick={() => {
+        setSaving(true);
+        void saveMatchdayHtml(page, pnlHistory).finally(() => setSaving(false));
+      }}
+      className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+    >
+      <Download className="size-4" />
+      {saving ? "Saving…" : "Save HTML"}
+    </button>
   );
 }
 
