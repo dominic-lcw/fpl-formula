@@ -3,6 +3,7 @@
 import {
   Calculator,
   ChevronDown,
+  FileText,
   LoaderCircle,
   Receipt,
   Target,
@@ -10,11 +11,15 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookingProbabilityScatter } from "@/components/booking-probability-scatter";
+import { BookedPnlStrip, MatchdayOnePager } from "@/components/matchday-one-pager";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import type { GameweekBookedPnl } from "@/lib/booked-pnl";
 import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
+import { buildMatchdayOnePager } from "@/lib/matchday-one-pager";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
 
@@ -36,8 +41,8 @@ function formatPercent(value: number) {
 }
 
 function formatPnl(value: number) {
-  const sign = value > 0 ? "+" : "";
-  return `${sign}$${value.toFixed(2)}`;
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}$${Math.abs(value).toFixed(2)}`;
 }
 
 function selectionLabel(market: BookingMarket, selection: string) {
@@ -594,6 +599,8 @@ export function MatchForecastPanel() {
   const [selectedGameweek, setSelectedGameweek] = useState<number | null>(null);
   const hasInitializedGameweek = useRef(false);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
+  const [pnlHistory, setPnlHistory] = useState<GameweekBookedPnl[]>([]);
+  const [onePagerOpen, setOnePagerOpen] = useState(false);
   const [slateRows, setSlateRows] = useState<GameweekSlateRow[]>([]);
   const [slateSummary, setSlateSummary] = useState<GameweekSlateSummary>({
     settledPnl: 0,
@@ -673,8 +680,10 @@ export function MatchForecastPanel() {
       rows?: GameweekSlateRow[];
       summary?: GameweekSlateSummary;
       availableGameweeks?: number[];
+      pnlHistory?: GameweekBookedPnl[];
     };
     setBookings(payload.bookings);
+    if (payload.pnlHistory) setPnlHistory(payload.pnlHistory);
     if (payload.rows && payload.summary) {
       setSlateRows(payload.rows);
       setSlateSummary(payload.summary);
@@ -745,10 +754,28 @@ export function MatchForecastPanel() {
 
   const selectGameweek = useCallback((gameweek: number) => {
     setSelectedGameweek(gameweek);
-    if (subView === "bookings" && data?.season) {
+    if (data?.season) {
       void loadBookings(data.season, gameweek, params);
     }
-  }, [data, loadBookings, params, subView]);
+  }, [data, loadBookings, params]);
+
+  const matchdayPage = useMemo(() => {
+    if (!data?.season) return null;
+    return buildMatchdayOnePager({
+      season: data.season,
+      gameweek: resolvedGameweek,
+      forecasts: data.upcomingFixtures,
+      bookings,
+      slateRows,
+    });
+  }, [bookings, data, resolvedGameweek, slateRows]);
+
+  const openOnePager = useCallback(() => {
+    setOnePagerOpen(true);
+    if (data?.season) {
+      void loadBookings(data.season, resolvedGameweek, params);
+    }
+  }, [data, loadBookings, params, resolvedGameweek]);
 
   async function bookGameweek() {
     if (!data?.season) return;
@@ -818,7 +845,8 @@ export function MatchForecastPanel() {
   }
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[285px_1fr]">
+    <section className="grid gap-5">
+      <div className="grid gap-5 xl:grid-cols-[285px_1fr]">
       <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
 
       <div className="grid gap-5">
@@ -834,6 +862,12 @@ export function MatchForecastPanel() {
                 value={resolvedGameweek}
                 onChange={selectGameweek}
               />
+            ) : null}
+            {(subView === "fixtures" || subView === "bookings") ? (
+              <Button type="button" variant="outline" onClick={openOnePager}>
+                <FileText />
+                Matchday one-pager
+              </Button>
             ) : null}
           </div>
           <p className="text-sm text-muted-foreground">
@@ -896,6 +930,15 @@ export function MatchForecastPanel() {
           </div>
         )}
       </div>
+    </div>
+      <BookedPnlStrip entries={pnlHistory} />
+      {onePagerOpen && matchdayPage ? (
+        <MatchdayOnePager
+          page={matchdayPage}
+          pnlHistory={pnlHistory}
+          onClose={() => setOnePagerOpen(false)}
+        />
+      ) : null}
     </section>
   );
 }
