@@ -37,7 +37,13 @@ function pnlClass(value: number) {
   return value >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive";
 }
 
-export function BookedPnlStrip({ entries }: { entries: GameweekBookedPnl[] }) {
+export function BookedPnlStrip({
+  entries,
+  activeGameweek,
+}: {
+  entries: GameweekBookedPnl[];
+  activeGameweek?: number;
+}) {
   const book = entries.at(-1)?.runningPnl ?? 0;
 
   return (
@@ -57,7 +63,7 @@ export function BookedPnlStrip({ entries }: { entries: GameweekBookedPnl[] }) {
           {entries.map((entry) => (
             <article
               key={entry.gameweek}
-              className="w-28 shrink-0 rounded-lg border bg-muted/20 px-3 py-2"
+              className={`w-28 shrink-0 rounded-lg border bg-muted/20 px-3 py-2 ${entry.gameweek === activeGameweek ? "border-primary ring-1 ring-primary" : ""}`}
               aria-label={`Gameweek ${entry.gameweek}, ${formatPnl(entry.pnl)}`}
             >
               <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">GW{entry.gameweek}</p>
@@ -76,9 +82,7 @@ function MatchSheet({ match }: { match: OnePagerMatch }) {
   const kickoff = formatKickoff(match.kickoffTime);
   const forecast = match.forecast;
   const odds = match.bookedOdds;
-  const score = odds && odds.homeScore !== null && odds.awayScore !== null
-    ? `${odds.homeScore}–${odds.awayScore}`
-    : null;
+  const result = match.result;
 
   return (
     <article className="flex flex-col rounded-lg border p-3">
@@ -87,7 +91,16 @@ function MatchSheet({ match }: { match: OnePagerMatch }) {
           <h3 className="text-sm font-semibold tracking-tight">{match.homeShortName} vs {match.awayShortName}</h3>
           <p className="text-[11px] text-muted-foreground">{match.homeTeam} · {match.awayTeam}</p>
         </div>
-        {kickoff ? <p className="text-[11px] text-muted-foreground">{kickoff}</p> : null}
+        <div className="text-right">
+          {result ? (
+            <p className="text-lg font-semibold tabular-nums leading-none">{result.homeScore}–{result.awayScore}</p>
+          ) : null}
+          {odds?.pnl !== null && odds?.pnl !== undefined ? (
+            <p className={`mt-1 text-sm font-semibold tabular-nums ${pnlClass(odds.pnl)}`}>{formatPnl(odds.pnl)}</p>
+          ) : kickoff ? (
+            <p className="text-[11px] text-muted-foreground">{kickoff}</p>
+          ) : null}
+        </div>
       </header>
 
       <div className="grid gap-2 text-sm">
@@ -147,9 +160,6 @@ function MatchSheet({ match }: { match: OnePagerMatch }) {
             </p>
             <p className="text-xs text-muted-foreground">
               {odds.status === "open" ? "Open" : odds.outcome === "won" ? "Won" : "Lost"}
-              {score ? ` · ${score}` : ""}
-              {odds.pnl === null ? "" : ` · `}
-              {odds.pnl === null ? null : <span className={pnlClass(odds.pnl)}>{formatPnl(odds.pnl)}</span>}
             </p>
           </div>
         ) : null}
@@ -222,7 +232,7 @@ export function MatchdayOnePagerView({
           </div>
         )}
 
-        <BookedPnlStrip entries={pnlHistory} />
+        <BookedPnlStrip entries={pnlHistory} activeGameweek={page.gameweek} />
       </div>
     </div>
   );

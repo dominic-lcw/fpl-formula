@@ -44,6 +44,7 @@ export type OnePagerMatch = {
   awayTeam: string;
   homeShortName: string;
   awayShortName: string;
+  result: { homeScore: number; awayScore: number } | null;
   forecast: OnePagerForecast | null;
   bet: OnePagerBet | null;
   bookedOdds: OnePagerBookedOdds | null;
@@ -76,6 +77,8 @@ export type MatchdaySlateLike = {
   awayTeam: string;
   homeShortName: string;
   awayShortName: string;
+  homeScore?: number | null;
+  awayScore?: number | null;
   booking: BookingRecord | null;
 };
 
@@ -86,6 +89,8 @@ type MatchdaySource = {
   awayTeam: string;
   homeShortName: string;
   awayShortName: string;
+  homeScore: number | null;
+  awayScore: number | null;
   forecast: ForecastSlice | null;
   booking: BookingRecord | null;
 };
@@ -179,6 +184,8 @@ function sourceFromForecast(forecast: ForecastSlice, booking: BookingRecord | nu
     awayTeam: forecast.awayTeam,
     homeShortName: forecast.homeShortName,
     awayShortName: forecast.awayShortName,
+    homeScore: null,
+    awayScore: null,
     forecast,
     booking,
   };
@@ -209,6 +216,8 @@ export function collectMatchdaySources(
       awayTeam: row.awayTeam,
       homeShortName: row.homeShortName,
       awayShortName: row.awayShortName,
+      homeScore: row.homeScore ?? null,
+      awayScore: row.awayScore ?? null,
       forecast: forecastById.get(row.fixtureId) ?? null,
       booking: row.booking ?? preferredBooking(bookings, row.fixtureId),
     };
@@ -229,6 +238,8 @@ function toMatch(source: MatchdaySource): OnePagerMatch {
     booking ? forecastFromBooking(booking, source.homeShortName, source.awayShortName) : null
   );
 
+  const homeScore = booking?.homeScore ?? source.homeScore;
+  const awayScore = booking?.awayScore ?? source.awayScore;
   const modelPick = source.forecast ? highestMatchOutcome(source.forecast) : null;
   const bet: OnePagerBet | null = booking
     ? {
@@ -255,6 +266,7 @@ function toMatch(source: MatchdaySource): OnePagerMatch {
     awayTeam: source.awayTeam,
     homeShortName: source.homeShortName,
     awayShortName: source.awayShortName,
+    result: homeScore !== null && awayScore !== null ? { homeScore, awayScore } : null,
     forecast,
     bet,
     bookedOdds: booking

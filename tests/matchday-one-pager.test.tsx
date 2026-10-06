@@ -144,8 +144,25 @@ describe("matchday one-pager", () => {
       predictedWinner: "ALP win",
     });
     expect(page.matches[0]?.bookedOdds).toMatchObject({ odds: 2.1, pnl: 11, homeScore: 2, awayScore: 1 });
+    expect(page.matches[0]?.result).toEqual({ homeScore: 2, awayScore: 1 });
     expect(page.realized).toBe(true);
     expect(page.settledPnl).toBe(11);
+
+    const html = renderToStaticMarkup(
+      <MatchdayOnePagerView
+        page={page}
+        pnlHistory={[
+          { gameweek: 4, pnl: 11, runningPnl: 11, won: 1, lost: 0, betCount: 1 },
+          { gameweek: 6, pnl: -10, runningPnl: 1, won: 0, lost: 1, betCount: 1 },
+        ]}
+        onClose={() => undefined}
+      />,
+    );
+    expect(html).toContain("PnL +$11.00");
+    expect(html).toContain("2–1");
+    expect(html).toContain("Forecast when booked");
+    expect(html).toContain("ALP win");
+    expect(html.indexOf(">GW4<")).toBeLessThan(html.indexOf(">GW6<"));
   });
 
   it("renders the one-pager with booked odds and a horizontal pnl strip that starts at the first result", () => {
