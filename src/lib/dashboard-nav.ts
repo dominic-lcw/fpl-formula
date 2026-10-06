@@ -15,7 +15,7 @@ export const viewMeta: Record<DashboardView, { title: string; description: strin
   },
   forecast: {
     title: "Match forecast",
-    description: "Fixture cards with predicted winners and likely scorelines. Open the matchday one-pager for the forecast, the bet, and booked odds.",
+    description: "Fixture cards with predicted winners and likely scorelines. Save a matchday HTML sheet with the forecast, the bet, and booked odds.",
   },
   news: {
     title: "Manager news",

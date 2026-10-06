@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BookedPnlStrip, MatchdayOnePagerView } from "../src/components/matchday-one-pager";
 import type { GameweekBookedPnl } from "../src/lib/booked-pnl";
 import type { BookingRecord } from "../src/lib/booking-settlement";
+import { renderMatchdayHtml } from "../src/lib/matchday-html";
 import { buildMatchdayOnePager, type MatchdaySlateLike } from "../src/lib/matchday-one-pager";
 import type { FixtureForecast } from "../src/lib/match-forecast-model";
 
@@ -186,6 +187,8 @@ describe("matchday one-pager", () => {
     );
 
     expect(html).toContain("Matchday one-pager");
+    expect(html).toContain("Save HTML");
+    expect(html).not.toContain("Print");
     expect(html).toContain("Gameweek 8");
     expect(html).toContain("ARS win");
     expect(html).toContain("Odds booked");
@@ -199,5 +202,51 @@ describe("matchday one-pager", () => {
 
     const strip = renderToStaticMarkup(<BookedPnlStrip entries={[]} />);
     expect(strip).toContain("No realized gameweeks yet");
+  });
+
+  it("saves a phone HTML file with the gameweek data embedded", () => {
+    const page = buildMatchdayOnePager({
+      season: "2025-26",
+      gameweek: 6,
+      forecasts: [],
+      bookings: [],
+      slateRows: [{
+        fixtureId: 9,
+        gameweek: 6,
+        kickoffTime: "2026-02-07T15:00:00.000Z",
+        homeTeam: "Alpha <script>",
+        awayTeam: "Beta",
+        homeShortName: "ALP",
+        awayShortName: "BET",
+        booking: booking({
+          fixtureId: 9,
+          status: "settled",
+          outcome: "won",
+          pnl: 11,
+          odds: 2.1,
+          homeScore: 2,
+          awayScore: 1,
+          homeTeam: "Alpha <script>",
+          awayTeam: "Beta",
+        }),
+      }],
+    });
+    const file = renderMatchdayHtml(page, [
+      { gameweek: 6, pnl: 11, runningPnl: 11, won: 1, lost: 0, betCount: 1 },
+    ]);
+
+    expect(file).toContain('name="viewport"');
+    expect(file).not.toContain("<link");
+    expect(file).toContain("Alpha &lt;script&gt;");
+    expect(file).toContain("2–1");
+    expect(file).toContain("+$11.00");
+    expect(file).toContain("Odds booked");
+
+    const json = file.match(/<script type="application\/json" id="matchday-data">([\s\S]*?)<\/script>/)?.[1];
+    const data = JSON.parse(json ?? "") as { gameweek: number; settledPnl: number; matches: Array<{ homeTeam: string; odds: string }> };
+    expect(data.gameweek).toBe(6);
+    expect(data.settledPnl).toBe(11);
+    expect(data.matches[0]).toMatchObject({ homeTeam: "Alpha <script>", odds: "2.10" });
+    expect(file).not.toContain("<script>");
   });
 });

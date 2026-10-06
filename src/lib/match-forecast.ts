@@ -172,7 +172,7 @@ async function buildForecastData(
   }
 
   const minGameweek = Math.max(1, meta.currentGameweek - params.lookbackGameweeks + 1);
-  const [teams, finishedFixtures, upcomingFixtures, upcomingEvents] = await Promise.all([
+  const [teams, finishedFixtures, upcomingFixtures, fixtureEvents] = await Promise.all([
     query<TeamRatingRow>(
       `SELECT team_id, name, short_name, strength_attack_home, strength_attack_away, strength_defence_home, strength_defence_away
        FROM teams WHERE season = ? ORDER BY name`,
@@ -196,7 +196,7 @@ async function buildForecastData(
     query<{ event: number }>(
       `SELECT DISTINCT event
        FROM fixtures
-       WHERE season = ? AND finished = false AND event IS NOT NULL
+       WHERE season = ? AND event IS NOT NULL
        ORDER BY event`,
       [meta.season],
     ),
@@ -223,7 +223,7 @@ async function buildForecastData(
     params,
   );
 
-  const availableGameweeks = upcomingEvents
+  const availableGameweeks = fixtureEvents
     .map((row) => row.event)
     .filter((event): event is number => Number.isInteger(event));
   const defaultGameweek = resolveDefaultGameweek(availableGameweeks, meta.currentGameweek);

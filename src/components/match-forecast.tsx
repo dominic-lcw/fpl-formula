@@ -89,6 +89,87 @@ function mostLikelyScoreline(fixture: FixtureForecast) {
   return fixture.topScorelines[0] ?? null;
 }
 
+export function RealizedMatchCard({ row }: { row: GameweekSlateRow }) {
+  const booking = row.booking;
+  const kickoff = formatKickoff(row.kickoffTime);
+  const homeScore = booking?.homeScore ?? row.homeScore;
+  const awayScore = booking?.awayScore ?? row.awayScore;
+  const hasScore = homeScore !== null && awayScore !== null;
+  const status = !booking
+    ? "Played"
+    : booking.status === "open"
+      ? "Open"
+      : booking.outcome === "won"
+        ? "Won"
+        : "Lost";
+
+  return (
+    <article className="flex h-full flex-col rounded-xl border border-border bg-card p-5 text-left shadow-xs">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          GW{row.gameweek}{kickoff ? ` · ${kickoff}` : ""}
+        </p>
+        <Badge
+          className={
+            status === "Won"
+              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              : status === "Lost"
+                ? "bg-destructive/10 text-destructive"
+                : "bg-muted text-muted-foreground"
+          }
+        >
+          {status}
+        </Badge>
+      </div>
+
+      <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <div className="text-center">
+          <p className="text-lg font-semibold tracking-tight">{row.homeShortName}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{row.homeTeam}</p>
+        </div>
+        <span className="rounded-full border px-2.5 py-1 text-sm font-semibold tabular-nums">
+          {hasScore ? `${homeScore}–${awayScore}` : "vs"}
+        </span>
+        <div className="text-center">
+          <p className="text-lg font-semibold tracking-tight">{row.awayShortName}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{row.awayTeam}</p>
+        </div>
+      </div>
+
+      {booking ? (
+        <div className="mt-auto grid gap-3">
+          <div className="rounded-lg border bg-muted/20 p-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Forecast when booked</p>
+            <p className="mt-1 text-sm font-semibold">{selectionLabel(booking.market, booking.selection)}</p>
+            <p className="text-xs text-muted-foreground">{formatPercent(booking.modelProb)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Expected {booking.expectedHomeGoals.toFixed(2)}–{booking.expectedAwayGoals.toFixed(2)}
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-sm">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Odds</p>
+              <p className="font-semibold tabular-nums">{booking.odds.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Stake</p>
+              <p className="font-semibold tabular-nums">${booking.stake.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">PnL</p>
+              <p className={`font-semibold tabular-nums ${booking.pnl === null ? "text-muted-foreground" : booking.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+                {booking.pnl === null ? "—" : formatPnl(booking.pnl)}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-auto text-sm text-muted-foreground">Played. No bet was booked for this match.</p>
+      )}
+    </article>
+  );
+}
+
 function FixtureForecastCard({
   fixture,
   booked,
@@ -613,12 +694,14 @@ export function MatchForecastPanel() {
   });
   const [bookingGameweeks, setBookingGameweeks] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSlateLoading, setIsSlateLoading] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stake, setStake] = useState("10");
   const [defaultOdds, setDefaultOdds] = useState("2.10");
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
   const latestRequest = useRef(0);
+  const latestSlateRequest = useRef(0);
 
   const fixtureGameweeks = useMemo(() => data?.availableGameweeks ?? [], [data?.availableGameweeks]);
   const activeGameweeks = useMemo(
@@ -646,6 +729,11 @@ export function MatchForecastPanel() {
     () => data?.upcomingFixtures.filter((fixture) => fixture.event === resolvedGameweek) ?? [],
     [data?.upcomingFixtures, resolvedGameweek],
   );
+  const realizedRows = useMemo(
+    () => slateRows.filter((row) => row.gameweek === resolvedGameweek),
+    [resolvedGameweek, slateRows],
+  );
+  const slateReady = !isSlateLoading && slateRows.every((row) => row.gameweek === resolvedGameweek);
 
   const openBookingsByFixture = useMemo(() => {
     const ids = new Set<number>();
@@ -662,6 +750,8 @@ export function MatchForecastPanel() {
     options?: { skipSettlement?: boolean },
   ) => {
     if (!season) return;
+    const requestId = ++latestSlateRequest.current;
+    setIsSlateLoading(true);
     const query = new URLSearchParams({
       season,
       lookback: String(forecastParams.lookbackGameweeks),
@@ -673,22 +763,26 @@ export function MatchForecastPanel() {
     if (gameweek) query.set("gameweek", String(gameweek));
     if (options?.skipSettlement) query.set("skipSettlement", "1");
 
-    const response = await fetch(`/api/bookings?${query.toString()}`, { cache: "no-store" });
-    if (!response.ok) return;
-    const payload = await response.json() as {
-      bookings: BookingRecord[];
-      rows?: GameweekSlateRow[];
-      summary?: GameweekSlateSummary;
-      availableGameweeks?: number[];
-      pnlHistory?: GameweekBookedPnl[];
-    };
-    setBookings(payload.bookings);
-    if (payload.pnlHistory) setPnlHistory(payload.pnlHistory);
-    if (payload.rows && payload.summary) {
-      setSlateRows(payload.rows);
-      setSlateSummary(payload.summary);
+    try {
+      const response = await fetch(`/api/bookings?${query.toString()}`, { cache: "no-store" });
+      if (!response.ok || requestId !== latestSlateRequest.current) return;
+      const payload = await response.json() as {
+        bookings: BookingRecord[];
+        rows?: GameweekSlateRow[];
+        summary?: GameweekSlateSummary;
+        availableGameweeks?: number[];
+        pnlHistory?: GameweekBookedPnl[];
+      };
+      setBookings(payload.bookings);
+      if (payload.pnlHistory) setPnlHistory(payload.pnlHistory);
+      if (payload.rows && payload.summary) {
+        setSlateRows(payload.rows);
+        setSlateSummary(payload.summary);
+      }
+      if (payload.availableGameweeks) setBookingGameweeks(payload.availableGameweeks);
+    } finally {
+      if (requestId === latestSlateRequest.current) setIsSlateLoading(false);
     }
-    if (payload.availableGameweeks) setBookingGameweeks(payload.availableGameweeks);
   }, []);
 
   const loadForecast = useCallback(async (nextParams: ForecastParams) => {
@@ -875,7 +969,11 @@ export function MatchForecastPanel() {
               ? `completed through GW${data.currentGameweek ?? "?"}`
               : subView === "bookings"
                 ? `GW${resolvedGameweek} · book slate`
-                : `GW${resolvedGameweek} · ${slateSummary.settledCount} settled · ${slateSummary.openCount} open`}
+                : slateReady && realizedRows.length > 0 && gameweekFixtures.length === 0
+                  ? `GW${resolvedGameweek} · played${slateSummary.settledCount > 0 ? ` · ${formatPnl(slateSummary.settledPnl)}` : ""}`
+                  : slateReady
+                    ? `GW${resolvedGameweek} · ${slateSummary.settledCount} settled · ${slateSummary.openCount} open`
+                    : `GW${resolvedGameweek}`}
             {isLoading ? " · recomputing…" : ""}
           </p>
         </div>
@@ -913,10 +1011,20 @@ export function MatchForecastPanel() {
           </div>
         ) : subView === "strengths" ? (
           <TeamStrengthsPanel data={data} />
+        ) : gameweekFixtures.length === 0 && realizedRows.length > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {realizedRows.map((row) => (
+              <RealizedMatchCard key={row.fixtureId} row={row} />
+            ))}
+          </div>
         ) : gameweekFixtures.length === 0 ? (
           <div className="rounded-xl border border-dashed py-16 text-center">
-            <p className="font-medium">No fixtures for Gameweek {resolvedGameweek}</p>
-            <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
+            <p className="font-medium">
+              {isSlateLoading ? `Loading Gameweek ${resolvedGameweek}…` : `No fixtures for Gameweek ${resolvedGameweek}`}
+            </p>
+            {isSlateLoading ? null : (
+              <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
+            )}
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
