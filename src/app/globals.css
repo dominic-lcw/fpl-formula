@@ -129,7 +129,8 @@ input {
 .mosaic-rankings-table table {
   width: 100%;
   min-width: 1350px;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   color: var(--foreground);
   font-size: 0.875rem;
 }

@@ -190,8 +190,8 @@ export function MatchdayOnePagerView({
       tabIndex={-1}
       className="fixed inset-0 z-50 overflow-auto bg-background text-foreground outline-none"
     >
-      <div className="mx-auto grid max-w-5xl gap-5 px-4 py-6 sm:px-6">
-        <header className="flex flex-wrap items-start justify-between gap-3">
+      <div className="mx-auto grid max-w-5xl gap-5 px-4 pb-6 sm:px-6">
+        <header className="sticky top-0 z-10 -mx-4 flex flex-wrap items-start justify-between gap-3 border-b bg-background px-4 py-4 sm:-mx-6 sm:px-6">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Matchday one-pager</p>
             <h2 className="mt-1 text-2xl font-semibold tracking-tight">Gameweek {page.gameweek}</h2>

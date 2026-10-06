@@ -97,8 +97,8 @@ function DashboardLayout() {
         seasonLabel={seasonLabel}
         liveLabel={liveGameweek ? liveGameweekLabel(liveGameweek) : null}
       />
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+      <SidebarInset className="h-svh overflow-hidden md:h-[calc(100svh-1rem)]">
+        <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 hidden h-4 sm:block" />
           <div className="min-w-0 flex-1">
@@ -107,8 +107,10 @@ function DashboardLayout() {
           </div>
         </header>
 
-        <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 p-4 sm:p-6">
-          <DashboardPanels activeView={activeView} onNavigate={setActiveView} />
+        <div className="min-h-0 flex-1 overflow-auto">
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-4 sm:p-6">
+            <DashboardPanels activeView={activeView} onNavigate={setActiveView} />
+          </div>
         </div>
       </SidebarInset>
     </SidebarProvider>
