@@ -9,7 +9,7 @@ import {
   Target,
   TrendingUp,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type Ref } from "react";
 import { BookingProbabilityScatter } from "@/components/booking-probability-scatter";
 import { BookedPnlStrip, MatchdayOnePager } from "@/components/matchday-one-pager";
 import { Badge } from "@/components/ui/badge";
@@ -673,6 +673,29 @@ function GameweekBookingTable({
   );
 }
 
+export function GameweekBookingsView({
+  summary,
+  scatterRef,
+  ...tableProps
+}: {
+  summary: GameweekSlateSummary;
+  scatterRef?: Ref<HTMLDivElement>;
+} & ComponentProps<typeof GameweekBookingTable>) {
+  const showScatter = tableProps.rows.some((row) => row.booking && row.booking.odds > 1);
+
+  return (
+    <div className="grid gap-5">
+      <BookingSummaryCards summary={summary} />
+      <GameweekBookingTable {...tableProps} />
+      {showScatter ? (
+        <div ref={scatterRef} id="booking-probability-scatter" className="scroll-mt-6">
+          <BookingProbabilityScatter rows={tableProps.rows} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function MatchForecastPanel() {
   const [params, setParams] = useState<ForecastParams>(DEFAULT_FORECAST_PARAMS);
   const [data, setData] = useState<ForecastResponse | null>(null);
@@ -702,6 +725,8 @@ export function MatchForecastPanel() {
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
   const latestRequest = useRef(0);
   const latestSlateRequest = useRef(0);
+  const scatterRef = useRef<HTMLDivElement>(null);
+  const scrollScatterIntoView = useRef(false);
 
   const fixtureGameweeks = useMemo(() => data?.availableGameweeks ?? [], [data?.availableGameweeks]);
   const activeGameweeks = useMemo(
@@ -749,7 +774,7 @@ export function MatchForecastPanel() {
     forecastParams: ForecastParams = DEFAULT_FORECAST_PARAMS,
     options?: { skipSettlement?: boolean },
   ) => {
-    if (!season) return;
+    if (!season) return false;
     const requestId = ++latestSlateRequest.current;
     setIsSlateLoading(true);
     const query = new URLSearchParams({
@@ -765,7 +790,7 @@ export function MatchForecastPanel() {
 
     try {
       const response = await fetch(`/api/bookings?${query.toString()}`, { cache: "no-store" });
-      if (!response.ok || requestId !== latestSlateRequest.current) return;
+      if (!response.ok || requestId !== latestSlateRequest.current) return false;
       const payload = await response.json() as {
         bookings: BookingRecord[];
         rows?: GameweekSlateRow[];
@@ -780,6 +805,7 @@ export function MatchForecastPanel() {
         setSlateSummary(payload.summary);
       }
       if (payload.availableGameweeks) setBookingGameweeks(payload.availableGameweeks);
+      return Boolean(payload.rows && payload.summary);
     } finally {
       if (requestId === latestSlateRequest.current) setIsSlateLoading(false);
     }
@@ -910,13 +936,21 @@ export function MatchForecastPanel() {
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Unable to book the gameweek.");
-      await loadBookings(data.season, resolvedGameweek, params, { skipSettlement: true });
+      const loaded = await loadBookings(data.season, resolvedGameweek, params, { skipSettlement: true });
+      if (loaded) scrollScatterIntoView.current = true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to book the gameweek.");
     } finally {
       setIsBooking(false);
     }
   }
+
+  useEffect(() => {
+    if (!scrollScatterIntoView.current || isBooking || isSlateLoading) return;
+    scrollScatterIntoView.current = false;
+    if (!slateRows.some((row) => row.booking && row.booking.odds > 1)) return;
+    scatterRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [isBooking, isSlateLoading, slateRows]);
 
   if (isLoading && !data) {
     return (
@@ -988,25 +1022,23 @@ export function MatchForecastPanel() {
                 <p className="mt-2 text-sm text-muted-foreground">Choose another gameweek from the list.</p>
               </div>
             ) : (
-              <>
-                <BookingSummaryCards summary={slateSummary} />
-                <BookingProbabilityScatter rows={slateRows} />
-                <GameweekBookingTable
-                  gameweek={resolvedGameweek}
-                  rows={slateRows}
-                  stake={stake}
-                  defaultOdds={defaultOdds}
-                  rowOdds={rowOdds}
-                  isBooking={isBooking}
-                  onStakeChange={setStake}
-                  onDefaultOddsChange={(value) => {
-                    setDefaultOdds(value);
-                    setRowOdds({});
-                  }}
-                  onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
-                  onBookAll={() => void bookGameweek()}
-                />
-              </>
+              <GameweekBookingsView
+                summary={slateSummary}
+                scatterRef={scatterRef}
+                gameweek={resolvedGameweek}
+                rows={slateRows}
+                stake={stake}
+                defaultOdds={defaultOdds}
+                rowOdds={rowOdds}
+                isBooking={isBooking}
+                onStakeChange={setStake}
+                onDefaultOddsChange={(value) => {
+                  setDefaultOdds(value);
+                  setRowOdds({});
+                }}
+                onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
+                onBookAll={() => void bookGameweek()}
+              />
             )}
           </div>
         ) : subView === "strengths" ? (
