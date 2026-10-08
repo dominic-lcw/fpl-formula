@@ -1,4 +1,24 @@
-export type DashboardView = "rankings" | "team" | "tracker" | "forecast" | "news";
+export const dashboardViews = ["rankings", "team", "tracker", "forecast", "news"] as const;
+
+export type DashboardView = (typeof dashboardViews)[number];
+
+export const viewHref: Record<DashboardView, string> = {
+  rankings: "/",
+  team: "/team",
+  tracker: "/tracker",
+  forecast: "/forecast",
+  news: "/news",
+};
+
+const viewByPath: Record<string, DashboardView> = {
+  ...Object.fromEntries(dashboardViews.map((view) => [viewHref[view], view])),
+  "/rankings": "rankings",
+};
+
+export function viewFromPathname(pathname: string): DashboardView {
+  const path = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  return viewByPath[path] ?? "rankings";
+}
 
 export const viewMeta: Record<DashboardView, { title: string; description: string }> = {
   rankings: {

@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "FPL Formula Lab",
+  title: {
+    default: "FPL Formula Lab",
+    template: "%s · FPL Formula Lab",
+  },
   description: "Explainable FPL player rankings from FPL data.",
 };
 
