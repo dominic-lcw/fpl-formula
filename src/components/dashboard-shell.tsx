@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DashboardProvider, useDashboard } from "@/components/dashboard-provider";
@@ -10,7 +11,7 @@ import { RankingsView } from "@/components/rankings-view";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { viewMeta, type DashboardView } from "@/lib/dashboard-nav";
+import { viewFromPathname, viewHref, viewMeta, type DashboardView } from "@/lib/dashboard-nav";
 import type { LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { RankingParams } from "@/lib/fpl-types";
 import { sanitiseParams } from "@/lib/scoring";
@@ -37,7 +38,9 @@ function DashboardPanels({
   onNavigate: (view: DashboardView) => void;
 }) {
   const { params, updateParams, showLiveData, updateLiveData } = useDashboard();
-  const [mountedViews, setMountedViews] = useState<Set<DashboardView>>(() => new Set(["rankings"]));
+  // Mount a view the first time it is opened, then keep it mounted. Route changes
+  // only show or hide panels, so their client fetches are not repeated or awaited.
+  const [mountedViews, setMountedViews] = useState<Set<DashboardView>>(() => new Set([activeView]));
 
   if (!mountedViews.has(activeView)) {
     setMountedViews((current) => {
@@ -84,16 +87,21 @@ function DashboardPanels({
   );
 }
 
-function DashboardLayout() {
-  const [activeView, setActiveView] = useState<DashboardView>("rankings");
+function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const activeView = viewFromPathname(pathname);
   const { seasonLabel, liveGameweek } = useDashboard();
   const meta = viewMeta[activeView];
+
+  function onNavigate(view: DashboardView) {
+    router.push(viewHref[view], { scroll: false });
+  }
 
   return (
     <SidebarProvider>
       <AppSidebar
         activeView={activeView}
-        onNavigate={setActiveView}
         seasonLabel={seasonLabel}
         liveLabel={liveGameweek ? liveGameweekLabel(liveGameweek) : null}
       />
@@ -109,7 +117,8 @@ function DashboardLayout() {
 
         <div className="min-h-0 flex-1 overflow-auto">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-4 sm:p-6">
-            <DashboardPanels activeView={activeView} onNavigate={setActiveView} />
+            {children}
+            <DashboardPanels activeView={activeView} onNavigate={onNavigate} />
           </div>
         </div>
       </SidebarInset>
@@ -117,10 +126,10 @@ function DashboardLayout() {
   );
 }
 
-export function DashboardShell() {
+export function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <DashboardProvider>
-      <DashboardLayout />
+      <DashboardLayout>{children}</DashboardLayout>
     </DashboardProvider>
   );
 }

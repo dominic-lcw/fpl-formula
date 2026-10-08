@@ -1,6 +1,7 @@
 "use client";
 
 import { BarChart3, GitBranch, LineChart, Newspaper, Target, UsersRound } from "lucide-react";
+import Link from "next/link";
 import { useEffect } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
@@ -18,7 +19,7 @@ import {
   SidebarSeparator,
   useSidebar,
 } from "@/components/ui/sidebar";
-import type { DashboardView } from "@/lib/dashboard-nav";
+import { viewHref, type DashboardView } from "@/lib/dashboard-nav";
 
 const navItems = [
   {
@@ -50,12 +51,10 @@ const navItems = [
 
 export function AppSidebar({
   activeView,
-  onNavigate,
   seasonLabel,
   liveLabel,
 }: {
   activeView: DashboardView;
-  onNavigate: (view: DashboardView) => void;
   seasonLabel?: string;
   liveLabel?: string | null;
 }) {
@@ -70,18 +69,16 @@ export function AppSidebar({
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              onClick={() => onNavigate("rankings")}
-              isActive={activeView === "rankings"}
-            >
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <BarChart3 className="size-4" />
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">FPL Formula Lab</span>
-                <span className="truncate text-xs text-muted-foreground">Explainable rankings</span>
-              </div>
+            <SidebarMenuButton asChild size="lg" isActive={activeView === "rankings"}>
+              <Link href={viewHref.rankings} scroll={false} aria-current={activeView === "rankings" ? "page" : undefined}>
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                  <BarChart3 className="size-4" />
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-semibold">FPL Formula Lab</span>
+                  <span className="truncate text-xs text-muted-foreground">Explainable rankings</span>
+                </div>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -93,13 +90,15 @@ export function AppSidebar({
             <SidebarMenu>
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    isActive={activeView === item.id}
-                    onClick={() => onNavigate(item.id)}
-                    tooltip={item.title}
-                  >
-                    <item.icon />
-                    <span>{item.title}</span>
+                  <SidebarMenuButton asChild isActive={activeView === item.id} tooltip={item.title}>
+                    <Link
+                      href={viewHref[item.id]}
+                      scroll={false}
+                      aria-current={activeView === item.id ? "page" : undefined}
+                    >
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
