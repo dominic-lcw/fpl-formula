@@ -136,6 +136,19 @@ export function RealizedMatchCard({ row }: { row: GameweekSlateRow }) {
         </div>
       </div>
 
+      {row.modelScoreline ? (
+        <div className="mb-3 rounded-lg border bg-muted/20 p-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Model score</p>
+          <p className="mt-1 text-sm font-semibold tabular-nums">{row.modelScoreline.home}–{row.modelScoreline.away}</p>
+          <p className="text-xs text-muted-foreground">{formatPercent(row.modelScoreline.probability)}</p>
+          {row.expectedHomeGoals != null && row.expectedAwayGoals != null ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Expected {row.expectedHomeGoals.toFixed(2)}–{row.expectedAwayGoals.toFixed(2)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {booking ? (
         <div className="mt-auto grid gap-3">
           <div className="rounded-lg border bg-muted/20 p-3">
@@ -501,6 +514,7 @@ function TeamStrengthsPanel({
           <p className="font-medium text-foreground">Formula</p>
           <p className="mt-1">λ<sub>home</sub> = league avg × attack<sub>home</sub> × defence<sub>away</sub> × home advantage</p>
           <p>λ<sub>away</sub> = league avg × attack<sub>away</sub> × defence<sub>home</sub></p>
+          <p>Attack and defence are James–Stein shrunk toward their own group mean before the FPL blend. Outliers move in, and the group average stays put.</p>
         </div>
       </CardContent>
     </Card>

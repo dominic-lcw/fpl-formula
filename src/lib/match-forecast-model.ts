@@ -102,6 +102,47 @@ function normaliseFplStrength(value: number | null, baseline = 1000) {
   return clamp(value / baseline, 0.65, 1.35);
 }
 
+/**
+ * Positive-part James–Stein pulls a little hard on these short goal samples, so the
+ * (p − 3) penalty is scaled down. 1 would be the classic estimator.
+ */
+const JAMES_STEIN_INTENSITY = 0.85;
+
+/**
+ * Positive-part James–Stein shrinkage toward the match-weighted mean of the group.
+ * Sampling variance of an index is the Poisson variance 1 / (matches × league average goals).
+ * Teams share one shrinkage factor. Fewer than 4 observed teams are left unchanged,
+ * because estimating the mean spends a degree of freedom.
+ */
+export function jamesSteinShrink(
+  observations: Array<{ value: number; matches: number }>,
+  leagueAverageGoals: number,
+): number[] {
+  const shrunk = observations.map((observation) => observation.value);
+  if (!(leagueAverageGoals > 0)) return shrunk;
+
+  const eligible = observations
+    .map((observation, index) => ({ ...observation, index }))
+    .filter((observation) => observation.matches > 0 && Number.isFinite(observation.value));
+  if (eligible.length < 4) return shrunk;
+
+  const weights = eligible.map((observation) => observation.matches * leagueAverageGoals);
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+  const mean = eligible.reduce((sum, observation, index) => sum + weights[index]! * observation.value, 0) / weightSum;
+
+  let sumSquares = 0;
+  for (let index = 0; index < eligible.length; index += 1) {
+    sumSquares += weights[index]! * (eligible[index]!.value - mean) ** 2;
+  }
+  if (!(sumSquares > 0)) return shrunk;
+
+  const factor = Math.max(0, 1 - (JAMES_STEIN_INTENSITY * (eligible.length - 3)) / sumSquares);
+  for (const observation of eligible) {
+    shrunk[observation.index] = mean + factor * (observation.value - mean);
+  }
+  return shrunk;
+}
+
 export function deriveAttackDefenceRatings(
   fixtures: FinishedFixtureRow[],
   teams: TeamRatingRow[],
@@ -144,55 +185,64 @@ export function deriveAttackDefenceRatings(
   const leagueAverage = totalMatches > 0 ? totalGoals / (totalMatches * 2) : 1.35;
   const blend = clamp(params.fplStrengthBlend, 0, 1);
 
-  const strengths: TeamStrength[] = [];
-
-  for (const team of teams) {
+  const observed = teams.map((team) => {
     const record = stats.get(team.team_id)!;
-    const matchesPlayed = record.homeMatches + record.awayMatches;
+    const rate = (goals: number, matches: number) => (matches ? goals / matches / leagueAverage : 1);
+    return {
+      team,
+      record,
+      attackHome: rate(record.homeGoalsFor, record.homeMatches),
+      attackAway: rate(record.awayGoalsFor, record.awayMatches),
+      defenceHome: rate(record.homeGoalsAgainst, record.homeMatches),
+      defenceAway: rate(record.awayGoalsAgainst, record.awayMatches),
+    };
+  });
 
-    const observedAttackHome = record.homeMatches
-      ? (record.homeGoalsFor / record.homeMatches) / leagueAverage
-      : 1;
-    const observedAttackAway = record.awayMatches
-      ? (record.awayGoalsFor / record.awayMatches) / leagueAverage
-      : 1;
-    const observedDefenceHome = record.homeMatches
-      ? (record.homeGoalsAgainst / record.homeMatches) / leagueAverage
-      : 1;
-    const observedDefenceAway = record.awayMatches
-      ? (record.awayGoalsAgainst / record.awayMatches) / leagueAverage
-      : 1;
+  const shrunkAttackHome = jamesSteinShrink(
+    observed.map((row) => ({ value: row.attackHome, matches: row.record.homeMatches })),
+    leagueAverage,
+  );
+  const shrunkAttackAway = jamesSteinShrink(
+    observed.map((row) => ({ value: row.attackAway, matches: row.record.awayMatches })),
+    leagueAverage,
+  );
+  const shrunkDefenceHome = jamesSteinShrink(
+    observed.map((row) => ({ value: row.defenceHome, matches: row.record.homeMatches })),
+    leagueAverage,
+  );
+  const shrunkDefenceAway = jamesSteinShrink(
+    observed.map((row) => ({ value: row.defenceAway, matches: row.record.awayMatches })),
+    leagueAverage,
+  );
 
-    const fplAttackHome = normaliseFplStrength(team.strength_attack_home);
-    const fplAttackAway = normaliseFplStrength(team.strength_attack_away);
-    const fplDefenceHome = normaliseFplStrength(team.strength_defence_home);
-    const fplDefenceAway = normaliseFplStrength(team.strength_defence_away);
-
-    const attackHome = observedAttackHome * (1 - blend) + fplAttackHome * blend;
-    const attackAway = observedAttackAway * (1 - blend) + fplAttackAway * blend;
-    const defenceHome = observedDefenceHome * (1 - blend) + fplDefenceHome * blend;
-    const defenceAway = observedDefenceAway * (1 - blend) + fplDefenceAway * blend;
-
+  const strengths: TeamStrength[] = observed.map((row, index) => {
+    const matchesPlayed = row.record.homeMatches + row.record.awayMatches;
+    const mix = (value: number, fplStrength: number | null) =>
+      value * (1 - blend) + normaliseFplStrength(fplStrength) * blend;
+    const attackHome = clamp(mix(shrunkAttackHome[index]!, row.team.strength_attack_home), 0.45, 2.2);
+    const attackAway = clamp(mix(shrunkAttackAway[index]!, row.team.strength_attack_away), 0.45, 2.2);
+    const defenceHome = clamp(mix(shrunkDefenceHome[index]!, row.team.strength_defence_home), 0.45, 2.2);
+    const defenceAway = clamp(mix(shrunkDefenceAway[index]!, row.team.strength_defence_away), 0.45, 2.2);
     const attackOverall = matchesPlayed
-      ? ((record.homeGoalsFor + record.awayGoalsFor) / matchesPlayed) / leagueAverage
+      ? (attackHome * row.record.homeMatches + attackAway * row.record.awayMatches) / matchesPlayed
       : (attackHome + attackAway) / 2;
     const defenceOverall = matchesPlayed
-      ? ((record.homeGoalsAgainst + record.awayGoalsAgainst) / matchesPlayed) / leagueAverage
+      ? (defenceHome * row.record.homeMatches + defenceAway * row.record.awayMatches) / matchesPlayed
       : (defenceHome + defenceAway) / 2;
 
-    strengths.push({
-      teamId: team.team_id,
-      name: team.name,
-      shortName: team.short_name ?? team.name,
-      attackHome: clamp(attackHome, 0.45, 2.2),
-      attackAway: clamp(attackAway, 0.45, 2.2),
-      defenceHome: clamp(defenceHome, 0.45, 2.2),
-      defenceAway: clamp(defenceAway, 0.45, 2.2),
+    return {
+      teamId: row.team.team_id,
+      name: row.team.name,
+      shortName: row.team.short_name ?? row.team.name,
+      attackHome,
+      attackAway,
+      defenceHome,
+      defenceAway,
       attackOverall: clamp(attackOverall, 0.45, 2.2),
       defenceOverall: clamp(defenceOverall, 0.45, 2.2),
       matchesPlayed,
-    });
-  }
+    };
+  });
 
   return {
     leagueAverageGoals: leagueAverage,
