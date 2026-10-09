@@ -24,6 +24,7 @@ const forecast = {
 let bookSelection: typeof import("../src/lib/bookings").bookSelection;
 let bookSelections: typeof import("../src/lib/bookings").bookSelections;
 let cancelBooking: typeof import("../src/lib/bookings").cancelBooking;
+let clearGameweekBookings: typeof import("../src/lib/bookings").clearGameweekBookings;
 let listBookings: typeof import("../src/lib/bookings").listBookings;
 let resolveOpenBookings: typeof import("../src/lib/bookings").resolveOpenBookings;
 let createHydrationConnection: typeof import("../src/lib/db").createHydrationConnection;
@@ -31,7 +32,7 @@ let exportParquetDataset: typeof import("../src/lib/db").exportParquetDataset;
 let resetReadConnection: typeof import("../src/lib/db").resetReadConnection;
 
 beforeAll(async () => {
-  ({ bookSelection, bookSelections, cancelBooking, listBookings, resolveOpenBookings } = await import("../src/lib/bookings"));
+  ({ bookSelection, bookSelections, cancelBooking, clearGameweekBookings, listBookings, resolveOpenBookings } = await import("../src/lib/bookings"));
   ({ createHydrationConnection, exportParquetDataset, resetReadConnection } = await import("../src/lib/db"));
 });
 
@@ -222,5 +223,67 @@ describe("booking settlement", () => {
     expect(listed.filter((entry) => entry.fixtureId === 301 && entry.status === "open")).toHaveLength(1);
     await cancelBooking(first[0]!.id);
     await cancelBooking(first[1]!.id);
+  });
+
+  it("clears every booking for a mistyped gameweek and leaves other weeks", async () => {
+    resetReadConnection();
+    const connection = await createHydrationConnection();
+    await connection.run(
+      `INSERT INTO fixtures (season, fixture_id, event, team_h, team_a, finished)
+       VALUES ('2025-26', 601, 6, 1, 2, false), ('2025-26', 701, 7, 3, 4, false)`,
+    );
+    await connection.run(
+      `INSERT INTO fixtures (season, fixture_id, event, team_h, team_a, team_h_score, team_a_score, finished)
+       VALUES ('2025-26', 602, 6, 5, 6, 1, 0, true)`,
+    );
+    await exportParquetDataset(connection);
+    connection.closeSync();
+    resetReadConnection();
+
+    const open = await bookSelection({
+      fixtureId: 601,
+      season: "2025-26",
+      homeTeam: "Alpha",
+      awayTeam: "Beta",
+      market: "1X2",
+      selection: "home",
+      stake: 10,
+      odds: 1.5,
+      forecast,
+    });
+    const settled = await bookSelection({
+      fixtureId: 602,
+      season: "2025-26",
+      homeTeam: "City",
+      awayTeam: "Town",
+      market: "1X2",
+      selection: "home",
+      stake: 10,
+      odds: 2.2,
+      forecast,
+    });
+    const otherWeek = await bookSelection({
+      fixtureId: 701,
+      season: "2025-26",
+      homeTeam: "Gamma",
+      awayTeam: "Delta",
+      market: "1X2",
+      selection: "away",
+      stake: 8,
+      odds: 3.1,
+      forecast,
+    });
+
+    const beforeClear = await listBookings("2025-26");
+    expect(beforeClear.find((entry) => entry.id === settled.id)).toMatchObject({ status: "settled", outcome: "won" });
+    const cleared = await clearGameweekBookings("2025-26", 6);
+    expect(cleared).toBe(2);
+
+    resetReadConnection();
+    const remaining = await listBookings("2025-26", { skipSettlement: true });
+    expect(remaining.some((entry) => entry.id === open.id || entry.id === settled.id)).toBe(false);
+    expect(remaining.find((entry) => entry.id === otherWeek.id)?.fixtureId).toBe(701);
+    expect(await clearGameweekBookings("2025-26", 6)).toBe(0);
+    await expect(clearGameweekBookings("2025-26", 0)).rejects.toMatchObject({ status: 400 });
   });
 });

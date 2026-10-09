@@ -5,6 +5,7 @@ import {
   bookSelection,
   bookSelections,
   cancelBooking,
+  clearGameweekBookings,
   listBookings,
   resolveOpenBookings,
   type BookingInput,
@@ -216,15 +217,21 @@ async function bookOne(body: BookingRequestBody) {
 
 export async function DELETE(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
-  if (!id) {
-    return NextResponse.json({ error: "Booking id is required." }, { status: 400 });
-  }
+  const season = request.nextUrl.searchParams.get("season");
+  const gameweek = Number(request.nextUrl.searchParams.get("gameweek"));
 
   try {
+    if (season && Number.isInteger(gameweek) && gameweek > 0) {
+      const cleared = await clearGameweekBookings(season, gameweek);
+      return NextResponse.json({ cleared });
+    }
+    if (!id) {
+      return NextResponse.json({ error: "Booking id or gameweek is required." }, { status: 400 });
+    }
     await cancelBooking(id);
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return errorResponse(error, "Unable to cancel booking.");
+    return errorResponse(error, "Unable to clear bookings.");
   }
 }
 
