@@ -136,6 +136,19 @@ export function RealizedMatchCard({ row }: { row: GameweekSlateRow }) {
         </div>
       </div>
 
+      {row.modelScoreline ? (
+        <div className="mb-3 rounded-lg border bg-muted/20 p-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Model score</p>
+          <p className="mt-1 text-sm font-semibold tabular-nums">{row.modelScoreline.home}–{row.modelScoreline.away}</p>
+          <p className="text-xs text-muted-foreground">{formatPercent(row.modelScoreline.probability)}</p>
+          {row.expectedHomeGoals != null && row.expectedAwayGoals != null ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Expected {row.expectedHomeGoals.toFixed(2)}–{row.expectedAwayGoals.toFixed(2)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {booking ? (
         <div className="mt-auto grid gap-3">
           <div className="rounded-lg border bg-muted/20 p-3">

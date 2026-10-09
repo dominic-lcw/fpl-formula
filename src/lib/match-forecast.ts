@@ -67,13 +67,6 @@ function forecastCacheKey(params: ForecastParams) {
   return JSON.stringify(params);
 }
 
-function filterForecastByGameweek(data: ForecastData, gameweek: number): ForecastData {
-  return {
-    ...data,
-    upcomingFixtures: data.upcomingFixtures.filter((fixture) => fixture.event === gameweek),
-  };
-}
-
 export function invalidateForecastCache() {
   forecastCache = null;
 }
@@ -171,8 +164,12 @@ async function buildForecastData(
     return { ...EMPTY_FORECAST, homeAdvantage: params.homeAdvantage };
   }
 
-  const minGameweek = Math.max(1, meta.currentGameweek - params.lookbackGameweeks + 1);
-  const [teams, finishedFixtures, upcomingFixtures, fixtureEvents] = await Promise.all([
+  // A chosen week is scored from the weeks before it, so GW5 uses GW4 and not its own result.
+  const ratingEnd = gameweek != null
+    ? Math.min(Math.max(gameweek - 1, 0), meta.currentGameweek)
+    : meta.currentGameweek;
+  const minGameweek = Math.max(1, ratingEnd - params.lookbackGameweeks + 1);
+  const [teams, finishedFixtures, simulationTargets, fixtureEvents] = await Promise.all([
     query<TeamRatingRow>(
       `SELECT team_id, name, short_name, strength_attack_home, strength_attack_away, strength_defence_home, strength_defence_away
        FROM teams WHERE season = ? ORDER BY name`,
@@ -184,14 +181,19 @@ async function buildForecastData(
        WHERE season = ? AND finished = true AND event BETWEEN ? AND ?
          AND team_h_score IS NOT NULL AND team_a_score IS NOT NULL
        ORDER BY event, kickoff_time`,
-      [meta.season, minGameweek, meta.currentGameweek],
+      [meta.season, minGameweek, ratingEnd],
     ),
     query<UpcomingFixtureRow>(
-      `SELECT fixture_id, event, kickoff_time, team_h, team_a, team_h_score, team_a_score, finished
-       FROM fixtures
-       WHERE season = ? AND finished = false
-       ORDER BY kickoff_time NULLS LAST, event, fixture_id`,
-      [meta.season],
+      gameweek
+        ? `SELECT fixture_id, event, kickoff_time, team_h, team_a, team_h_score, team_a_score, finished
+           FROM fixtures
+           WHERE season = ? AND event = ?
+           ORDER BY kickoff_time NULLS LAST, fixture_id`
+        : `SELECT fixture_id, event, kickoff_time, team_h, team_a, team_h_score, team_a_score, finished
+           FROM fixtures
+           WHERE season = ? AND finished = false
+           ORDER BY kickoff_time NULLS LAST, event, fixture_id`,
+      gameweek ? [meta.season, gameweek] : [meta.season],
     ),
     query<{ event: number }>(
       `SELECT DISTINCT event
@@ -209,10 +211,6 @@ async function buildForecastData(
   );
   const strengthById = new Map(strengths.map((team) => [team.teamId, team]));
   const teamNameById = new Map(teams.map((team) => [team.team_id, team]));
-
-  const simulationTargets = gameweek
-    ? upcomingFixtures.filter((fixture) => fixture.event === gameweek)
-    : upcomingFixtures;
 
   const forecasts = buildFixtureForecasts(
     simulationTargets,
@@ -247,10 +245,8 @@ export async function getForecastData(
   const cacheKey = forecastCacheKey(params);
   const now = Date.now();
 
-  if (!options?.skipCache && forecastCache?.key === cacheKey && forecastCache.expiresAt > now) {
-    return options?.gameweek
-      ? filterForecastByGameweek(forecastCache.data, options.gameweek)
-      : forecastCache.data;
+  if (!options?.gameweek && !options?.skipCache && forecastCache?.key === cacheKey && forecastCache.expiresAt > now) {
+    return forecastCache.data;
   }
 
   if (options?.gameweek) {

@@ -19,6 +19,9 @@ export type GameweekSlateRow = {
     selection: string;
     probability: number;
   } | null;
+  modelScoreline: { home: number; away: number; probability: number } | null;
+  expectedHomeGoals: number | null;
+  expectedAwayGoals: number | null;
   booking: BookingRecord | null;
 };
 
@@ -115,6 +118,7 @@ export async function getGameweekSlate(
     const modelPick = forecastFixture
       ? highestMatchOutcome(forecastFixture)
       : null;
+    const topScoreline = forecastFixture?.topScorelines[0] ?? null;
 
     return {
       fixtureId: fixture.fixture_id,
@@ -130,6 +134,11 @@ export async function getGameweekSlate(
       modelPick: modelPick
         ? { market: modelPick.market, selection: modelPick.selection, probability: modelPick.probability }
         : null,
+      modelScoreline: topScoreline
+        ? { home: topScoreline.home, away: topScoreline.away, probability: topScoreline.prob }
+        : null,
+      expectedHomeGoals: forecastFixture?.lambdaHome ?? null,
+      expectedAwayGoals: forecastFixture?.lambdaAway ?? null,
       booking: bookingByFixture.get(fixture.fixture_id) ?? null,
     };
   });

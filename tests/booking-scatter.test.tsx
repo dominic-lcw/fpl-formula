@@ -44,6 +44,9 @@ function row(overrides: Partial<GameweekSlateRow> = {}): GameweekSlateRow {
     homeScore: null,
     awayScore: null,
     modelPick: { market: "1X2", selection: "home", probability: 0.55 },
+    modelScoreline: { home: 1, away: 0, probability: 0.12 },
+    expectedHomeGoals: 1.6,
+    expectedAwayGoals: 0.9,
     booking: null,
     ...overrides,
   };
