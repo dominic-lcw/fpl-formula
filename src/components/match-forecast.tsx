@@ -501,6 +501,7 @@ function TeamStrengthsPanel({
           <p className="font-medium text-foreground">Formula</p>
           <p className="mt-1">λ<sub>home</sub> = league avg × attack<sub>home</sub> × defence<sub>away</sub> × home advantage</p>
           <p>λ<sub>away</sub> = league avg × attack<sub>away</sub> × defence<sub>home</sub></p>
+          <p>Attack and defence are James–Stein shrunk toward the league average before the FPL blend. A short sample pulls every team toward 1.</p>
         </div>
       </CardContent>
     </Card>
