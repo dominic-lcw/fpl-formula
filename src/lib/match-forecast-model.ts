@@ -303,6 +303,48 @@ export function expectedValue(modelProb: number, odds: number) {
   return modelProb * odds - 1;
 }
 
+/** Squared distance from the expected score. Small values are the chalk cluster. */
+export function scorelineDeviation(home: number, away: number, lambdaHome: number, lambdaAway: number) {
+  return (home - lambdaHome) ** 2 + (away - lambdaAway) ** 2;
+}
+
+/** Scorelines closer than this to the expected goals are treated as low variance. */
+export const MIN_CORRECT_SCORE_DEVIATION = 0.75;
+
+export type CorrectScoreDecision =
+  | { status: "selected"; selection: string; probability: number; deviation: number }
+  | { status: "low-variance" }
+  | { status: "unavailable" };
+
+/**
+ * Most likely scoreline outside the low-variance cluster around the expected goals.
+ * A tight 1-0 or 1-1 sits on that cluster and is skipped.
+ */
+export function selectCorrectScore(forecast: {
+  lambdaHome: number;
+  lambdaAway: number;
+  topScorelines: Array<{ home: number; away: number; prob: number }>;
+}): CorrectScoreDecision {
+  if (forecast.topScorelines.length === 0) return { status: "unavailable" };
+
+  const eligible = forecast.topScorelines
+    .map((line) => ({
+      ...line,
+      deviation: scorelineDeviation(line.home, line.away, forecast.lambdaHome, forecast.lambdaAway),
+    }))
+    .filter((line) => line.deviation >= MIN_CORRECT_SCORE_DEVIATION)
+    .sort((left, right) => right.prob - left.prob || right.deviation - left.deviation);
+
+  const best = eligible[0];
+  if (!best) return { status: "low-variance" };
+  return {
+    status: "selected",
+    selection: `${best.home}-${best.away}`,
+    probability: best.prob,
+    deviation: best.deviation,
+  };
+}
+
 export function buildFixtureForecast(
   fixture: FinishedFixtureRow & { finished?: boolean },
   homeTeam: TeamStrength,

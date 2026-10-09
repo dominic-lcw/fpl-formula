@@ -102,4 +102,31 @@ describe("bookings scatterplot", () => {
     expect(html).toContain("Clear GW24");
     expect(html).not.toMatch(/data-clear-gameweek=""[^>]*disabled=""/);
   });
+
+  it("labels a correct-score row as low variance and leaves it out of the book count", () => {
+    const html = renderToStaticMarkup(
+      <GameweekBookingsView
+        summary={{ ...summary, openStake: 0, openCount: 0, unbookedCount: 1 }}
+        gameweek={6}
+        rows={[row({ booking: null })]}
+        stake="10"
+        defaultOdds="7.50"
+        rowOdds={{}}
+        isBooking={false}
+        isClearing={false}
+        bookingMarket="correct_score"
+        correctScores={{ 10: { status: "low-variance" } }}
+        onBookingMarketChange={() => {}}
+        onStakeChange={() => {}}
+        onDefaultOddsChange={() => {}}
+        onRowOddsChange={() => {}}
+        onBookAll={() => {}}
+        onClear={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Low variance");
+    expect(html).toContain("Nothing to book");
+    expect(html).toContain("aria-pressed=\"true\"");
+  });
 });
