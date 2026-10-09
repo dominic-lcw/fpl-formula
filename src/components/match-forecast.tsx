@@ -544,10 +544,12 @@ function GameweekBookingTable({
   defaultOdds,
   rowOdds,
   isBooking,
+  isClearing,
   onStakeChange,
   onDefaultOddsChange,
   onRowOddsChange,
   onBookAll,
+  onClear,
 }: {
   gameweek: number;
   rows: GameweekSlateRow[];
@@ -555,12 +557,16 @@ function GameweekBookingTable({
   defaultOdds: string;
   rowOdds: Record<number, string>;
   isBooking: boolean;
+  isClearing: boolean;
   onStakeChange: (stake: string) => void;
   onDefaultOddsChange: (odds: string) => void;
   onRowOddsChange: (fixtureId: number, odds: string) => void;
   onBookAll: () => void;
+  onClear: () => void;
 }) {
   const pending = rows.filter((row) => !row.booking && !row.finished && row.modelPick);
+  const bookedCount = rows.filter((row) => row.booking).length;
+  const busy = isBooking || isClearing;
 
   return (
     <Card>
@@ -572,15 +578,27 @@ function GameweekBookingTable({
               Played matches show the final score and profit and loss from your booked odds.
             </p>
           </div>
-          <button
-            type="button"
-            disabled={isBooking || pending.length === 0}
-            onClick={onBookAll}
-            className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-          >
-            {isBooking ? <LoaderCircle className="size-4 animate-spin" /> : null}
-            {pending.length === 0 ? "All booked" : `Book ${pending.length} match${pending.length === 1 ? "" : "es"}`}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              data-clear-gameweek=""
+              disabled={busy || bookedCount === 0}
+              onClick={onClear}
+            >
+              {isClearing ? <LoaderCircle className="size-4 animate-spin" /> : null}
+              {isClearing ? "Clearing…" : `Clear GW${gameweek}`}
+            </Button>
+            <button
+              type="button"
+              disabled={busy || pending.length === 0}
+              onClick={onBookAll}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isBooking ? <LoaderCircle className="size-4 animate-spin" /> : null}
+              {pending.length === 0 ? "All booked" : `Book ${pending.length} match${pending.length === 1 ? "" : "es"}`}
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-3">
           <label className="grid gap-1 text-sm">
@@ -719,6 +737,7 @@ export function MatchForecastPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSlateLoading, setIsSlateLoading] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stake, setStake] = useState("10");
   const [defaultOdds, setDefaultOdds] = useState("2.10");
@@ -945,6 +964,33 @@ export function MatchForecastPanel() {
     }
   }
 
+  async function clearGameweek() {
+    if (!data?.season || isClearing) return;
+    const bookedCount = slateRows.filter((row) => row.booking).length;
+    if (bookedCount === 0) return;
+    const confirmed = window.confirm(
+      `Clear all Gameweek ${resolvedGameweek} bookings? This removes every bet for that week, including settled ones, so you can enter them again.`,
+    );
+    if (!confirmed) return;
+
+    setIsClearing(true);
+    setError(null);
+    try {
+      const query = new URLSearchParams({
+        season: data.season,
+        gameweek: String(resolvedGameweek),
+      });
+      const response = await fetch(`/api/bookings?${query.toString()}`, { method: "DELETE" });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to clear this gameweek.");
+      await loadBookings(data.season, resolvedGameweek, params, { skipSettlement: true });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to clear this gameweek.");
+    } finally {
+      setIsClearing(false);
+    }
+  }
+
   useEffect(() => {
     if (!scrollScatterIntoView.current || isBooking || isSlateLoading) return;
     scrollScatterIntoView.current = false;
@@ -1031,6 +1077,7 @@ export function MatchForecastPanel() {
                 defaultOdds={defaultOdds}
                 rowOdds={rowOdds}
                 isBooking={isBooking}
+                isClearing={isClearing}
                 onStakeChange={setStake}
                 onDefaultOddsChange={(value) => {
                   setDefaultOdds(value);
@@ -1038,6 +1085,7 @@ export function MatchForecastPanel() {
                 }}
                 onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
                 onBookAll={() => void bookGameweek()}
+                onClear={() => void clearGameweek()}
               />
             )}
           </div>

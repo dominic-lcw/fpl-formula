@@ -445,3 +445,33 @@ export async function cancelBooking(id: string) {
   await connection.run(`DELETE FROM bookings WHERE id = ? AND status = 'open'`, [id]);
   await persistUserTable(connection, "bookings");
 }
+
+export async function clearGameweekBookings(season: string, gameweek: number) {
+  if (!season || !Number.isInteger(gameweek) || gameweek <= 0) {
+    throw new BookingRequestError("A season and gameweek are required.", 400);
+  }
+
+  const matched = await query<{ count: number }>(
+    `SELECT count(*)::INTEGER AS count
+     FROM bookings
+     WHERE season = ?
+       AND fixture_id IN (
+         SELECT fixture_id FROM fixtures WHERE season = ? AND event = ?
+       )`,
+    [season, season, gameweek],
+  );
+  const cleared = matched[0]?.count ?? 0;
+  if (cleared === 0) return 0;
+
+  const connection = await getConnection();
+  await connection.run(
+    `DELETE FROM bookings
+     WHERE season = ?
+       AND fixture_id IN (
+         SELECT fixture_id FROM fixtures WHERE season = ? AND event = ?
+       )`,
+    [season, season, gameweek],
+  );
+  await persistUserTable(connection, "bookings");
+  return cleared;
+}

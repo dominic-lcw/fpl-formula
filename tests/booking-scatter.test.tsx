@@ -69,10 +69,12 @@ function renderBookings(rows: GameweekSlateRow[]) {
       defaultOdds="2.10"
       rowOdds={{}}
       isBooking={false}
+      isClearing={false}
       onStakeChange={() => {}}
       onDefaultOddsChange={() => {}}
       onRowOddsChange={() => {}}
       onBookAll={() => {}}
+      onClear={() => {}}
     />,
   );
 }
@@ -81,6 +83,8 @@ describe("bookings scatterplot", () => {
   it("hides the scatterplot until a selection has been booked", () => {
     const html = renderBookings([row()]);
     expect(html).toContain("Gameweek 24");
+    expect(html).toContain("Clear GW24");
+    expect(html).toMatch(/data-clear-gameweek=""[^>]*disabled=""/);
     expect(html).not.toContain("Model vs implied probability");
     expect(html).not.toContain("booking-probability-scatter");
   });
@@ -95,5 +99,7 @@ describe("bookings scatterplot", () => {
     expect(html).toContain("booking-probability-scatter");
     expect(html).toContain("Scatter plot comparing model probability against implied probability");
     expect(html).toContain("ARS vs CHE");
+    expect(html).toContain("Clear GW24");
+    expect(html).not.toMatch(/data-clear-gameweek=""[^>]*disabled=""/);
   });
 });
