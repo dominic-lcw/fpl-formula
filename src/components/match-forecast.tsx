@@ -21,7 +21,9 @@ import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
 import { buildMatchdayOnePager } from "@/lib/matchday-one-pager";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
-import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
+import { DEFAULT_FORECAST_PARAMS, selectCorrectScore, type CorrectScoreDecision } from "@/lib/match-forecast-model";
+
+type BookingMarketChoice = "1X2" | "correct_score";
 
 type ForecastResponse = {
   season: string | null;
@@ -507,6 +509,21 @@ function TeamStrengthsPanel({
   );
 }
 
+function suggestedBooking(
+  row: GameweekSlateRow,
+  market: BookingMarketChoice,
+  decision: CorrectScoreDecision | undefined,
+) {
+  if (row.booking || row.finished) return null;
+  if (market === "1X2") return row.modelPick;
+  if (!decision || decision.status !== "selected") return null;
+  return {
+    market: "correct_score" as const,
+    selection: decision.selection,
+    probability: decision.probability,
+  };
+}
+
 function resultLabel(homeShortName: string, awayShortName: string, selection: "home" | "draw" | "away") {
   if (selection === "home") return `${homeShortName} win`;
   if (selection === "away") return `${awayShortName} win`;
@@ -545,6 +562,9 @@ function GameweekBookingTable({
   rowOdds,
   isBooking,
   isClearing,
+  bookingMarket = "1X2",
+  correctScores = {},
+  onBookingMarketChange,
   onStakeChange,
   onDefaultOddsChange,
   onRowOddsChange,
@@ -558,13 +578,16 @@ function GameweekBookingTable({
   rowOdds: Record<number, string>;
   isBooking: boolean;
   isClearing: boolean;
+  bookingMarket?: BookingMarketChoice;
+  correctScores?: Record<number, CorrectScoreDecision>;
+  onBookingMarketChange?: (market: BookingMarketChoice) => void;
   onStakeChange: (stake: string) => void;
   onDefaultOddsChange: (odds: string) => void;
   onRowOddsChange: (fixtureId: number, odds: string) => void;
   onBookAll: () => void;
   onClear: () => void;
 }) {
-  const pending = rows.filter((row) => !row.booking && !row.finished && row.modelPick);
+  const pending = rows.filter((row) => suggestedBooking(row, bookingMarket, correctScores[row.fixtureId]));
   const bookedCount = rows.filter((row) => row.booking).length;
   const busy = isBooking || isClearing;
 
@@ -575,7 +598,9 @@ function GameweekBookingTable({
           <div>
             <CardTitle>Gameweek {gameweek}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Played matches show the final score and profit and loss from your booked odds.
+              {bookingMarket === "correct_score"
+                ? "Correct score skips scorelines close to the expected goals, then bets the most likely of what remains."
+                : "Played matches show the final score and profit and loss from your booked odds."}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -596,11 +621,34 @@ function GameweekBookingTable({
               className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             >
               {isBooking ? <LoaderCircle className="size-4 animate-spin" /> : null}
-              {pending.length === 0 ? "All booked" : `Book ${pending.length} match${pending.length === 1 ? "" : "es"}`}
+              {pending.length > 0
+                ? `Book ${pending.length} match${pending.length === 1 ? "" : "es"}`
+                : bookedCount > 0
+                  ? "All booked"
+                  : "Nothing to book"}
             </button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="grid gap-1 text-sm">
+            Market
+            <div className="flex h-9 overflow-hidden rounded-md border">
+              {([
+                ["1X2", "Result"],
+                ["correct_score", "Correct score"],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={bookingMarket === id}
+                  onClick={() => onBookingMarketChange?.(id)}
+                  className={`px-3 text-sm font-medium ${bookingMarket === id ? "bg-primary/10 text-primary" : "bg-background text-muted-foreground hover:bg-accent"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <label className="grid gap-1 text-sm">
             Stake ($)
             <Input value={stake} onChange={(event) => onStakeChange(event.target.value)} inputMode="decimal" className="w-28" />
@@ -628,9 +676,12 @@ function GameweekBookingTable({
             <tbody>
               {rows.map((row) => {
                 const booking = row.booking;
+                const decision = correctScores[row.fixtureId];
+                const suggestion = suggestedBooking(row, bookingMarket, decision);
+                const lowVariance = !booking && !row.finished && bookingMarket === "correct_score" && decision?.status === "low-variance";
                 const pick = booking
                   ? { selection: booking.selection, market: booking.market, probability: booking.modelProb }
-                  : row.modelPick;
+                  : suggestion;
                 const kickoff = formatKickoff(row.kickoffTime);
                 const score = booking?.homeScore ?? row.homeScore;
                 const opponentScore = booking?.awayScore ?? row.awayScore;
@@ -645,12 +696,14 @@ function GameweekBookingTable({
                       {pick ? (
                         <>
                           <p className="font-medium">
-                            {booking
-                              ? selectionLabel(booking.market, booking.selection)
-                              : resultLabel(row.homeShortName, row.awayShortName, pick.selection as "home" | "draw" | "away")}
+                            {pick.market === "1X2" && !booking
+                              ? resultLabel(row.homeShortName, row.awayShortName, pick.selection as "home" | "draw" | "away")
+                              : selectionLabel(pick.market, pick.selection)}
                           </p>
                           <p className="text-xs text-muted-foreground">{formatPercent(pick.probability)}</p>
                         </>
+                      ) : lowVariance ? (
+                        <p className="text-muted-foreground">Low variance</p>
                       ) : (
                         "—"
                       )}
@@ -659,7 +712,7 @@ function GameweekBookingTable({
                     <td className="py-2 pr-3">
                       {booking ? (
                         booking.odds.toFixed(2)
-                      ) : row.finished ? (
+                      ) : row.finished || !suggestion ? (
                         "—"
                       ) : (
                         <Input
@@ -678,7 +731,7 @@ function GameweekBookingTable({
                       {booking?.pnl === null || booking?.pnl === undefined ? "—" : formatPnl(booking.pnl)}
                     </td>
                     <td className="py-2">
-                      {!booking ? (row.finished ? "Played" : "—") : booking.status === "open" ? "Open" : booking.outcome === "won" ? "Won" : "Lost"}
+                      {!booking ? (lowVariance ? "Skipped" : row.finished ? "Played" : "—") : booking.status === "open" ? "Open" : booking.outcome === "won" ? "Won" : "Lost"}
                     </td>
                   </tr>
                 );
@@ -740,6 +793,7 @@ export function MatchForecastPanel() {
   const [isClearing, setIsClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stake, setStake] = useState("10");
+  const [bookingMarket, setBookingMarket] = useState<BookingMarketChoice>("1X2");
   const [defaultOdds, setDefaultOdds] = useState("2.10");
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
   const latestRequest = useRef(0);
@@ -916,19 +970,40 @@ export function MatchForecastPanel() {
     }
   }, [data, loadBookings, params, resolvedGameweek]);
 
+  const correctScores = useMemo(() => {
+    const decisions: Record<number, CorrectScoreDecision> = {};
+    for (const fixture of data?.upcomingFixtures ?? []) {
+      decisions[fixture.fixtureId] = selectCorrectScore(fixture);
+    }
+    return decisions;
+  }, [data?.upcomingFixtures]);
+
+  function chooseBookingMarket(next: BookingMarketChoice) {
+    setBookingMarket(next);
+    setDefaultOdds((current) => {
+      if (next === "correct_score" && current === "2.10") return "7.50";
+      if (next === "1X2" && current === "7.50") return "2.10";
+      return current;
+    });
+    setRowOdds({});
+  }
+
   async function bookGameweek() {
     if (!data?.season) return;
     const stakeValue = Number(stake);
-    const pending = slateRows.filter((row) => !row.booking && !row.finished && row.modelPick);
+    const pending = slateRows.flatMap((row) => {
+      const pick = suggestedBooking(row, bookingMarket, correctScores[row.fixtureId]);
+      return pick ? [{ row, pick }] : [];
+    });
     if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
       setError("Stake must be positive.");
       return;
     }
 
-    const rows = pending.map((row) => ({
+    const rows = pending.map(({ row, pick }) => ({
       fixtureId: row.fixtureId,
-      market: row.modelPick!.market,
-      selection: row.modelPick!.selection,
+      market: pick.market,
+      selection: pick.selection,
       stake: stakeValue,
       odds: Number(rowOdds[row.fixtureId] ?? defaultOdds),
     }));
@@ -1078,6 +1153,9 @@ export function MatchForecastPanel() {
                 rowOdds={rowOdds}
                 isBooking={isBooking}
                 isClearing={isClearing}
+                bookingMarket={bookingMarket}
+                correctScores={correctScores}
+                onBookingMarketChange={chooseBookingMarket}
                 onStakeChange={setStake}
                 onDefaultOddsChange={(value) => {
                   setDefaultOdds(value);

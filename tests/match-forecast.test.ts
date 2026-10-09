@@ -6,6 +6,7 @@ import {
   expectedValue,
   modelProbabilityForMarket,
   runBivariatePoissonMonteCarlo,
+  selectCorrectScore,
 } from "../src/lib/match-forecast-model";
 
 describe("match forecast model", () => {
@@ -117,5 +118,36 @@ describe("match forecast model", () => {
       "1X2",
       "home",
     )).toBe(0.5);
+  });
+
+  it("drops correct scores that sit on the expected goals and keeps the next one", () => {
+    const decision = selectCorrectScore({
+      lambdaHome: 1.55,
+      lambdaAway: 1.05,
+      topScorelines: [
+        { home: 2, away: 1, prob: 0.14 },
+        { home: 1, away: 1, prob: 0.12 },
+        { home: 2, away: 0, prob: 0.09 },
+        { home: 1, away: 0, prob: 0.08 },
+      ],
+    });
+
+    expect(decision).toMatchObject({ status: "selected", selection: "2-0", probability: 0.09 });
+  });
+
+  it("skips a match when every listed scoreline is low variance", () => {
+    expect(selectCorrectScore({
+      lambdaHome: 1.55,
+      lambdaAway: 1.05,
+      topScorelines: [
+        { home: 2, away: 1, prob: 0.14 },
+        { home: 1, away: 1, prob: 0.12 },
+      ],
+    })).toEqual({ status: "low-variance" });
+    expect(selectCorrectScore({
+      lambdaHome: 1.2,
+      lambdaAway: 0.8,
+      topScorelines: [],
+    })).toEqual({ status: "unavailable" });
   });
 });
