@@ -103,15 +103,20 @@ function normaliseFplStrength(value: number | null, baseline = 1000) {
 }
 
 /**
- * Positive-part James–Stein shrinkage of rating indexes toward the league average.
- * Index 1 is average. Each observed index is treated as normal with Poisson variance
- * 1 / (matches × league average goals). Teams in one group share a shrinkage factor,
- * and a sample of fewer than 3 teams is left unchanged.
+ * Positive-part James–Stein pulls a little hard on these short goal samples, so the
+ * (p − 3) penalty is scaled down. 1 would be the classic estimator.
+ */
+const JAMES_STEIN_INTENSITY = 0.85;
+
+/**
+ * Positive-part James–Stein shrinkage toward the match-weighted mean of the group.
+ * Sampling variance of an index is the Poisson variance 1 / (matches × league average goals).
+ * Teams share one shrinkage factor. Fewer than 4 observed teams are left unchanged,
+ * because estimating the mean spends a degree of freedom.
  */
 export function jamesSteinShrink(
   observations: Array<{ value: number; matches: number }>,
   leagueAverageGoals: number,
-  target = 1,
 ): number[] {
   const shrunk = observations.map((observation) => observation.value);
   if (!(leagueAverageGoals > 0)) return shrunk;
@@ -119,18 +124,21 @@ export function jamesSteinShrink(
   const eligible = observations
     .map((observation, index) => ({ ...observation, index }))
     .filter((observation) => observation.matches > 0 && Number.isFinite(observation.value));
-  if (eligible.length < 3) return shrunk;
+  if (eligible.length < 4) return shrunk;
+
+  const weights = eligible.map((observation) => observation.matches * leagueAverageGoals);
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+  const mean = eligible.reduce((sum, observation, index) => sum + weights[index]! * observation.value, 0) / weightSum;
 
   let sumSquares = 0;
-  for (const observation of eligible) {
-    const variance = 1 / (observation.matches * leagueAverageGoals);
-    sumSquares += (observation.value - target) ** 2 / variance;
+  for (let index = 0; index < eligible.length; index += 1) {
+    sumSquares += weights[index]! * (eligible[index]!.value - mean) ** 2;
   }
   if (!(sumSquares > 0)) return shrunk;
 
-  const factor = Math.max(0, 1 - (eligible.length - 2) / sumSquares);
+  const factor = Math.max(0, 1 - (JAMES_STEIN_INTENSITY * (eligible.length - 3)) / sumSquares);
   for (const observation of eligible) {
-    shrunk[observation.index] = target + factor * (observation.value - target);
+    shrunk[observation.index] = mean + factor * (observation.value - mean);
   }
   return shrunk;
 }

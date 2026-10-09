@@ -104,8 +104,8 @@ describe("match forecast model", () => {
     expect(simulation.topScorelines.length).toBeGreaterThan(0);
   });
 
-  it("shrinks a short sample of rating indexes to the league average", () => {
-    const shrunk = jamesSteinShrink(
+  it("shrinks a short sample toward the group's own mean", () => {
+    const centered = jamesSteinShrink(
       [
         { value: 1.4, matches: 1 },
         { value: 0.6, matches: 1 },
@@ -116,7 +116,38 @@ describe("match forecast model", () => {
       ],
       1.4,
     );
-    expect(shrunk.every((value) => value === 1)).toBe(true);
+    expect(centered.every((value) => value === 1)).toBe(true);
+
+    const high = jamesSteinShrink(
+      [
+        { value: 2.0, matches: 1 },
+        { value: 1.6, matches: 1 },
+        { value: 1.4, matches: 1 },
+        { value: 1.2, matches: 1 },
+        { value: 1.0, matches: 1 },
+        { value: 0.8, matches: 1 },
+      ],
+      1.4,
+    );
+    expect(high.every((value) => Math.abs(value - 4 / 3) < 1e-9)).toBe(true);
+  });
+
+  it("keeps a little spread when classic James-Stein would pool the group", () => {
+    const observations = [
+      { value: 2.02, matches: 1 },
+      { value: 1.7, matches: 1 },
+      { value: 1.4, matches: 1 },
+      { value: 1.0, matches: 1 },
+      { value: 0.7, matches: 1 },
+      { value: 0.38, matches: 1 },
+    ];
+    const shrunk = jamesSteinShrink(observations, 1.4);
+    const mean = observations.reduce((sum, item) => sum + item.value, 0) / observations.length;
+    const shrunkMean = shrunk.reduce((sum, value) => sum + value, 0) / shrunk.length;
+    expect(shrunkMean).toBeCloseTo(mean, 6);
+    expect(shrunk[0]).toBeGreaterThan(mean);
+    expect(shrunk[0]).toBeLessThan(observations[0]!.value);
+    expect(Math.max(...shrunk) - Math.min(...shrunk)).toBeGreaterThan(0.05);
   });
 
   it("keeps a large-sample rating gap and leaves two teams unshrunk", () => {
@@ -170,7 +201,9 @@ describe("match forecast model", () => {
       fplStrengthBlend: 0,
     });
     const homeAttack = [1, 5, 11].map((teamId) => strengths.find((team) => team.teamId === teamId)!.attackHome);
-    expect(homeAttack).toEqual([1, 1, 1]);
+    expect(homeAttack[0]).toBeCloseTo(1, 6);
+    expect(homeAttack[1]).toBeCloseTo(homeAttack[0]!, 6);
+    expect(homeAttack[2]).toBeCloseTo(homeAttack[0]!, 6);
   });
 
   it("calculates expected value from model probability and odds", () => {
