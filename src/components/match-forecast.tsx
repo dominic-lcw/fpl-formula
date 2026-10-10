@@ -6,6 +6,7 @@ import {
   FileText,
   LoaderCircle,
   Receipt,
+  RefreshCw,
   Target,
   TrendingUp,
 } from "lucide-react";
@@ -550,6 +551,10 @@ function GameweekBookingTable({
   onRowOddsChange,
   onBookAll,
   onClear,
+  canResolve,
+  isResolving = false,
+  resolveMessage = null,
+  onResolve,
 }: {
   gameweek: number;
   rows: GameweekSlateRow[];
@@ -563,10 +568,15 @@ function GameweekBookingTable({
   onRowOddsChange: (fixtureId: number, odds: string) => void;
   onBookAll: () => void;
   onClear: () => void;
+  canResolve?: boolean;
+  isResolving?: boolean;
+  resolveMessage?: string | null;
+  onResolve?: () => void;
 }) {
   const pending = rows.filter((row) => !row.booking && !row.finished && row.modelPick);
   const bookedCount = rows.filter((row) => row.booking).length;
-  const busy = isBooking || isClearing;
+  const showResolve = canResolve ?? rows.some((row) => row.booking?.status === "open");
+  const busy = isBooking || isClearing || isResolving;
 
   return (
     <Card>
@@ -579,6 +589,19 @@ function GameweekBookingTable({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {showResolve ? (
+              <Button
+                type="button"
+                variant="outline"
+                data-resolve-live=""
+                disabled={busy || !onResolve}
+                onClick={onResolve}
+                title="Check provisional and live FPL scores, then settle open bookings."
+              >
+                {isResolving ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                {isResolving ? "Resolving…" : "Live resolve"}
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -610,6 +633,7 @@ function GameweekBookingTable({
             <Input value={defaultOdds} onChange={(event) => onDefaultOddsChange(event.target.value)} inputMode="decimal" className="w-28" />
           </label>
         </div>
+        {resolveMessage ? <p className="text-sm text-muted-foreground" data-resolve-message="">{resolveMessage}</p> : null}
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
@@ -738,7 +762,9 @@ export function MatchForecastPanel() {
   const [isSlateLoading, setIsSlateLoading] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resolveMessage, setResolveMessage] = useState<string | null>(null);
   const [stake, setStake] = useState("10");
   const [defaultOdds, setDefaultOdds] = useState("2.10");
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
@@ -964,6 +990,48 @@ export function MatchForecastPanel() {
     }
   }
 
+  async function resolveLiveBookings() {
+    setIsResolving(true);
+    setError(null);
+    setResolveMessage(null);
+    try {
+      const response = await fetch("/api/bookings", { method: "PATCH", cache: "no-store" });
+      const payload = await response.json() as {
+        settled?: number;
+        remaining?: number;
+        persistedFixtures?: number;
+        bookings?: BookingRecord[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to resolve open bookings.");
+
+      if (data?.season) {
+        await loadBookings(data.season, resolvedGameweek, params, { skipSettlement: true });
+      } else if (payload.bookings) {
+        setBookings(payload.bookings);
+      }
+
+      const settled = payload.settled ?? 0;
+      const remaining = payload.remaining ?? 0;
+      const persistedFixtures = payload.persistedFixtures ?? 0;
+      if (settled === 0 && remaining > 0) {
+        setResolveMessage(`No results were available yet. ${remaining} booking${remaining === 1 ? "" : "s"} still open.`);
+      } else if (settled > 0) {
+        setResolveMessage(
+          `Settled and saved ${settled} booking${settled === 1 ? "" : "s"}`
+          + (persistedFixtures > 0 ? ` and ${persistedFixtures} match result${persistedFixtures === 1 ? "" : "s"}` : "")
+          + `.${remaining > 0 ? ` ${remaining} still open.` : " Results persist across reloads."}`,
+        );
+      } else {
+        setResolveMessage("All bookings are already settled.");
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to resolve open bookings.");
+    } finally {
+      setIsResolving(false);
+    }
+  }
+
   async function clearGameweek() {
     if (!data?.season || isClearing) return;
     const bookedCount = slateRows.filter((row) => row.booking).length;
@@ -1086,6 +1154,10 @@ export function MatchForecastPanel() {
                 onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
                 onBookAll={() => void bookGameweek()}
                 onClear={() => void clearGameweek()}
+                canResolve={slateSummary.openCount > 0 || bookings.some((booking) => booking.status === "open")}
+                isResolving={isResolving}
+                resolveMessage={resolveMessage}
+                onResolve={() => void resolveLiveBookings()}
               />
             )}
           </div>
