@@ -75,6 +75,8 @@ function renderBookings(rows: GameweekSlateRow[]) {
       onRowOddsChange={() => {}}
       onBookAll={() => {}}
       onClear={() => {}}
+      resolveMessage={null}
+      onResolve={() => {}}
     />,
   );
 }
@@ -85,6 +87,7 @@ describe("bookings scatterplot", () => {
     expect(html).toContain("Gameweek 24");
     expect(html).toContain("Clear GW24");
     expect(html).toMatch(/data-clear-gameweek=""[^>]*disabled=""/);
+    expect(html).not.toContain("Live resolve");
     expect(html).not.toContain("Model vs implied probability");
     expect(html).not.toContain("booking-probability-scatter");
   });
@@ -100,6 +103,36 @@ describe("bookings scatterplot", () => {
     expect(html).toContain("Scatter plot comparing model probability against implied probability");
     expect(html).toContain("ARS vs CHE");
     expect(html).toContain("Clear GW24");
+    expect(html).toContain("Live resolve");
+    expect(html).not.toMatch(/data-resolve-live=""[^>]*disabled=""/);
     expect(html).not.toMatch(/data-clear-gameweek=""[^>]*disabled=""/);
+  });
+
+  it("shows live resolve for open bookings outside the current slate", () => {
+    const html = renderToStaticMarkup(
+      <GameweekBookingsView
+        summary={{ ...summary, openCount: 0, openStake: 0 }}
+        gameweek={24}
+        rows={[row({ booking: booking({ status: "settled", outcome: "won", pnl: 11, homeScore: 2, awayScore: 0 }) })]}
+        stake="10"
+        defaultOdds="2.10"
+        rowOdds={{}}
+        isBooking={false}
+        isClearing={false}
+        onStakeChange={() => {}}
+        onDefaultOddsChange={() => {}}
+        onRowOddsChange={() => {}}
+        onBookAll={() => {}}
+        onClear={() => {}}
+        canResolve
+        isResolving={false}
+        resolveMessage="No results were available yet. 1 booking still open."
+        onResolve={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Live resolve");
+    expect(html).toContain("No results were available yet. 1 booking still open.");
+    expect(html).toContain("data-resolve-message");
   });
 });
