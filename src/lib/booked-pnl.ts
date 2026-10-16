@@ -1,5 +1,5 @@
 import { settleOpenBookings } from "@/lib/bookings";
-import type { BookingMarket, BookingOutcome } from "@/lib/booking-settlement";
+import { bookingStrategyOf, type BookingMarket, type BookingOutcome, type BookingStrategy } from "@/lib/booking-settlement";
 import { query } from "@/lib/db";
 
 export type BookedPnlRecord = {
@@ -18,6 +18,7 @@ export type BookedPnlRecord = {
   pnl: number | null;
   settledAt: string | null;
   bookedAt: string;
+  strategy?: BookingStrategy;
 };
 
 export type GameweekBookedPnl = {
@@ -27,6 +28,7 @@ export type GameweekBookedPnl = {
   won: number;
   lost: number;
   betCount: number;
+  strategy?: BookingStrategy;
 };
 
 type BookedPnlRow = {
@@ -44,6 +46,7 @@ type BookedPnlRow = {
   pnl: number | null;
   settled_at: Date | string | null;
   booked_at: Date | string;
+  strategy: string | null;
 };
 
 function hasPnl(record: BookedPnlRecord): record is BookedPnlRecord & { pnl: number } {
@@ -51,34 +54,39 @@ function hasPnl(record: BookedPnlRecord): record is BookedPnlRecord & { pnl: num
 }
 
 /**
- * One total per gameweek. A gameweek is realized once every booked bet in it
- * has a PnL. The series starts at the first realized gameweek.
+ * One total per gameweek, kept separate for each book. A gameweek is realized
+ * once every booked bet in that book has a PnL. The series starts at the first
+ * realized gameweek.
  */
 export function gameweekBookedPnl(records: BookedPnlRecord[]): GameweekBookedPnl[] {
-  const grouped = new Map<number, BookedPnlRecord[]>();
-  for (const record of records) {
-    if (record.gameweek === null || !Number.isInteger(record.gameweek)) continue;
-    const rows = grouped.get(record.gameweek) ?? [];
-    rows.push(record);
-    grouped.set(record.gameweek, rows);
-  }
+  return (["largest", "kelly"] as const).flatMap((strategy) => {
+    const grouped = new Map<number, BookedPnlRecord[]>();
+    for (const record of records) {
+      if (record.gameweek === null || !Number.isInteger(record.gameweek)) continue;
+      if (bookingStrategyOf(record) !== strategy) continue;
+      const rows = grouped.get(record.gameweek) ?? [];
+      rows.push(record);
+      grouped.set(record.gameweek, rows);
+    }
 
-  const realized = [...grouped.entries()]
-    .filter(([, rows]) => rows.length > 0 && rows.every(hasPnl))
-    .sort(([left], [right]) => left - right);
+    const realized = [...grouped.entries()]
+      .filter(([, rows]) => rows.length > 0 && rows.every(hasPnl))
+      .sort(([left], [right]) => left - right);
 
-  let runningPnl = 0;
-  return realized.map(([gameweek, rows]) => {
-    const pnl = rows.reduce((total, row) => total + (row.pnl ?? 0), 0);
-    runningPnl += pnl;
-    return {
-      gameweek,
-      pnl,
-      runningPnl,
-      won: rows.filter((row) => row.outcome === "won").length,
-      lost: rows.filter((row) => row.outcome === "lost").length,
-      betCount: rows.length,
-    };
+    let runningPnl = 0;
+    return realized.map(([gameweek, rows]) => {
+      const pnl = rows.reduce((total, row) => total + (row.pnl ?? 0), 0);
+      runningPnl += pnl;
+      return {
+        gameweek,
+        pnl,
+        runningPnl,
+        won: rows.filter((row) => row.outcome === "won").length,
+        lost: rows.filter((row) => row.outcome === "lost").length,
+        betCount: rows.length,
+        strategy,
+      };
+    });
   });
 }
 
@@ -98,6 +106,7 @@ function mapBookedPnlRow(row: BookedPnlRow): BookedPnlRecord {
     pnl: row.pnl === null || row.pnl === undefined ? null : Number(row.pnl),
     settledAt: row.settled_at ? String(row.settled_at) : null,
     bookedAt: String(row.booked_at),
+    strategy: bookingStrategyOf({ strategy: row.strategy }),
   };
 }
 
@@ -121,7 +130,8 @@ export async function listBookedPnlHistory(season: string, options?: { skipSettl
        b.outcome,
        b.pnl,
        b.settled_at,
-       b.booked_at
+       b.booked_at,
+       b.strategy
      FROM bookings b
      LEFT JOIN fixtures f ON f.season = b.season AND f.fixture_id = b.fixture_id
      LEFT JOIN teams th ON th.season = b.season AND th.team_id = f.team_h

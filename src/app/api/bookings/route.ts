@@ -11,7 +11,7 @@ import {
   type BookingInput,
 } from "@/lib/bookings";
 import { getGameweekSlate } from "@/lib/gameweek-slate";
-import { isBookableSelection, isBookingMarket } from "@/lib/booking-settlement";
+import { isBookableSelection, isBookingMarket, type BookingStrategy } from "@/lib/booking-settlement";
 import {
   DEFAULT_FORECAST_PARAMS,
   getFixtureForecast,
@@ -44,6 +44,10 @@ function errorResponse(error: unknown, fallback: string) {
     { error: error instanceof Error ? error.message : fallback },
     { status: 500 },
   );
+}
+
+function strategyFromValue(value: unknown): BookingStrategy {
+  return value === "kelly" ? "kelly" : "largest";
 }
 
 function forecastParamsFromQuery(searchParams: URLSearchParams): ForecastParams {
@@ -91,6 +95,7 @@ type BookingRequestBody = Partial<BookingInput> & {
   stake?: number;
   odds?: number;
   notes?: string;
+  strategy?: BookingStrategy;
   lookback?: number;
   homeAdvantage?: number;
   correlation?: number;
@@ -163,6 +168,7 @@ async function bookGameweek(body: BookingRequestBody) {
       stake: item.stake!,
       odds: item.odds!,
       notes: item.notes,
+      strategy: strategyFromValue(body.strategy),
       forecast,
     });
   }
@@ -209,6 +215,7 @@ async function bookOne(body: BookingRequestBody) {
     stake: body.stake!,
     odds: body.odds!,
     notes: body.notes,
+    strategy: strategyFromValue(body.strategy),
     forecast,
   });
 
@@ -222,7 +229,9 @@ export async function DELETE(request: NextRequest) {
 
   try {
     if (season && Number.isInteger(gameweek) && gameweek > 0) {
-      const cleared = await clearGameweekBookings(season, gameweek);
+      const strategyParam = request.nextUrl.searchParams.get("strategy");
+      const strategy = strategyParam === "kelly" || strategyParam === "largest" ? strategyParam : undefined;
+      const cleared = await clearGameweekBookings(season, gameweek, strategy);
       return NextResponse.json({ cleared });
     }
     if (!id) {

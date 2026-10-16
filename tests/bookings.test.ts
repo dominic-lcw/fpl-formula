@@ -286,4 +286,69 @@ describe("booking settlement", () => {
     expect(await clearGameweekBookings("2025-26", 6)).toBe(0);
     await expect(clearGameweekBookings("2025-26", 0)).rejects.toMatchObject({ status: 400 });
   });
+
+  it("keeps a Kelly bet when the same match is already booked on largest chance", async () => {
+    resetReadConnection();
+    const connection = await createHydrationConnection();
+    await connection.run(
+      `INSERT INTO fixtures (season, fixture_id, event, team_h, team_a, finished)
+       VALUES ('2025-26', 801, 8, 1, 2, false)`,
+    );
+    await exportParquetDataset(connection);
+    connection.closeSync();
+    resetReadConnection();
+
+    const largest = await bookSelection({
+      fixtureId: 801,
+      season: "2025-26",
+      homeTeam: "Alpha",
+      awayTeam: "Beta",
+      market: "1X2",
+      selection: "home",
+      stake: 10,
+      odds: 2.1,
+      strategy: "largest",
+      forecast,
+    });
+    const kelly = await bookSelections([
+      {
+        fixtureId: 801,
+        season: "2025-26",
+        homeTeam: "Alpha",
+        awayTeam: "Beta",
+        market: "1X2",
+        selection: "home",
+        stake: 25,
+        odds: 2.4,
+        strategy: "kelly",
+        forecast,
+      },
+    ]);
+    expect(kelly).toHaveLength(1);
+    expect(kelly[0]).toMatchObject({ strategy: "kelly", stake: 25 });
+
+    const duplicateKelly = await bookSelections([
+      {
+        fixtureId: 801,
+        season: "2025-26",
+        homeTeam: "Alpha",
+        awayTeam: "Beta",
+        market: "1X2",
+        selection: "home",
+        stake: 25,
+        odds: 2.4,
+        strategy: "kelly",
+        forecast,
+      },
+    ]);
+    expect(duplicateKelly).toHaveLength(0);
+
+    const listed = await listBookings("2025-26", { skipSettlement: true });
+    expect(listed.filter((entry) => entry.fixtureId === 801).map((entry) => entry.strategy).sort()).toEqual(["kelly", "largest"]);
+
+    expect(await clearGameweekBookings("2025-26", 8, "kelly")).toBe(1);
+    const remaining = await listBookings("2025-26", { skipSettlement: true });
+    expect(remaining.find((entry) => entry.id === largest.id)).toMatchObject({ strategy: "largest", stake: 10 });
+    expect(remaining.some((entry) => entry.id === kelly[0]?.id)).toBe(false);
+  });
 });

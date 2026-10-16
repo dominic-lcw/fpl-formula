@@ -41,16 +41,18 @@ function pnlClass(value: number) {
 export function BookedPnlStrip({
   entries,
   activeGameweek,
+  bookLabel,
 }: {
   entries: GameweekBookedPnl[];
   activeGameweek?: number;
+  bookLabel?: string;
 }) {
   const book = entries.at(-1)?.runningPnl ?? 0;
 
   return (
     <section aria-label="Booked PnL by gameweek" className="rounded-xl border bg-card p-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">Booked PnL</h2>
+        <h2 className="text-sm font-semibold">Booked PnL{bookLabel ? ` · ${bookLabel}` : ""}</h2>
         <p className="text-xs text-muted-foreground">
           {entries.length === 0
             ? "Per gameweek, from the first realized week"

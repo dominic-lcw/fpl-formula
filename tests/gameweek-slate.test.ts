@@ -23,12 +23,13 @@ let bookSelection: typeof import("../src/lib/bookings").bookSelection;
 let createHydrationConnection: typeof import("../src/lib/db").createHydrationConnection;
 let exportParquetDataset: typeof import("../src/lib/db").exportParquetDataset;
 let getGameweekSlate: typeof import("../src/lib/gameweek-slate").getGameweekSlate;
+let slateRowsForStrategy: typeof import("../src/lib/gameweek-slate").slateRowsForStrategy;
 let resetReadConnection: typeof import("../src/lib/db").resetReadConnection;
 
 beforeAll(async () => {
   ({ bookSelection } = await import("../src/lib/bookings"));
   ({ createHydrationConnection, exportParquetDataset, resetReadConnection } = await import("../src/lib/db"));
-  ({ getGameweekSlate } = await import("../src/lib/gameweek-slate"));
+  ({ getGameweekSlate, slateRowsForStrategy } = await import("../src/lib/gameweek-slate"));
 });
 
 describe("gameweek slate", () => {
@@ -76,5 +77,52 @@ describe("gameweek slate", () => {
     expect(played?.booking).toMatchObject({ status: "settled", outcome: "won", pnl: 11, homeScore: 2, awayScore: 1 });
     expect(slate.summary.settledPnl).toBeCloseTo(11, 5);
     expect(slate.summary.openCount).toBe(0);
+  });
+
+  it("shows the Kelly recommendation for a match already booked on largest chance", () => {
+    const largest = {
+      id: "largest",
+      fixtureId: 501,
+      season: "2025-26",
+      homeTeam: "Alpha FC",
+      awayTeam: "Beta FC",
+      market: "1X2" as const,
+      selection: "home",
+      stake: 10,
+      odds: 1.8,
+      expectedHomeGoals: 1.7,
+      expectedAwayGoals: 0.9,
+      modelProb: 0.52,
+      expectedValue: 0,
+      strategy: "largest" as const,
+      notes: null,
+      bookedAt: "2026-02-01T12:00:00.000Z",
+      status: "open" as const,
+      homeScore: null,
+      awayScore: null,
+      outcome: null,
+      pnl: null,
+      settledAt: null,
+    };
+    const rows = slateRowsForStrategy(
+      [{
+        fixtureId: 501,
+        gameweek: 5,
+        homeTeam: "Alpha FC",
+        awayTeam: "Beta FC",
+        homeShortName: "ALP",
+        awayShortName: "BET",
+        kickoffTime: null,
+        finished: false,
+        homeScore: null,
+        awayScore: null,
+        modelPick: { market: "1X2", selection: "home", probability: 0.52 },
+        booking: largest,
+      }],
+      [largest],
+      "kelly",
+    );
+
+    expect(rows[0]?.booking).toBeNull();
   });
 });

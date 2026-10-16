@@ -1,4 +1,4 @@
-export type BookingStrategy = "largest" | "kelly";
+export type { BookingStrategy } from "@/lib/booking-settlement";
 
 export type KellyCandidate = {
   fixtureId: number;
