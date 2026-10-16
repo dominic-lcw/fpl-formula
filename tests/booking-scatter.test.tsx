@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { GameweekBookingsView, pendingRowsWithOpenOdds } from "../src/components/match-forecast";
 import { buildKellyPlan } from "../src/lib/kelly";
 import type { BookingRecord } from "../src/lib/booking-settlement";
-import type { GameweekSlateRow, GameweekSlateSummary } from "../src/lib/gameweek-slate";
+import type { GameweekSlateRow } from "../src/lib/gameweek-slate";
 
 function booking(overrides: Partial<BookingRecord> = {}): BookingRecord {
   return {
@@ -20,6 +20,7 @@ function booking(overrides: Partial<BookingRecord> = {}): BookingRecord {
     expectedAwayGoals: 0.9,
     modelProb: 0.55,
     expectedValue: 0.155,
+    strategy: "largest",
     notes: null,
     bookedAt: "2026-02-01T12:00:00.000Z",
     status: "open",
@@ -50,23 +51,12 @@ function row(overrides: Partial<GameweekSlateRow> = {}): GameweekSlateRow {
   };
 }
 
-const summary: GameweekSlateSummary = {
-  settledPnl: 0,
-  openStake: 10,
-  settledCount: 0,
-  openCount: 1,
-  won: 0,
-  lost: 0,
-  unbookedCount: 0,
-};
-
 function renderBookings(
   rows: GameweekSlateRow[],
   overrides: Partial<Parameters<typeof GameweekBookingsView>[0]> = {},
 ) {
   return renderToStaticMarkup(
     <GameweekBookingsView
-      summary={summary}
       gameweek={24}
       rows={rows}
       stake="10"
@@ -118,7 +108,6 @@ describe("bookings scatterplot", () => {
   it("shows live resolve for open bookings outside the current slate", () => {
     const html = renderToStaticMarkup(
       <GameweekBookingsView
-        summary={{ ...summary, openCount: 0, openStake: 0 }}
         gameweek={24}
         rows={[row({ booking: booking({ status: "settled", outcome: "won", pnl: 11, homeScore: 2, awayScore: 0 }) })]}
         stake="10"
@@ -235,7 +224,7 @@ describe("Kelly list", () => {
     expect(html).toContain('data-kelly-passed-row="11"');
     expect(html).toMatch(/data-book-row="11"[^>]*disabled=""/);
     expect(html).not.toContain('data-kelly-row="11"');
-    expect(html).toContain("Stake to place");
+    expect(html).toContain("Capital for Kelly bets");
     expect(html).toContain("Largest chance");
   });
 
@@ -265,6 +254,43 @@ describe("Kelly list", () => {
     expect(html).not.toContain("No edge");
     expect(html).not.toContain("data-kelly-list");
     expect(html).not.toMatch(/data-book-row="10"[^>]*disabled=""/);
+  });
+
+  it("still shows the Kelly stake and book button after largest chance is booked", () => {
+    const plan = buildKellyPlan([{ fixtureId: 10, probability: 0.55, odds: 2.1 }], 1000);
+    const html = renderBookings(
+      [row({ booking: booking({ strategy: "largest", stake: 10 }) })],
+      {
+        strategy: "kelly",
+        capital: "1000",
+        rowOdds: { 10: "2.10" },
+        kellyBets: plan.bets,
+        kellyPassed: plan.passed,
+        kellyScaled: plan.scaled,
+      },
+    );
+
+    expect(html).toContain('data-active-strategy="kelly"');
+    expect(html).toContain("Kelly book");
+    expect(html).toContain('data-book-row="10"');
+    expect(html).not.toMatch(/data-book-row="10"[^>]*disabled=""/);
+    expect(html).toContain('data-kelly-stake="10"');
+    expect(html).toContain("$140.91");
+    expect(html).toContain("Book · pay $140.91");
+    expect(html).toContain('data-kelly-row="10"');
+    expect(html).toContain("$0.00");
+  });
+
+  it("keeps a booked Kelly bet on its own book and leaves the book button off", () => {
+    const html = renderBookings(
+      [row({ booking: booking({ strategy: "kelly", stake: 140.91, odds: 2.1 }) })],
+      { strategy: "kelly", capital: "1000", kellyBets: [], kellyPassed: 0 },
+    );
+
+    expect(html).not.toContain('data-book-row="10"');
+    expect(html).not.toContain("data-kelly-stake");
+    expect(html).toContain("$140.91");
+    expect(html).toContain("All booked");
   });
 });
 

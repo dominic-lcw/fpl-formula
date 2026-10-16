@@ -94,7 +94,8 @@ const userTableSchema = `
     expected_home_goals DOUBLE NOT NULL, expected_away_goals DOUBLE NOT NULL,
     model_prob DOUBLE NOT NULL, expected_value DOUBLE NOT NULL,
     notes VARCHAR, booked_at TIMESTAMP NOT NULL, status VARCHAR NOT NULL,
-    home_score INTEGER, away_score INTEGER, outcome VARCHAR, pnl DOUBLE, settled_at TIMESTAMP
+    home_score INTEGER, away_score INTEGER, outcome VARCHAR, pnl DOUBLE, settled_at TIMESTAMP,
+    strategy VARCHAR NOT NULL DEFAULT 'largest'
   );
   CREATE TABLE IF NOT EXISTS fixture_results (
     season VARCHAR NOT NULL, fixture_id INTEGER NOT NULL,
@@ -110,7 +111,12 @@ async function loadUserTables(connection: DuckDBConnection) {
     const filePath = userTableFile(table);
     if (await fileExists(filePath)) {
       const escaped = filePath.replaceAll("'", "''");
-      await connection.run(`INSERT INTO ${table} SELECT * FROM read_parquet('${escaped}')`);
+      // Older booking files have no strategy column. BY NAME fills that default
+      // so a largest-chance bet stays on the largest-chance book.
+      const insert = table === "bookings"
+        ? `INSERT INTO bookings BY NAME SELECT * FROM read_parquet('${escaped}')`
+        : `INSERT INTO ${table} SELECT * FROM read_parquet('${escaped}')`;
+      await connection.run(insert);
     }
   }
 }

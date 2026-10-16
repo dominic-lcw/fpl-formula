@@ -1,5 +1,5 @@
-import type { BookingMarket, BookingOutcome, BookingRecord, BookingStatus } from "@/lib/booking-settlement";
-import { highestMatchOutcome } from "@/lib/booking-settlement";
+import type { BookingMarket, BookingOutcome, BookingRecord, BookingStatus, BookingStrategy } from "@/lib/booking-settlement";
+import { bookingStrategyOf, highestMatchOutcome } from "@/lib/booking-settlement";
 import type { FixtureForecast } from "@/lib/match-forecast-model";
 
 export type OnePagerForecast = {
@@ -168,8 +168,14 @@ function forecastFromBooking(booking: BookingRecord, homeShortName: string, away
   };
 }
 
-function preferredBooking(bookings: BookingRecord[], fixtureId: number): BookingRecord | null {
-  const matches = bookings.filter((booking) => booking.fixtureId === fixtureId);
+function preferredBooking(
+  bookings: BookingRecord[],
+  fixtureId: number,
+  strategy?: BookingStrategy,
+): BookingRecord | null {
+  const matches = bookings.filter((booking) => (
+    booking.fixtureId === fixtureId && (strategy === undefined || bookingStrategyOf(booking) === strategy)
+  ));
   return matches.find((booking) => booking.pnl !== null)
     ?? matches.find((booking) => booking.status === "open")
     ?? matches[0]
@@ -196,6 +202,7 @@ export function collectMatchdaySources(
   forecasts: ForecastSlice[],
   bookings: BookingRecord[],
   slateRows: MatchdaySlateLike[],
+  strategy?: BookingStrategy,
 ): MatchdaySource[] {
   const forecastById = new Map(
     forecasts.filter((fixture) => fixture.event === gameweek).map((fixture) => [fixture.fixtureId, fixture]),
@@ -203,7 +210,7 @@ export function collectMatchdaySources(
   const slate = slateRows.filter((row) => row.gameweek === gameweek);
 
   if (slate.length === 0) {
-    return [...forecastById.values()].map((forecast) => sourceFromForecast(forecast, preferredBooking(bookings, forecast.fixtureId)));
+    return [...forecastById.values()].map((forecast) => sourceFromForecast(forecast, preferredBooking(bookings, forecast.fixtureId, strategy)));
   }
 
   const seen = new Set<number>();
@@ -219,13 +226,15 @@ export function collectMatchdaySources(
       homeScore: row.homeScore ?? null,
       awayScore: row.awayScore ?? null,
       forecast: forecastById.get(row.fixtureId) ?? null,
-      booking: row.booking ?? preferredBooking(bookings, row.fixtureId),
+      booking: row.booking && (strategy === undefined || bookingStrategyOf(row.booking) === strategy)
+        ? row.booking
+        : preferredBooking(bookings, row.fixtureId, strategy),
     };
   });
 
   for (const forecast of forecastById.values()) {
     if (seen.has(forecast.fixtureId)) continue;
-    sources.push(sourceFromForecast(forecast, preferredBooking(bookings, forecast.fixtureId)));
+    sources.push(sourceFromForecast(forecast, preferredBooking(bookings, forecast.fixtureId, strategy)));
   }
 
   return sources;
@@ -302,8 +311,9 @@ export function buildMatchdayOnePager(input: {
   forecasts: ForecastSlice[];
   bookings: BookingRecord[];
   slateRows: MatchdaySlateLike[];
+  strategy?: BookingStrategy;
 }): MatchdayOnePager {
-  const matches = collectMatchdaySources(input.gameweek, input.forecasts, input.bookings, input.slateRows).map(toMatch);
+  const matches = collectMatchdaySources(input.gameweek, input.forecasts, input.bookings, input.slateRows, input.strategy).map(toMatch);
   const booked = matches.filter((match) => match.bookedOdds);
   const settled = booked.filter((match) => match.bookedOdds?.pnl !== null && match.bookedOdds?.pnl !== undefined);
   const realized = booked.length > 0 && settled.length === booked.length;

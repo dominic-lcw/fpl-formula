@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  bookingStrategyOf,
   gradeSelection,
   isBookableSelection,
   isBookingMarket,
@@ -8,6 +9,7 @@ import {
   type BookingOutcome,
   type BookingRecord,
   type BookingStatus,
+  type BookingStrategy,
 } from "@/lib/booking-settlement";
 import { expectedValue, modelProbabilityForMarket, type FixtureForecast } from "@/lib/match-forecast-model";
 import { getConnection, persistUserTable, query } from "@/lib/db";
@@ -31,6 +33,7 @@ export type BookingInput = {
   selection: string;
   stake: number;
   odds: number;
+  strategy?: BookingStrategy;
   forecast: Pick<
     FixtureForecast,
     "expectedHomeGoals" | "expectedAwayGoals" | "homeWinProb" | "drawProb" | "awayWinProb" | "over25Prob" | "bttsProb" | "topScorelines"
@@ -53,6 +56,7 @@ type BookingRow = {
   model_prob: number;
   expected_value: number;
   notes: string | null;
+  strategy: string | null;
   booked_at: Date | string;
   status: string;
   home_score: number | null;
@@ -108,6 +112,7 @@ function mapBookingRow(row: BookingRow): BookingRecord {
     expectedAwayGoals: Number(row.expected_away_goals),
     modelProb: Number(row.model_prob),
     expectedValue: Number(row.expected_value),
+    strategy: bookingStrategyOf({ strategy: row.strategy }),
     notes: row.notes,
     bookedAt: String(row.booked_at),
     status: row.status === "settled" ? "settled" : "open",
@@ -142,6 +147,7 @@ export function buildBookingRecord(input: BookingInput): BookingRecord {
     expectedAwayGoals: input.forecast.expectedAwayGoals,
     modelProb,
     expectedValue: expectedValue(modelProb, input.odds),
+    strategy: bookingStrategyOf(input),
     notes: input.notes ?? null,
     bookedAt: new Date().toISOString(),
     status: "open",
@@ -367,7 +373,7 @@ export async function listBookings(season?: string, options?: ListBookingsOption
 const BOOKING_INSERT_COLUMNS = `
   id, fixture_id, season, home_team, away_team, market, selection, stake, odds,
   expected_home_goals, expected_away_goals, model_prob, expected_value, notes, booked_at,
-  status, home_score, away_score, outcome, pnl, settled_at
+  status, home_score, away_score, outcome, pnl, settled_at, strategy
 `;
 
 function bookingInsertValues(booking: BookingRecord) {
@@ -393,13 +399,14 @@ function bookingInsertValues(booking: BookingRecord) {
     null,
     null,
     null,
+    booking.strategy,
   ];
 }
 
 async function insertBookings(connection: Awaited<ReturnType<typeof getConnection>>, bookings: BookingRecord[]) {
   if (bookings.length === 0) return;
 
-  const placeholders = bookings.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+  const placeholders = bookings.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
   const values = bookings.flatMap((booking) => bookingInsertValues(booking));
   await connection.run(
     `INSERT INTO bookings (${BOOKING_INSERT_COLUMNS}) VALUES ${placeholders}`,
@@ -418,12 +425,12 @@ export async function bookSelection(input: BookingInput) {
 export async function bookSelections(inputs: BookingInput[]) {
   if (inputs.length === 0) return [];
 
-  const open = await query<Pick<BookingRow, "fixture_id" | "market" | "selection">>(
-    `SELECT fixture_id, market, selection FROM bookings WHERE status = 'open'`,
+  const open = await query<Pick<BookingRow, "fixture_id" | "market" | "selection" | "strategy">>(
+    `SELECT fixture_id, market, selection, strategy FROM bookings WHERE status = 'open'`,
   );
-  const taken = new Set(open.map((row) => `${row.fixture_id}:${row.market}:${row.selection}`));
+  const taken = new Set(open.map((row) => bookingKey(row.fixture_id, row.market, row.selection, bookingStrategyOf({ strategy: row.strategy }))));
   const records = inputs
-    .filter((input) => !taken.has(`${input.fixtureId}:${input.market}:${input.selection}`))
+    .filter((input) => !taken.has(bookingKey(input.fixtureId, input.market, input.selection, bookingStrategyOf(input))))
     .map((input) => buildBookingRecord(input));
   if (records.length === 0) return [];
 
@@ -446,19 +453,26 @@ export async function cancelBooking(id: string) {
   await persistUserTable(connection, "bookings");
 }
 
-export async function clearGameweekBookings(season: string, gameweek: number) {
+function bookingKey(fixtureId: number, market: string, selection: string, strategy: BookingStrategy) {
+  return `${fixtureId}:${market}:${selection}:${strategy}`;
+}
+
+export async function clearGameweekBookings(season: string, gameweek: number, strategy?: BookingStrategy) {
   if (!season || !Number.isInteger(gameweek) || gameweek <= 0) {
     throw new BookingRequestError("A season and gameweek are required.", 400);
   }
 
+  const strategyFilter = strategy ? "AND COALESCE(strategy, 'largest') = ?" : "";
+  const parameters = strategy ? [season, season, gameweek, strategy] : [season, season, gameweek];
   const matched = await query<{ count: number }>(
     `SELECT count(*)::INTEGER AS count
      FROM bookings
      WHERE season = ?
        AND fixture_id IN (
          SELECT fixture_id FROM fixtures WHERE season = ? AND event = ?
-       )`,
-    [season, season, gameweek],
+       )
+       ${strategyFilter}`,
+    parameters,
   );
   const cleared = matched[0]?.count ?? 0;
   if (cleared === 0) return 0;
@@ -469,8 +483,9 @@ export async function clearGameweekBookings(season: string, gameweek: number) {
      WHERE season = ?
        AND fixture_id IN (
          SELECT fixture_id FROM fixtures WHERE season = ? AND event = ?
-       )`,
-    [season, season, gameweek],
+       )
+       ${strategyFilter}`,
+    parameters,
   );
   await persistUserTable(connection, "bookings");
   return cleared;

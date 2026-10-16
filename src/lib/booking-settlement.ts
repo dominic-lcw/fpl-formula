@@ -1,6 +1,11 @@
 export type BookingMarket = "1X2" | "over_under" | "btts" | "correct_score";
 export type BookingStatus = "open" | "settled";
 export type BookingOutcome = "won" | "lost";
+export type BookingStrategy = "largest" | "kelly";
+
+export function bookingStrategyOf(booking: { strategy?: string | null } | null | undefined): BookingStrategy {
+  return booking?.strategy === "kelly" ? "kelly" : "largest";
+}
 
 export type BookingRecord = {
   id: string;
@@ -16,6 +21,8 @@ export type BookingRecord = {
   expectedAwayGoals: number;
   modelProb: number;
   expectedValue: number;
+  /** Largest chance and Kelly are separate books on the same match. */
+  strategy: BookingStrategy;
   notes: string | null;
   bookedAt: string;
   status: BookingStatus;
