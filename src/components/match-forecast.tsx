@@ -637,8 +637,8 @@ function GameweekBookingTable({
             <CardTitle>Gameweek {gameweek}</CardTitle>
             <p className="text-sm text-muted-foreground">
               {kellyMode
-                ? "Set the capital, review the Kelly list, then book it. A match stays off the list when its price has no edge. Uncheck Open when that price is not available."
-                : "Largest chance books the most likely result. Book one match at a time, and uncheck Open when that price is not available."}
+                ? "Enter the stake you want to place. The list is the final bet, and To pay is the amount to put down. A price with no edge stays off the list."
+                : "Largest chance books the most likely result at the stake and odds you enter, even when that chance is below the price. Uncheck Open when a price is not available."}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -677,7 +677,7 @@ function GameweekBookingTable({
                 : bookCount === 0
                   ? (kellyMode ? "No Kelly bets" : "No open prices")
                   : kellyMode
-                    ? `Book ${bookCount} Kelly bet${bookCount === 1 ? "" : "s"}`
+                    ? `Book · pay $${kellyTotal.toFixed(2)}`
                     : `Book ${bookCount} match${bookCount === 1 ? "" : "es"}`}
             </button>
           </div>
@@ -710,19 +710,25 @@ function GameweekBookingTable({
           </div>
           {kellyMode ? (
             <label className="grid gap-1 text-sm">
-              Capital ($)
+              Stake ($)
               <Input
                 value={capital}
                 onChange={(event) => onCapitalChange?.(event.target.value)}
                 inputMode="decimal"
-                aria-label="Capital"
+                aria-label="Stake to place"
                 className="w-28"
               />
             </label>
           ) : (
             <label className="grid gap-1 text-sm">
               Stake ($)
-              <Input value={stake} onChange={(event) => onStakeChange(event.target.value)} inputMode="decimal" className="w-28" />
+              <Input
+                value={stake}
+                onChange={(event) => onStakeChange(event.target.value)}
+                inputMode="decimal"
+                aria-label="Stake for each match"
+                className="w-28"
+              />
             </label>
           )}
           <label className="grid gap-1 text-sm">
@@ -737,17 +743,25 @@ function GameweekBookingTable({
         </div>
         {kellyMode ? (
           <div data-kelly-list="" className="rounded-lg border bg-muted/20 p-3">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm font-medium">Kelly list</p>
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">To pay</p>
+                <p className="text-2xl font-semibold tabular-nums" data-to-pay="">
+                  {kellyRows.length === 0 || !Number.isFinite(capitalValue) || capitalValue <= 0
+                    ? "$0.00"
+                    : `$${kellyTotal.toFixed(2)}`}
+                </p>
+              </div>
               <p className="text-sm text-muted-foreground">
                 {kellyRows.length === 0 || !Number.isFinite(capitalValue) || capitalValue <= 0
                   ? "No open price has an edge yet."
-                  : `$${kellyTotal.toFixed(2)} of $${capitalValue.toFixed(2)} · ${kellyRows.length} bet${kellyRows.length === 1 ? "" : "s"}`}
+                  : `${kellyRows.length} bet${kellyRows.length === 1 ? "" : "s"} from your $${capitalValue.toFixed(2)} stake`}
               </p>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Stake is the full Kelly share of capital, (model probability × odds − 1) / (odds − 1).
-              {kellyScaled ? " These shares add up to more than the capital, so each stake is scaled down." : ""}
+              {kellyScaled
+                ? "These prices would cost more than your stake, so each line is scaled down and you pay the stake you entered."
+                : "You pay the Kelly amount, which stays inside the stake you entered."}
             </p>
             {kellyRows.length > 0 ? (
               <ul className="mt-2 grid gap-1 text-sm">
@@ -796,6 +810,10 @@ function GameweekBookingTable({
                 const score = booking?.homeScore ?? row.homeScore;
                 const opponentScore = booking?.awayScore ?? row.awayScore;
                 const kellyBet = kellyById.get(row.fixtureId);
+                const enteredOdds = parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds);
+                const belowPrice = !kellyMode && !booking && !row.finished && row.modelPick !== null && enteredOdds !== null
+                  && row.modelPick.probability < 1 / enteredOdds;
+                const enteredStake = Number(stake);
 
                 return (
                   <tr key={row.fixtureId} className="border-b border-border/60">
@@ -820,15 +838,22 @@ function GameweekBookingTable({
                     <td className="py-2 pr-3">
                       {booking ? (
                         `$${booking.stake.toFixed(2)}`
-                      ) : kellyBet && capitalValue > 0 ? (
+                      ) : kellyMode && kellyBet && capitalValue > 0 ? (
                         <span data-kelly-stake={row.fixtureId}>
                           <span className="font-medium tabular-nums">${kellyBet.stake.toFixed(2)}</span>
                           <span className="block text-xs text-muted-foreground">
-                            {formatPercent(kellyBet.stake / capitalValue)} of capital
+                            {formatPercent(kellyBet.stake / capitalValue)} of your stake
                           </span>
                         </span>
-                      ) : kellyMode && !row.finished && row.modelPick && !priceClosed[row.fixtureId] && parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds) !== null ? (
+                      ) : kellyMode && !row.finished && row.modelPick && !priceClosed[row.fixtureId] && enteredOdds !== null ? (
                         <span className="text-muted-foreground" data-kelly-passed-row={row.fixtureId}>No edge</span>
+                      ) : !kellyMode && !row.finished && row.modelPick && Number.isFinite(enteredStake) && enteredStake > 0 ? (
+                        <span>
+                          <span className="tabular-nums">${enteredStake.toFixed(2)}</span>
+                          {belowPrice ? (
+                            <span className="block text-xs text-muted-foreground" data-below-price={row.fixtureId}>Below the price</span>
+                          ) : null}
+                        </span>
                       ) : (
                         "—"
                       )}
@@ -1185,7 +1210,7 @@ export function MatchForecastPanel() {
 
     if (strategy === "kelly") {
       if (!Number.isFinite(kellyPlan.capital) || kellyPlan.capital <= 0) {
-        setError("Capital must be positive.");
+        setError("Stake must be positive.");
         return;
       }
       if (kellyPlan.bets.length === 0) {
@@ -1252,7 +1277,7 @@ export function MatchForecastPanel() {
     }
     const stakeValue = kellyBet ? kellyBet.stake : Number(stake);
     if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
-      setError(strategy === "kelly" ? "Capital must be positive." : "Stake must be positive.");
+      setError("Stake must be positive.");
       return;
     }
 
