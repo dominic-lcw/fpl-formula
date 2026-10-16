@@ -65,7 +65,7 @@ export function BookedPnlStrip({
         <div className="flex gap-2 overflow-x-auto pb-1">
           {entries.map((entry) => (
             <article
-              key={entry.gameweek}
+              key={`${entry.strategy ?? "largest"}-${entry.gameweek}`}
               className={`w-28 shrink-0 rounded-lg border bg-muted/20 px-3 py-2 ${entry.gameweek === activeGameweek ? "border-primary ring-1 ring-primary" : ""}`}
               aria-label={`Gameweek ${entry.gameweek}, ${formatPnl(entry.pnl)}`}
             >
@@ -228,7 +228,8 @@ export function MatchdayOnePagerView({
           </div>
         )}
 
-        <BookedPnlStrip entries={pnlHistory} activeGameweek={page.gameweek} />
+        <BookedPnlStrip entries={pnlHistory.filter((entry) => (entry.strategy ?? "largest") === "largest")} bookLabel="Largest chance" activeGameweek={page.gameweek} />
+        <BookedPnlStrip entries={pnlHistory.filter((entry) => entry.strategy === "kelly")} bookLabel="Kelly" activeGameweek={page.gameweek} />
       </div>
     </div>
   );

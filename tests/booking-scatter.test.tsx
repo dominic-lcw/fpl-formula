@@ -155,7 +155,7 @@ describe("bookings scatterplot", () => {
     expect(html).toContain("Largest chance");
     expect(html).toContain("even when that chance is below the price");
     expect(html).toContain("Stake for each match");
-    expect(html).not.toContain("data-kelly-list");
+    expect(html).toContain("Kelly book");
     expect(html).toContain('data-book-row="10"');
     expect(html).toContain('data-price-open="10"');
     expect(html).toContain("Book 1 match");
@@ -207,7 +207,6 @@ describe("Kelly list", () => {
         }),
       ],
       {
-        strategy: "kelly",
         capital: "1000",
         kellyBets: plan.bets,
         kellyPassed: plan.passed,
@@ -222,7 +221,8 @@ describe("Kelly list", () => {
     expect(html).toContain("$140.91");
     expect(html).toContain("1 open price has no edge and stays off the list.");
     expect(html).toContain('data-kelly-passed-row="11"');
-    expect(html).toMatch(/data-book-row="11"[^>]*disabled=""/);
+    expect(html).not.toContain('data-book-kelly="11"');
+    expect(html).toContain('data-book-row="11"');
     expect(html).not.toContain('data-kelly-row="11"');
     expect(html).toContain("Capital for Kelly bets");
     expect(html).toContain("Largest chance");
@@ -245,14 +245,14 @@ describe("Kelly list", () => {
     const plan = buildKellyPlan([{ fixtureId: 10, probability: 0.4, odds: 2.1 }], 1000);
     const html = renderBookings(
       [row({ modelPick: { market: "1X2", selection: "home", probability: 0.4 } })],
-      { strategy: "largest", stake: "15", rowOdds: { 10: "2.10" }, kellyBets: plan.bets, kellyPassed: 1 },
+      { stake: "15", rowOdds: { 10: "2.10" }, kellyBets: plan.bets, kellyPassed: 1 },
     );
 
     expect(plan.bets).toEqual([]);
     expect(html).toContain("$15.00");
     expect(html).toContain("Below the price");
-    expect(html).not.toContain("No edge");
-    expect(html).not.toContain("data-kelly-list");
+    expect(html).toContain('data-kelly-passed-row="10"');
+    expect(html).toContain("No edge");
     expect(html).not.toMatch(/data-book-row="10"[^>]*disabled=""/);
   });
 
@@ -261,7 +261,6 @@ describe("Kelly list", () => {
     const html = renderBookings(
       [row({ booking: booking({ strategy: "largest", stake: 10 }) })],
       {
-        strategy: "kelly",
         capital: "1000",
         rowOdds: { 10: "2.10" },
         kellyBets: plan.bets,
@@ -270,10 +269,13 @@ describe("Kelly list", () => {
       },
     );
 
-    expect(html).toContain('data-active-strategy="kelly"');
+    expect(html).toContain('data-books="both"');
+    expect(html).toContain("Largest chance book");
     expect(html).toContain("Kelly book");
-    expect(html).toContain('data-book-row="10"');
-    expect(html).not.toMatch(/data-book-row="10"[^>]*disabled=""/);
+    expect(html).not.toContain('data-book-row="10"');
+    expect(html).toContain('data-book-kelly="10"');
+    expect(html).not.toMatch(/data-book-kelly="10"[^>]*disabled=""/);
+    expect(html).toContain('data-largest-pnl="10"');
     expect(html).toContain('data-kelly-stake="10"');
     expect(html).toContain("$140.91");
     expect(html).toContain("Book · pay $140.91");
@@ -284,13 +286,35 @@ describe("Kelly list", () => {
   it("keeps a booked Kelly bet on its own book and leaves the book button off", () => {
     const html = renderBookings(
       [row({ booking: booking({ strategy: "kelly", stake: 140.91, odds: 2.1 }) })],
-      { strategy: "kelly", capital: "1000", kellyBets: [], kellyPassed: 0 },
+      { capital: "1000", kellyBets: [], kellyPassed: 0 },
     );
 
-    expect(html).not.toContain('data-book-row="10"');
+    expect(html).toContain('data-book-row="10"');
+    expect(html).not.toContain('data-book-kelly="10"');
     expect(html).not.toContain("data-kelly-stake");
     expect(html).toContain("$140.91");
-    expect(html).toContain("All booked");
+    expect(html).toContain('data-kelly-pnl="10"');
+    expect(html).toContain("No Kelly bets");
+  });
+
+  it("shows each book's pnl when both are booked on the same match", () => {
+    const html = renderBookings(
+      [row()],
+      {
+        bookings: [
+          booking({ strategy: "largest", stake: 10, status: "settled", outcome: "won", pnl: 11, homeScore: 2, awayScore: 0 }),
+          booking({ id: "kelly-1", strategy: "kelly", stake: 25, odds: 2.4, status: "settled", outcome: "lost", pnl: -25, homeScore: 2, awayScore: 0 }),
+        ],
+        kellyBets: [],
+      },
+    );
+
+    expect(html).toContain('data-largest-pnl="10"');
+    expect(html).toContain("+$11.00");
+    expect(html).toContain('data-kelly-pnl="10"');
+    expect(html).toContain("-$25.00");
+    expect(html).not.toContain('data-book-row="10"');
+    expect(html).not.toContain('data-book-kelly="10"');
   });
 });
 
