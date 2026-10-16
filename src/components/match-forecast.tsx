@@ -46,6 +46,23 @@ function formatPnl(value: number) {
   return `${sign}$${Math.abs(value).toFixed(2)}`;
 }
 
+function parseDecimalOdds(value: string) {
+  const odds = Number(value);
+  return Number.isFinite(odds) && odds > 1 ? odds : null;
+}
+
+export function pendingRowsWithOpenOdds(
+  rows: GameweekSlateRow[],
+  rowOdds: Record<number, string>,
+  defaultOdds: string,
+  priceClosed: Record<number, boolean> = {},
+) {
+  return rows.filter((row) => {
+    if (row.booking || row.finished || !row.modelPick || priceClosed[row.fixtureId]) return false;
+    return parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds) !== null;
+  });
+}
+
 function selectionLabel(market: BookingMarket, selection: string) {
   switch (market) {
     case "1X2":
@@ -550,6 +567,10 @@ function GameweekBookingTable({
   onDefaultOddsChange,
   onRowOddsChange,
   onBookAll,
+  onBookRow,
+  bookingFixtureId = null,
+  priceClosed = {},
+  onPriceOpenChange,
   onClear,
   canResolve,
   isResolving = false,
@@ -567,6 +588,10 @@ function GameweekBookingTable({
   onDefaultOddsChange: (odds: string) => void;
   onRowOddsChange: (fixtureId: number, odds: string) => void;
   onBookAll: () => void;
+  onBookRow: (fixtureId: number) => void;
+  bookingFixtureId?: number | null;
+  priceClosed?: Record<number, boolean>;
+  onPriceOpenChange: (fixtureId: number, open: boolean) => void;
   onClear: () => void;
   canResolve?: boolean;
   isResolving?: boolean;
@@ -574,6 +599,8 @@ function GameweekBookingTable({
   onResolve?: () => void;
 }) {
   const pending = rows.filter((row) => !row.booking && !row.finished && row.modelPick);
+  const openPending = pending.filter((row) => !priceClosed[row.fixtureId]);
+  const leftOut = pending.length - openPending.length;
   const bookedCount = rows.filter((row) => row.booking).length;
   const showResolve = canResolve ?? rows.some((row) => row.booking?.status === "open");
   const busy = isBooking || isClearing || isResolving;
@@ -586,6 +613,7 @@ function GameweekBookingTable({
             <CardTitle>Gameweek {gameweek}</CardTitle>
             <p className="text-sm text-muted-foreground">
               Played matches show the final score and profit and loss from your booked odds.
+              Book one match at a time, and uncheck Open when that price is not available.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -614,12 +642,16 @@ function GameweekBookingTable({
             </Button>
             <button
               type="button"
-              disabled={busy || pending.length === 0}
+              disabled={busy || openPending.length === 0}
               onClick={onBookAll}
               className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             >
-              {isBooking ? <LoaderCircle className="size-4 animate-spin" /> : null}
-              {pending.length === 0 ? "All booked" : `Book ${pending.length} match${pending.length === 1 ? "" : "es"}`}
+              {isBooking && bookingFixtureId === null ? <LoaderCircle className="size-4 animate-spin" /> : null}
+              {pending.length === 0
+                ? "All booked"
+                : openPending.length === 0
+                  ? "No open prices"
+                  : `Book ${openPending.length} match${openPending.length === 1 ? "" : "es"}`}
             </button>
           </div>
         </div>
@@ -632,12 +664,17 @@ function GameweekBookingTable({
             Odds for every match
             <Input value={defaultOdds} onChange={(event) => onDefaultOddsChange(event.target.value)} inputMode="decimal" className="w-28" />
           </label>
+          {leftOut > 0 ? (
+            <p className="self-end text-sm text-muted-foreground" data-left-out="">
+              {leftOut} match{leftOut === 1 ? "" : "es"} left out until the price is open.
+            </p>
+          ) : null}
         </div>
         {resolveMessage ? <p className="text-sm text-muted-foreground" data-resolve-message="">{resolveMessage}</p> : null}
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[920px] text-sm">
             <thead>
               <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="py-2 pr-3">Match</th>
@@ -646,7 +683,8 @@ function GameweekBookingTable({
                 <th className="py-2 pr-3">Odds</th>
                 <th className="py-2 pr-3">Score</th>
                 <th className="py-2 pr-3">PnL</th>
-                <th className="py-2">Status</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="py-2">Book</th>
               </tr>
             </thead>
             <tbody>
@@ -701,8 +739,38 @@ function GameweekBookingTable({
                     <td className={`py-2 pr-3 ${booking?.pnl === null || booking?.pnl === undefined ? "text-muted-foreground" : booking.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
                       {booking?.pnl === null || booking?.pnl === undefined ? "—" : formatPnl(booking.pnl)}
                     </td>
-                    <td className="py-2">
+                    <td className="py-2 pr-3">
                       {!booking ? (row.finished ? "Played" : "—") : booking.status === "open" ? "Open" : booking.outcome === "won" ? "Won" : "Lost"}
+                    </td>
+                    <td className="py-2">
+                      {!booking && !row.finished && row.modelPick ? (
+                        <div className="flex items-center gap-2">
+                          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              checked={!priceClosed[row.fixtureId]}
+                              disabled={busy}
+                              data-price-open={row.fixtureId}
+                              aria-label={`Price open for ${row.homeShortName} vs ${row.awayShortName}`}
+                              onChange={(event) => onPriceOpenChange(row.fixtureId, event.target.checked)}
+                            />
+                            Open
+                          </label>
+                          <Button
+                            type="button"
+                            size="sm"
+                            data-book-row={row.fixtureId}
+                            disabled={busy || Boolean(priceClosed[row.fixtureId]) || parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds) === null}
+                            onClick={() => onBookRow(row.fixtureId)}
+                            aria-label={`Book ${row.homeShortName} vs ${row.awayShortName}`}
+                          >
+                            {bookingFixtureId === row.fixtureId ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                            Book
+                          </Button>
+                        </div>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                   </tr>
                 );
@@ -761,6 +829,7 @@ export function MatchForecastPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSlateLoading, setIsSlateLoading] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
+  const [bookingFixtureId, setBookingFixtureId] = useState<number | null>(null);
   const [isClearing, setIsClearing] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -768,10 +837,12 @@ export function MatchForecastPanel() {
   const [stake, setStake] = useState("10");
   const [defaultOdds, setDefaultOdds] = useState("2.10");
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
+  const [priceClosed, setPriceClosed] = useState<Record<number, boolean>>({});
   const latestRequest = useRef(0);
   const latestSlateRequest = useRef(0);
   const scatterRef = useRef<HTMLDivElement>(null);
   const scrollScatterIntoView = useRef(false);
+  const bookingLock = useRef(false);
 
   const fixtureGameweeks = useMemo(() => data?.availableGameweeks ?? [], [data?.availableGameweeks]);
   const activeGameweeks = useMemo(
@@ -942,28 +1013,14 @@ export function MatchForecastPanel() {
     }
   }, [data, loadBookings, params, resolvedGameweek]);
 
-  async function bookGameweek() {
-    if (!data?.season) return;
-    const stakeValue = Number(stake);
-    const pending = slateRows.filter((row) => !row.booking && !row.finished && row.modelPick);
-    if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
-      setError("Stake must be positive.");
-      return;
-    }
+  async function submitBookings(
+    rows: Array<{ fixtureId: number; market: string; selection: string; stake: number; odds: number }>,
+    fixtureId: number | null,
+  ) {
+    if (!data?.season || rows.length === 0 || bookingLock.current) return;
 
-    const rows = pending.map((row) => ({
-      fixtureId: row.fixtureId,
-      market: row.modelPick!.market,
-      selection: row.modelPick!.selection,
-      stake: stakeValue,
-      odds: Number(rowOdds[row.fixtureId] ?? defaultOdds),
-    }));
-    if (rows.some((row) => !Number.isFinite(row.odds) || row.odds <= 1)) {
-      setError("Decimal odds must be greater than 1.");
-      return;
-    }
-    if (rows.length === 0) return;
-
+    bookingLock.current = true;
+    setBookingFixtureId(fixtureId);
     setIsBooking(true);
     setError(null);
     try {
@@ -979,15 +1036,74 @@ export function MatchForecastPanel() {
           fplBlend: params.fplStrengthBlend,
         }),
       });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to book the gameweek.");
+      const payload = await response.json() as { error?: string; missing?: number[] };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to book the selection.");
+      if (payload.missing && payload.missing.length > 0) {
+        setError("Some matches are not in the current forecast, so they were left unbooked.");
+      }
       const loaded = await loadBookings(data.season, resolvedGameweek, params, { skipSettlement: true });
       if (loaded) scrollScatterIntoView.current = true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to book the gameweek.");
+      setError(reason instanceof Error ? reason.message : "Unable to book the selection.");
     } finally {
+      bookingLock.current = false;
+      setBookingFixtureId(null);
       setIsBooking(false);
     }
+  }
+
+  async function bookGameweek() {
+    if (!data?.season) return;
+    const stakeValue = Number(stake);
+    if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
+      setError("Stake must be positive.");
+      return;
+    }
+
+    const openRows = slateRows.filter((row) => !row.booking && !row.finished && row.modelPick && !priceClosed[row.fixtureId]);
+    const readyRows = pendingRowsWithOpenOdds(slateRows, rowOdds, defaultOdds, priceClosed);
+    if (openRows.length === 0) {
+      setError("Mark at least one match as open before booking.");
+      return;
+    }
+    if (readyRows.length !== openRows.length) {
+      setError("Decimal odds must be greater than 1.");
+      return;
+    }
+
+    const rows = readyRows.map((row) => ({
+      fixtureId: row.fixtureId,
+      market: row.modelPick!.market,
+      selection: row.modelPick!.selection,
+      stake: stakeValue,
+      odds: parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds)!,
+    }));
+
+    await submitBookings(rows, null);
+  }
+
+  async function bookFixture(fixtureId: number) {
+    if (!data?.season) return;
+    const stakeValue = Number(stake);
+    if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
+      setError("Stake must be positive.");
+      return;
+    }
+
+    const row = slateRows.find((item) => item.fixtureId === fixtureId);
+    const odds = parseDecimalOdds(row ? (rowOdds[row.fixtureId] ?? defaultOdds) : "");
+    if (!row || row.booking || row.finished || !row.modelPick || priceClosed[fixtureId] || odds === null) {
+      setError("Decimal odds must be greater than 1.");
+      return;
+    }
+
+    await submitBookings([{
+      fixtureId: row.fixtureId,
+      market: row.modelPick.market,
+      selection: row.modelPick.selection,
+      stake: stakeValue,
+      odds,
+    }], fixtureId);
   }
 
   async function resolveLiveBookings() {
@@ -1153,6 +1269,12 @@ export function MatchForecastPanel() {
                 }}
                 onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
                 onBookAll={() => void bookGameweek()}
+                onBookRow={(fixtureId) => void bookFixture(fixtureId)}
+                bookingFixtureId={bookingFixtureId}
+                priceClosed={priceClosed}
+                onPriceOpenChange={(fixtureId, open) => {
+                  setPriceClosed((current) => ({ ...current, [fixtureId]: !open }));
+                }}
                 onClear={() => void clearGameweek()}
                 canResolve={slateSummary.openCount > 0 || bookings.some((booking) => booking.status === "open")}
                 isResolving={isResolving}

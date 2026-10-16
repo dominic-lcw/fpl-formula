@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { GameweekBookingsView } from "../src/components/match-forecast";
+import { GameweekBookingsView, pendingRowsWithOpenOdds } from "../src/components/match-forecast";
 import type { BookingRecord } from "../src/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "../src/lib/gameweek-slate";
 
@@ -59,7 +59,10 @@ const summary: GameweekSlateSummary = {
   unbookedCount: 0,
 };
 
-function renderBookings(rows: GameweekSlateRow[]) {
+function renderBookings(
+  rows: GameweekSlateRow[],
+  overrides: Partial<Parameters<typeof GameweekBookingsView>[0]> = {},
+) {
   return renderToStaticMarkup(
     <GameweekBookingsView
       summary={summary}
@@ -74,9 +77,12 @@ function renderBookings(rows: GameweekSlateRow[]) {
       onDefaultOddsChange={() => {}}
       onRowOddsChange={() => {}}
       onBookAll={() => {}}
+      onBookRow={() => {}}
+      onPriceOpenChange={() => {}}
       onClear={() => {}}
       resolveMessage={null}
       onResolve={() => {}}
+      {...overrides}
     />,
   );
 }
@@ -123,6 +129,8 @@ describe("bookings scatterplot", () => {
         onDefaultOddsChange={() => {}}
         onRowOddsChange={() => {}}
         onBookAll={() => {}}
+        onBookRow={() => {}}
+        onPriceOpenChange={() => {}}
         onClear={() => {}}
         canResolve
         isResolving={false}
@@ -134,5 +142,68 @@ describe("bookings scatterplot", () => {
     expect(html).toContain("Live resolve");
     expect(html).toContain("No results were available yet. 1 booking still open.");
     expect(html).toContain("data-resolve-message");
+  });
+
+  it("offers a book button for each unbooked match and leaves booked or played rows alone", () => {
+    const html = renderBookings([
+      row(),
+      row({
+        fixtureId: 11,
+        homeShortName: "TOT",
+        awayShortName: "NEW",
+        booking: booking({ fixtureId: 11 }),
+      }),
+      row({
+        fixtureId: 12,
+        homeShortName: "MCI",
+        awayShortName: "LIV",
+        finished: true,
+        modelPick: { market: "1X2", selection: "home", probability: 0.4 },
+      }),
+    ]);
+
+    expect(html).toContain("Book one match at a time");
+    expect(html).toContain('data-book-row="10"');
+    expect(html).toContain('data-price-open="10"');
+    expect(html).toContain("Book 1 match");
+    expect(html).not.toContain('data-book-row="11"');
+    expect(html).not.toContain('data-book-row="12"');
+    expect(html).not.toContain("data-left-out");
+  });
+
+  it("leaves a closed price out of the gameweek book and disables its row button", () => {
+    const html = renderBookings(
+      [
+        row(),
+        row({ fixtureId: 11, homeShortName: "TOT", awayShortName: "NEW" }),
+      ],
+      { priceClosed: { 11: true } },
+    );
+
+    expect(html).toContain("Book 1 match");
+    expect(html).toContain("1 match left out until the price is open.");
+    expect(html).toContain('data-book-row="10"');
+    expect(html).toMatch(/data-book-row="11"[^>]*disabled=""/);
+    expect(html).toMatch(/data-price-open="11"(?![^>]*checked)/);
+  });
+
+  it("disables a row book button when that match has no usable odds", () => {
+    const html = renderBookings([row()], { rowOdds: { 10: "" } });
+    expect(html).toMatch(/data-book-row="10"[^>]*disabled=""/);
+    expect(html).toContain("Book 1 match");
+  });
+});
+
+describe("open prices", () => {
+  it("keeps only pending matches whose price is open and whose odds are usable", () => {
+    const rows = [
+      row(),
+      row({ fixtureId: 11 }),
+      row({ fixtureId: 12, booking: booking({ fixtureId: 12 }) }),
+      row({ fixtureId: 13, finished: true }),
+    ];
+
+    expect(pendingRowsWithOpenOdds(rows, { 11: "1" }, "2.10", { 10: true }).map((item) => item.fixtureId)).toEqual([]);
+    expect(pendingRowsWithOpenOdds(rows, { 11: "3.5" }, "2.10").map((item) => item.fixtureId)).toEqual([10, 11]);
   });
 });
