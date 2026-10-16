@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import type { GameweekBookedPnl } from "@/lib/booked-pnl";
 import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
+import { buildKellyPlan, type BookingStrategy, type KellyBet } from "@/lib/kelly";
 import { buildMatchdayOnePager } from "@/lib/matchday-one-pager";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
@@ -571,6 +572,13 @@ function GameweekBookingTable({
   bookingFixtureId = null,
   priceClosed = {},
   onPriceOpenChange,
+  strategy = "largest",
+  capital = "1000",
+  onStrategyChange,
+  onCapitalChange,
+  kellyBets = [],
+  kellyPassed = 0,
+  kellyScaled = false,
   onClear,
   canResolve,
   isResolving = false,
@@ -592,6 +600,13 @@ function GameweekBookingTable({
   bookingFixtureId?: number | null;
   priceClosed?: Record<number, boolean>;
   onPriceOpenChange: (fixtureId: number, open: boolean) => void;
+  strategy?: BookingStrategy;
+  capital?: string;
+  onStrategyChange?: (strategy: BookingStrategy) => void;
+  onCapitalChange?: (capital: string) => void;
+  kellyBets?: KellyBet[];
+  kellyPassed?: number;
+  kellyScaled?: boolean;
   onClear: () => void;
   canResolve?: boolean;
   isResolving?: boolean;
@@ -601,6 +616,15 @@ function GameweekBookingTable({
   const pending = rows.filter((row) => !row.booking && !row.finished && row.modelPick);
   const openPending = pending.filter((row) => !priceClosed[row.fixtureId]);
   const leftOut = pending.length - openPending.length;
+  const kellyById = new Map(kellyBets.map((bet) => [bet.fixtureId, bet]));
+  const kellyRows = rows.flatMap((row) => {
+    const bet = kellyById.get(row.fixtureId);
+    return bet ? [{ row, bet }] : [];
+  });
+  const kellyTotal = kellyBets.reduce((sum, bet) => sum + bet.stake, 0);
+  const capitalValue = Number(capital);
+  const kellyMode = strategy === "kelly";
+  const bookCount = kellyMode ? kellyBets.length : openPending.length;
   const bookedCount = rows.filter((row) => row.booking).length;
   const showResolve = canResolve ?? rows.some((row) => row.booking?.status === "open");
   const busy = isBooking || isClearing || isResolving;
@@ -612,8 +636,9 @@ function GameweekBookingTable({
           <div>
             <CardTitle>Gameweek {gameweek}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Played matches show the final score and profit and loss from your booked odds.
-              Book one match at a time, and uncheck Open when that price is not available.
+              {kellyMode
+                ? "Set the capital, review the Kelly list, then book it. A match stays off the list when its price has no edge. Uncheck Open when that price is not available."
+                : "Largest chance books the most likely result. Book one match at a time, and uncheck Open when that price is not available."}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -642,24 +667,64 @@ function GameweekBookingTable({
             </Button>
             <button
               type="button"
-              disabled={busy || openPending.length === 0}
+              disabled={busy || bookCount === 0}
               onClick={onBookAll}
               className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             >
               {isBooking && bookingFixtureId === null ? <LoaderCircle className="size-4 animate-spin" /> : null}
               {pending.length === 0
                 ? "All booked"
-                : openPending.length === 0
-                  ? "No open prices"
-                  : `Book ${openPending.length} match${openPending.length === 1 ? "" : "es"}`}
+                : bookCount === 0
+                  ? (kellyMode ? "No Kelly bets" : "No open prices")
+                  : kellyMode
+                    ? `Book ${bookCount} Kelly bet${bookCount === 1 ? "" : "s"}`
+                    : `Book ${bookCount} match${bookCount === 1 ? "" : "es"}`}
             </button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <label className="grid gap-1 text-sm">
-            Stake ($)
-            <Input value={stake} onChange={(event) => onStakeChange(event.target.value)} inputMode="decimal" className="w-28" />
-          </label>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="grid gap-1 text-sm" role="group" aria-label="Booking strategy">
+            Strategy
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={kellyMode ? "outline" : "default"}
+                aria-pressed={!kellyMode}
+                data-strategy-option="largest"
+                onClick={() => onStrategyChange?.("largest")}
+              >
+                Largest chance
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={kellyMode ? "default" : "outline"}
+                aria-pressed={kellyMode}
+                data-strategy-option="kelly"
+                onClick={() => onStrategyChange?.("kelly")}
+              >
+                Kelly
+              </Button>
+            </div>
+          </div>
+          {kellyMode ? (
+            <label className="grid gap-1 text-sm">
+              Capital ($)
+              <Input
+                value={capital}
+                onChange={(event) => onCapitalChange?.(event.target.value)}
+                inputMode="decimal"
+                aria-label="Capital"
+                className="w-28"
+              />
+            </label>
+          ) : (
+            <label className="grid gap-1 text-sm">
+              Stake ($)
+              <Input value={stake} onChange={(event) => onStakeChange(event.target.value)} inputMode="decimal" className="w-28" />
+            </label>
+          )}
           <label className="grid gap-1 text-sm">
             Odds for every match
             <Input value={defaultOdds} onChange={(event) => onDefaultOddsChange(event.target.value)} inputMode="decimal" className="w-28" />
@@ -670,6 +735,40 @@ function GameweekBookingTable({
             </p>
           ) : null}
         </div>
+        {kellyMode ? (
+          <div data-kelly-list="" className="rounded-lg border bg-muted/20 p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-sm font-medium">Kelly list</p>
+              <p className="text-sm text-muted-foreground">
+                {kellyRows.length === 0 || !Number.isFinite(capitalValue) || capitalValue <= 0
+                  ? "No open price has an edge yet."
+                  : `$${kellyTotal.toFixed(2)} of $${capitalValue.toFixed(2)} · ${kellyRows.length} bet${kellyRows.length === 1 ? "" : "s"}`}
+              </p>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Stake is the full Kelly share of capital, (model probability × odds − 1) / (odds − 1).
+              {kellyScaled ? " These shares add up to more than the capital, so each stake is scaled down." : ""}
+            </p>
+            {kellyRows.length > 0 ? (
+              <ul className="mt-2 grid gap-1 text-sm">
+                {kellyRows.map(({ row, bet }) => (
+                  <li key={row.fixtureId} data-kelly-row={row.fixtureId} className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span>
+                      <span className="font-medium">{row.homeShortName} vs {row.awayShortName}</span>
+                      <span className="text-muted-foreground"> · {resultLabel(row.homeShortName, row.awayShortName, (row.modelPick?.selection ?? "home") as "home" | "draw" | "away")} · {formatPercent(bet.probability)} · {bet.odds.toFixed(2)}</span>
+                    </span>
+                    <span className="font-medium tabular-nums">${bet.stake.toFixed(2)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {kellyPassed > 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground" data-kelly-passed="">
+                {kellyPassed} open price{kellyPassed === 1 ? " has no edge and stays" : "s have no edge and stay"} off the list.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {resolveMessage ? <p className="text-sm text-muted-foreground" data-resolve-message="">{resolveMessage}</p> : null}
       </CardHeader>
       <CardContent>
@@ -696,6 +795,7 @@ function GameweekBookingTable({
                 const kickoff = formatKickoff(row.kickoffTime);
                 const score = booking?.homeScore ?? row.homeScore;
                 const opponentScore = booking?.awayScore ?? row.awayScore;
+                const kellyBet = kellyById.get(row.fixtureId);
 
                 return (
                   <tr key={row.fixtureId} className="border-b border-border/60">
@@ -717,7 +817,22 @@ function GameweekBookingTable({
                         "—"
                       )}
                     </td>
-                    <td className="py-2 pr-3">{booking ? `$${booking.stake.toFixed(2)}` : "—"}</td>
+                    <td className="py-2 pr-3">
+                      {booking ? (
+                        `$${booking.stake.toFixed(2)}`
+                      ) : kellyBet && capitalValue > 0 ? (
+                        <span data-kelly-stake={row.fixtureId}>
+                          <span className="font-medium tabular-nums">${kellyBet.stake.toFixed(2)}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {formatPercent(kellyBet.stake / capitalValue)} of capital
+                          </span>
+                        </span>
+                      ) : kellyMode && !row.finished && row.modelPick && !priceClosed[row.fixtureId] && parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds) !== null ? (
+                        <span className="text-muted-foreground" data-kelly-passed-row={row.fixtureId}>No edge</span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td className="py-2 pr-3">
                       {booking ? (
                         booking.odds.toFixed(2)
@@ -760,7 +875,8 @@ function GameweekBookingTable({
                             type="button"
                             size="sm"
                             data-book-row={row.fixtureId}
-                            disabled={busy || Boolean(priceClosed[row.fixtureId]) || parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds) === null}
+                            disabled={busy || Boolean(priceClosed[row.fixtureId]) || parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds) === null || (kellyMode && !kellyBet)}
+                            title={kellyMode && !kellyBet ? "No Kelly edge at these odds." : undefined}
                             onClick={() => onBookRow(row.fixtureId)}
                             aria-label={`Book ${row.homeShortName} vs ${row.awayShortName}`}
                           >
@@ -835,6 +951,8 @@ export function MatchForecastPanel() {
   const [error, setError] = useState<string | null>(null);
   const [resolveMessage, setResolveMessage] = useState<string | null>(null);
   const [stake, setStake] = useState("10");
+  const [strategy, setStrategy] = useState<BookingStrategy>("largest");
+  const [capital, setCapital] = useState("1000");
   const [defaultOdds, setDefaultOdds] = useState("2.10");
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
   const [priceClosed, setPriceClosed] = useState<Record<number, boolean>>({});
@@ -1006,6 +1124,16 @@ export function MatchForecastPanel() {
     });
   }, [bookings, data, resolvedGameweek, slateRows]);
 
+  const kellyPlan = useMemo(() => {
+    const candidates = slateRows.flatMap((row) => {
+      if (row.booking || row.finished || !row.modelPick || priceClosed[row.fixtureId]) return [];
+      const odds = parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds);
+      if (odds === null) return [];
+      return [{ fixtureId: row.fixtureId, probability: row.modelPick.probability, odds }];
+    });
+    return buildKellyPlan(candidates, Number(capital));
+  }, [capital, defaultOdds, priceClosed, rowOdds, slateRows]);
+
   const openOnePager = useCallback(() => {
     setOnePagerOpen(true);
     if (data?.season) {
@@ -1054,6 +1182,31 @@ export function MatchForecastPanel() {
 
   async function bookGameweek() {
     if (!data?.season) return;
+
+    if (strategy === "kelly") {
+      if (!Number.isFinite(kellyPlan.capital) || kellyPlan.capital <= 0) {
+        setError("Capital must be positive.");
+        return;
+      }
+      if (kellyPlan.bets.length === 0) {
+        setError("No open price has a Kelly edge.");
+        return;
+      }
+      const rows = kellyPlan.bets.flatMap((bet) => {
+        const row = slateRows.find((item) => item.fixtureId === bet.fixtureId);
+        if (!row?.modelPick) return [];
+        return [{
+          fixtureId: row.fixtureId,
+          market: row.modelPick.market,
+          selection: row.modelPick.selection,
+          stake: bet.stake,
+          odds: bet.odds,
+        }];
+      });
+      await submitBookings(rows, null);
+      return;
+    }
+
     const stakeValue = Number(stake);
     if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
       setError("Stake must be positive.");
@@ -1084,16 +1237,22 @@ export function MatchForecastPanel() {
 
   async function bookFixture(fixtureId: number) {
     if (!data?.season) return;
-    const stakeValue = Number(stake);
-    if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
-      setError("Stake must be positive.");
-      return;
-    }
 
     const row = slateRows.find((item) => item.fixtureId === fixtureId);
     const odds = parseDecimalOdds(row ? (rowOdds[row.fixtureId] ?? defaultOdds) : "");
     if (!row || row.booking || row.finished || !row.modelPick || priceClosed[fixtureId] || odds === null) {
       setError("Decimal odds must be greater than 1.");
+      return;
+    }
+
+    const kellyBet = strategy === "kelly" ? kellyPlan.bets.find((bet) => bet.fixtureId === fixtureId) : null;
+    if (strategy === "kelly" && !kellyBet) {
+      setError("That match has no Kelly edge at these odds.");
+      return;
+    }
+    const stakeValue = kellyBet ? kellyBet.stake : Number(stake);
+    if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
+      setError(strategy === "kelly" ? "Capital must be positive." : "Stake must be positive.");
       return;
     }
 
@@ -1275,6 +1434,13 @@ export function MatchForecastPanel() {
                 onPriceOpenChange={(fixtureId, open) => {
                   setPriceClosed((current) => ({ ...current, [fixtureId]: !open }));
                 }}
+                strategy={strategy}
+                capital={capital}
+                onStrategyChange={setStrategy}
+                onCapitalChange={setCapital}
+                kellyBets={kellyPlan.bets}
+                kellyPassed={kellyPlan.passed}
+                kellyScaled={kellyPlan.scaled}
                 onClear={() => void clearGameweek()}
                 canResolve={slateSummary.openCount > 0 || bookings.some((booking) => booking.status === "open")}
                 isResolving={isResolving}
