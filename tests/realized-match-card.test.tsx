@@ -17,6 +17,9 @@ function row(overrides: Partial<GameweekSlateRow> = {}): GameweekSlateRow {
     homeScore: 2,
     awayScore: 1,
     modelPick: null,
+    modelScoreline: null,
+    expectedHomeGoals: null,
+    expectedAwayGoals: null,
     booking: null,
     ...overrides,
   };
@@ -72,5 +75,19 @@ describe("RealizedMatchCard", () => {
     expect(html).toContain("Played");
     expect(html).toContain("No bet was booked");
     expect(html).not.toContain("Forecast when booked");
+    expect(html).not.toContain("Model score");
+  });
+
+  it("shows the pre-match scoreline for a played match", () => {
+    const html = renderToStaticMarkup(<RealizedMatchCard row={row({
+      modelScoreline: { home: 1, away: 1, probability: 0.11 },
+      expectedHomeGoals: 1.61,
+      expectedAwayGoals: 1.59,
+    })} />);
+
+    expect(html).toContain("Model score");
+    expect(html).toContain("1–1");
+    expect(html).toContain("11.0%");
+    expect(html).toContain("Expected 1.61–1.59");
   });
 });

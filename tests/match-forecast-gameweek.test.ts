@@ -70,4 +70,16 @@ describe("getForecastData default gameweek", () => {
       || (fixture.homeShortName === "CHE" && fixture.awayShortName === "BRE"),
     )).toBe(true);
   });
+
+  it("scores GW5 from the weeks before it, including GW4", async () => {
+    const gameweek4 = await getForecastData(undefined, { gameweek: 4, skipCache: true });
+    const gameweek5 = await getForecastData(undefined, { gameweek: 5, skipCache: true });
+
+    expect(gameweek4.upcomingFixtures.map((fixture) => fixture.event)).toEqual([4]);
+    expect(gameweek4.upcomingFixtures[0]?.topScorelines.length).toBeGreaterThan(0);
+    expect(gameweek4.teamStrengths.find((team) => team.shortName === "BRE")?.matchesPlayed).toBe(3);
+
+    expect(gameweek5.upcomingFixtures.map((fixture) => fixture.event)).toEqual([5]);
+    expect(gameweek5.teamStrengths.find((team) => team.shortName === "BRE")?.matchesPlayed).toBe(4);
+  });
 });
