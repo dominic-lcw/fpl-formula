@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { GameweekBookingsView, pendingRowsWithOpenOdds } from "../src/components/match-forecast";
+import { buildKellyPlan } from "../src/lib/kelly";
 import type { BookingRecord } from "../src/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "../src/lib/gameweek-slate";
 
@@ -191,6 +192,47 @@ describe("bookings scatterplot", () => {
     const html = renderBookings([row()], { rowOdds: { 10: "" } });
     expect(html).toMatch(/data-book-row="10"[^>]*disabled=""/);
     expect(html).toContain("Book 1 match");
+  });
+});
+
+describe("Kelly list", () => {
+  it("lists only prices with an edge and shows each stake from the capital", () => {
+    const plan = buildKellyPlan(
+      [
+        { fixtureId: 10, probability: 0.55, odds: 2.1 },
+        { fixtureId: 11, probability: 0.4, odds: 2.1 },
+      ],
+      1000,
+    );
+    const html = renderBookings(
+      [
+        row({ modelPick: { market: "1X2", selection: "home", probability: 0.55 } }),
+        row({
+          fixtureId: 11,
+          homeShortName: "TOT",
+          awayShortName: "NEW",
+          modelPick: { market: "1X2", selection: "away", probability: 0.4 },
+        }),
+      ],
+      {
+        strategy: "kelly",
+        capital: "1000",
+        kellyBets: plan.bets,
+        kellyPassed: plan.passed,
+        kellyScaled: plan.scaled,
+      },
+    );
+
+    expect(html).toContain("Kelly list");
+    expect(html).toContain("Book 1 Kelly bet");
+    expect(html).toContain('data-kelly-row="10"');
+    expect(html).toContain("$140.91");
+    expect(html).toContain("1 open price has no edge and stays off the list.");
+    expect(html).toContain('data-kelly-passed-row="11"');
+    expect(html).toMatch(/data-book-row="11"[^>]*disabled=""/);
+    expect(html).not.toContain('data-kelly-row="11"');
+    expect(html).not.toContain("Stake ($)");
+    expect(html).toContain("Capital");
   });
 });
 
