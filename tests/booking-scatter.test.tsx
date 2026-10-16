@@ -163,7 +163,10 @@ describe("bookings scatterplot", () => {
       }),
     ]);
 
-    expect(html).toContain("Book one match at a time");
+    expect(html).toContain("Largest chance");
+    expect(html).toContain("even when that chance is below the price");
+    expect(html).toContain("Stake for each match");
+    expect(html).not.toContain("data-kelly-list");
     expect(html).toContain('data-book-row="10"');
     expect(html).toContain('data-price-open="10"');
     expect(html).toContain("Book 1 match");
@@ -223,16 +226,45 @@ describe("Kelly list", () => {
       },
     );
 
-    expect(html).toContain("Kelly list");
-    expect(html).toContain("Book 1 Kelly bet");
+    expect(html).toContain("To pay");
+    expect(html).toContain('data-to-pay=""');
+    expect(html).toContain("Book · pay $140.91");
     expect(html).toContain('data-kelly-row="10"');
     expect(html).toContain("$140.91");
     expect(html).toContain("1 open price has no edge and stays off the list.");
     expect(html).toContain('data-kelly-passed-row="11"');
     expect(html).toMatch(/data-book-row="11"[^>]*disabled=""/);
     expect(html).not.toContain('data-kelly-row="11"');
-    expect(html).not.toContain("Stake ($)");
-    expect(html).toContain("Capital");
+    expect(html).toContain("Stake to place");
+    expect(html).toContain("Largest chance");
+  });
+
+  it("still books a largest-chance pick when the model is below the price", () => {
+    const html = renderBookings(
+      [row({ modelPick: { market: "1X2", selection: "home", probability: 0.4 } })],
+      { rowOdds: { 10: "2.10" }, stake: "15" },
+    );
+
+    expect(html).toContain('data-below-price="10"');
+    expect(html).toContain("Below the price");
+    expect(html).toContain("$15.00");
+    expect(html).toContain("Book 1 match");
+    expect(html).not.toMatch(/data-book-row="10"[^>]*disabled=""/);
+  });
+
+  it("uses the entered stake on largest chance even when Kelly would price the same match", () => {
+    const plan = buildKellyPlan([{ fixtureId: 10, probability: 0.4, odds: 2.1 }], 1000);
+    const html = renderBookings(
+      [row({ modelPick: { market: "1X2", selection: "home", probability: 0.4 } })],
+      { strategy: "largest", stake: "15", rowOdds: { 10: "2.10" }, kellyBets: plan.bets, kellyPassed: 1 },
+    );
+
+    expect(plan.bets).toEqual([]);
+    expect(html).toContain("$15.00");
+    expect(html).toContain("Below the price");
+    expect(html).not.toContain("No edge");
+    expect(html).not.toContain("data-kelly-list");
+    expect(html).not.toMatch(/data-book-row="10"[^>]*disabled=""/);
   });
 });
 
