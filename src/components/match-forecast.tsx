@@ -10,6 +10,7 @@ import {
   Target,
   TrendingUp,
 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type Ref } from "react";
 import { BookingProbabilityScatter } from "@/components/booking-probability-scatter";
 import { BookedPnlStrip, MatchdayOnePager } from "@/components/matchday-one-pager";
@@ -23,6 +24,7 @@ import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slat
 import { buildMatchdayOnePager } from "@/lib/matchday-one-pager";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
+import { forecastMatchHref } from "@/lib/match-simulation";
 
 type ForecastResponse = {
   season: string | null;
@@ -191,9 +193,11 @@ export function RealizedMatchCard({ row }: { row: GameweekSlateRow }) {
 function FixtureForecastCard({
   fixture,
   booked,
+  simulateHref,
 }: {
   fixture: FixtureForecast;
   booked: boolean;
+  simulateHref: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const winner = predictedWinner(fixture);
@@ -202,21 +206,35 @@ function FixtureForecastCard({
   const topScorelines = fixture.topScorelines.slice(0, 3);
 
   return (
-    <button
-      type="button"
-      aria-expanded={expanded}
-      onClick={() => setExpanded((current) => !current)}
-      className="flex h-full flex-col rounded-xl border border-border bg-card p-5 text-left shadow-xs transition hover:border-primary/40 hover:bg-accent/20"
-    >
+    <article className="flex h-full flex-col rounded-xl border border-border bg-card p-5 text-left shadow-xs transition hover:border-primary/40 hover:bg-accent/20">
       <div className="mb-4 flex items-start justify-between gap-3">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           GW{fixture.event ?? "?"}{kickoff ? ` · ${kickoff}` : ""}
         </p>
         <div className="flex items-center gap-2">
           {booked ? <Badge className="bg-primary/10 text-primary">Booked</Badge> : null}
-          <ChevronDown className={`size-4 text-muted-foreground transition ${expanded ? "rotate-180" : ""}`} />
+          <Link
+            href={simulateHref}
+            className="inline-flex h-7 items-center rounded-md border border-input bg-background px-2 text-xs font-medium text-primary hover:bg-accent"
+          >
+            Simulate
+          </Link>
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-label={expanded ? "Hide scorelines" : "Show scorelines"}
+            onClick={() => setExpanded((current) => !current)}
+            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+          >
+            <ChevronDown className={`size-4 transition ${expanded ? "rotate-180" : ""}`} />
+          </button>
         </div>
       </div>
+      <button
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+        className="flex flex-1 flex-col text-left"
+      >
 
       <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
         <div className="text-center">
@@ -286,7 +304,8 @@ function FixtureForecastCard({
           <p className="mt-2 font-medium text-primary">Click for top scorelines</p>
         </div>
       )}
-    </button>
+      </button>
+    </article>
   );
 }
 
@@ -1332,6 +1351,7 @@ export function MatchForecastPanel() {
                 key={fixture.fixtureId}
                 fixture={fixture}
                 booked={openBookingsByFixture.has(fixture.fixtureId)}
+                simulateHref={forecastMatchHref(fixture.fixtureId, params)}
               />
             ))}
           </div>

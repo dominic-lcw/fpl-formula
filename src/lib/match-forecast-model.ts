@@ -97,6 +97,138 @@ function scorelineKey(home: number, away: number) {
   return `${home}-${away}`;
 }
 
+export const SCORE_AXIS_MAX = 7;
+export const SCORE_AXIS_SIZE = SCORE_AXIS_MAX + 1;
+
+export function scoreAxisLabel(goals: number) {
+  return goals >= SCORE_AXIS_MAX ? `${SCORE_AXIS_MAX}+` : String(goals);
+}
+
+export function scoreCellIndex(home: number, away: number) {
+  const row = Math.min(Math.max(0, Math.floor(home)), SCORE_AXIS_MAX);
+  const column = Math.min(Math.max(0, Math.floor(away)), SCORE_AXIS_MAX);
+  return row * SCORE_AXIS_SIZE + column;
+}
+
+export function sharedPoissonLambda(lambdaHome: number, lambdaAway: number, correlation: number) {
+  return clamp(
+    correlation * Math.sqrt(Math.max(0, lambdaHome) * Math.max(0, lambdaAway)),
+    0,
+    Math.min(lambdaHome, lambdaAway) * 0.85,
+  );
+}
+
+export type MonteCarloAccumulator = {
+  counts: number[];
+  simulations: number;
+  homeWins: number;
+  draws: number;
+  awayWins: number;
+  over25: number;
+  btts: number;
+  totalHome: number;
+  totalAway: number;
+  lambdaShared: number;
+};
+
+export type MonteCarloSnapshot = {
+  counts: number[];
+  touched: number[];
+  simulations: number;
+  expectedHomeGoals: number;
+  expectedAwayGoals: number;
+  homeWinProb: number;
+  drawProb: number;
+  awayWinProb: number;
+  over25Prob: number;
+  bttsProb: number;
+  lambdaShared: number;
+  mostLikely: { home: number; away: number; count: number } | null;
+};
+
+export function createMonteCarloAccumulator(lambdaShared = 0): MonteCarloAccumulator {
+  return {
+    counts: Array.from({ length: SCORE_AXIS_SIZE * SCORE_AXIS_SIZE }, () => 0),
+    simulations: 0,
+    homeWins: 0,
+    draws: 0,
+    awayWins: 0,
+    over25: 0,
+    btts: 0,
+    totalHome: 0,
+    totalAway: 0,
+    lambdaShared,
+  };
+}
+
+export function applyMonteCarloBatch(
+  accumulator: MonteCarloAccumulator,
+  lambdaHome: number,
+  lambdaAway: number,
+  correlation: number,
+  batchSize: number,
+  random = Math.random,
+) {
+  const lambdaShared = sharedPoissonLambda(lambdaHome, lambdaAway, correlation);
+  accumulator.lambdaShared = lambdaShared;
+  const touched = new Set<number>();
+  const samples = Math.max(0, Math.floor(batchSize));
+
+  for (let index = 0; index < samples; index += 1) {
+    const sample = bivariatePoissonSample(lambdaHome, lambdaAway, lambdaShared, random);
+    accumulator.totalHome += sample.home;
+    accumulator.totalAway += sample.away;
+    accumulator.simulations += 1;
+    const cell = scoreCellIndex(sample.home, sample.away);
+    accumulator.counts[cell] = (accumulator.counts[cell] ?? 0) + 1;
+    touched.add(cell);
+
+    if (sample.home > sample.away) accumulator.homeWins += 1;
+    else if (sample.home < sample.away) accumulator.awayWins += 1;
+    else accumulator.draws += 1;
+
+    if (sample.home + sample.away > 2.5) accumulator.over25 += 1;
+    if (sample.home > 0 && sample.away > 0) accumulator.btts += 1;
+  }
+
+  return [...touched];
+}
+
+export function snapshotMonteCarlo(
+  accumulator: MonteCarloAccumulator,
+  touched: number[] = [],
+): MonteCarloSnapshot {
+  const simulations = accumulator.simulations;
+  const divisor = simulations || 1;
+  let mostLikely: MonteCarloSnapshot["mostLikely"] = null;
+
+  for (let home = 0; home < SCORE_AXIS_SIZE; home += 1) {
+    for (let away = 0; away < SCORE_AXIS_SIZE; away += 1) {
+      const count = accumulator.counts[home * SCORE_AXIS_SIZE + away] ?? 0;
+      if (!mostLikely || count > mostLikely.count) {
+        mostLikely = { home, away, count };
+      }
+    }
+  }
+
+  if (!mostLikely || mostLikely.count === 0) mostLikely = null;
+
+  return {
+    counts: accumulator.counts.slice(),
+    touched,
+    simulations,
+    expectedHomeGoals: accumulator.totalHome / divisor,
+    expectedAwayGoals: accumulator.totalAway / divisor,
+    homeWinProb: accumulator.homeWins / divisor,
+    drawProb: accumulator.draws / divisor,
+    awayWinProb: accumulator.awayWins / divisor,
+    over25Prob: accumulator.over25 / divisor,
+    bttsProb: accumulator.btts / divisor,
+    lambdaShared: accumulator.lambdaShared,
+    mostLikely,
+  };
+}
+
 function normaliseFplStrength(value: number | null, baseline = 1000) {
   if (!value || !Number.isFinite(value)) return 1;
   return clamp(value / baseline, 0.65, 1.35);
@@ -222,7 +354,7 @@ export function runBivariatePoissonMonteCarlo(
   simulations: number,
   random = Math.random,
 ) {
-  const lambdaShared = clamp(correlation * Math.sqrt(lambdaHome * lambdaAway), 0, Math.min(lambdaHome, lambdaAway) * 0.85);
+  const lambdaShared = sharedPoissonLambda(lambdaHome, lambdaAway, correlation);
   const counts = new Map<string, number>();
   let homeWins = 0;
   let draws = 0;

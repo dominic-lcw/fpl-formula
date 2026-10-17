@@ -1,8 +1,11 @@
 import { query } from "@/lib/db";
+import type { FixtureSimulationSetup } from "@/lib/match-simulation";
 import {
   buildFixtureForecast,
   DEFAULT_FORECAST_PARAMS,
   deriveAttackDefenceRatings,
+  expectedGoalsForFixture,
+  sharedPoissonLambda,
   type FinishedFixtureRow,
   type FixtureForecast,
   type ForecastParams,
@@ -271,4 +274,116 @@ export async function getFixtureForecast(
   const data = await getForecastData(params);
   const forecast = data.upcomingFixtures.find((fixture) => fixture.fixtureId === fixtureId) ?? null;
   return { ...data, forecast };
+}
+
+type FixtureLookupRow = {
+  fixture_id: number;
+  event: number | null;
+  kickoff_time: Date | string | null;
+  team_h: number;
+  team_a: number;
+  team_h_score: number | null;
+  team_a_score: number | null;
+  finished: boolean;
+};
+
+function finiteOrNull(value: number | null) {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function kickoffIso(value: Date | string | null) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toISOString();
+}
+
+function numberParam(value: string | null, fallback: number) {
+  const parsed = value === null ? NaN : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function forecastParamsFromSearchParams(searchParams: URLSearchParams): ForecastParams {
+  return {
+    lookbackGameweeks: numberParam(searchParams.get("lookback"), DEFAULT_FORECAST_PARAMS.lookbackGameweeks),
+    homeAdvantage: numberParam(searchParams.get("homeAdvantage"), DEFAULT_FORECAST_PARAMS.homeAdvantage),
+    correlation: numberParam(searchParams.get("correlation"), DEFAULT_FORECAST_PARAMS.correlation),
+    simulations: Math.round(numberParam(searchParams.get("simulations"), DEFAULT_FORECAST_PARAMS.simulations)),
+    fplStrengthBlend: numberParam(searchParams.get("fplBlend"), DEFAULT_FORECAST_PARAMS.fplStrengthBlend),
+  };
+}
+
+export async function getFixtureSimulationSetup(
+  fixtureId: number,
+  params: ForecastParams = DEFAULT_FORECAST_PARAMS,
+): Promise<FixtureSimulationSetup | null> {
+  const meta = await getSeasonMeta();
+  if (!meta) return null;
+
+  const minGameweek = Math.max(1, meta.currentGameweek - params.lookbackGameweeks + 1);
+  const [teams, finishedFixtures, fixtures] = await Promise.all([
+    query<TeamRatingRow>(
+      `SELECT team_id, name, short_name, strength_attack_home, strength_attack_away, strength_defence_home, strength_defence_away
+       FROM teams WHERE season = ? ORDER BY name`,
+      [meta.season],
+    ),
+    query<FinishedFixtureRow>(
+      `SELECT fixture_id, event, kickoff_time, team_h, team_a, team_h_score, team_a_score
+       FROM fixtures
+       WHERE season = ? AND finished = true AND event BETWEEN ? AND ?
+         AND team_h_score IS NOT NULL AND team_a_score IS NOT NULL
+       ORDER BY event, kickoff_time`,
+      [meta.season, minGameweek, meta.currentGameweek],
+    ),
+    query<FixtureLookupRow>(
+      `SELECT fixture_id, event, kickoff_time, team_h, team_a, team_h_score, team_a_score, finished
+       FROM fixtures
+       WHERE season = ? AND fixture_id = ?
+       LIMIT 1`,
+      [meta.season, fixtureId],
+    ),
+  ]);
+
+  const fixture = fixtures[0];
+  if (!fixture) return null;
+
+  const { leagueAverageGoals, strengths } = deriveAttackDefenceRatings(finishedFixtures, teams, params);
+  const homeTeam = strengths.find((team) => team.teamId === fixture.team_h);
+  const awayTeam = strengths.find((team) => team.teamId === fixture.team_a);
+  const homeMeta = teams.find((team) => team.team_id === fixture.team_h);
+  const awayMeta = teams.find((team) => team.team_id === fixture.team_a);
+  if (!homeTeam || !awayTeam || !homeMeta || !awayMeta) return null;
+
+  const { lambdaHome, lambdaAway } = expectedGoalsForFixture(
+    homeTeam,
+    awayTeam,
+    leagueAverageGoals,
+    params.homeAdvantage,
+  );
+
+  return {
+    season: meta.season,
+    currentGameweek: meta.currentGameweek,
+    fixtureId: fixture.fixture_id,
+    event: fixture.event,
+    kickoffTime: kickoffIso(fixture.kickoff_time),
+    finished: Boolean(fixture.finished),
+    homeScore: finiteOrNull(fixture.team_h_score),
+    awayScore: finiteOrNull(fixture.team_a_score),
+    homeTeam: homeMeta.name,
+    awayTeam: awayMeta.name,
+    homeShortName: homeMeta.short_name ?? homeMeta.name,
+    awayShortName: awayMeta.short_name ?? awayMeta.name,
+    lambdaHome,
+    lambdaAway,
+    lambdaShared: sharedPoissonLambda(lambdaHome, lambdaAway, params.correlation),
+    leagueAverageGoals,
+    correlation: params.correlation,
+    homeAdvantage: params.homeAdvantage,
+    lookbackGameweeks: params.lookbackGameweeks,
+    fplStrengthBlend: params.fplStrengthBlend,
+    simulations: params.simulations,
+  };
 }

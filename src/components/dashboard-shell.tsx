@@ -11,7 +11,7 @@ import { RankingsView } from "@/components/rankings-view";
 import { TeamAnalysisPanel } from "@/components/team-analysis";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { viewFromPathname, viewHref, viewMeta, type DashboardView } from "@/lib/dashboard-nav";
+import { isForecastMatchPath, viewFromPathname, viewHref, viewMeta, type DashboardView } from "@/lib/dashboard-nav";
 import type { LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { RankingParams } from "@/lib/fpl-types";
 import { sanitiseParams } from "@/lib/scoring";
@@ -91,8 +91,14 @@ function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const activeView = viewFromPathname(pathname);
+  const matchRoute = isForecastMatchPath(pathname);
   const { seasonLabel, liveGameweek } = useDashboard();
-  const meta = viewMeta[activeView];
+  const meta = matchRoute
+    ? {
+        title: "Match simulation",
+        description: "Watch Monte Carlo scorelines stream into a grid, then redo the run with a new n.",
+      }
+    : viewMeta[activeView];
 
   function onNavigate(view: DashboardView) {
     router.push(viewHref[view], { scroll: false });
@@ -117,8 +123,10 @@ function DashboardLayout({ children }: { children: React.ReactNode }) {
 
         <div className="min-h-0 flex-1 overflow-auto">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-4 sm:p-6">
-            {children}
-            <DashboardPanels activeView={activeView} onNavigate={onNavigate} />
+            {matchRoute ? children : null}
+            <div className={matchRoute ? "hidden" : undefined} aria-hidden={matchRoute || undefined}>
+              <DashboardPanels activeView={activeView} onNavigate={onNavigate} />
+            </div>
           </div>
         </div>
       </SidebarInset>

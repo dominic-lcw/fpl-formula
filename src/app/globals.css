@@ -234,6 +234,22 @@ input {
   color: oklch(0.808 0.114 19.571);
 }
 
+@keyframes mc-cell-pop {
+  0% {
+    transform: scale(1.07);
+    filter: brightness(1.35);
+  }
+
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+.mc-cell-hit {
+  animation: mc-cell-pop 280ms ease-out;
+}
+
 @keyframes mosaic-table-enter {
   from {
     opacity: 0;
@@ -247,7 +263,8 @@ input {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mosaic-rankings-table-stage {
+  .mosaic-rankings-table-stage,
+  .mc-cell-hit {
     animation: none;
   }
 }
