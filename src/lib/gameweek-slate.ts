@@ -1,10 +1,4 @@
-import {
-  bookingStrategyOf,
-  highestMatchOutcome,
-  type BookingMarket,
-  type BookingRecord,
-  type BookingStrategy,
-} from "@/lib/booking-settlement";
+import { highestMatchOutcome, type BookingMarket, type BookingRecord } from "@/lib/booking-settlement";
 import { listBookings } from "@/lib/bookings";
 import { query } from "@/lib/db";
 import { getForecastData, type ForecastParams } from "@/lib/match-forecast";
@@ -51,7 +45,7 @@ type FixtureRow = {
   away_short: string;
 };
 
-export function summarizeSlate(rows: GameweekSlateRow[]): GameweekSlateSummary {
+function summarizeSlate(rows: GameweekSlateRow[]): GameweekSlateSummary {
   return rows.reduce(
     (totals, row) => {
       if (!row.booking) {
@@ -71,27 +65,6 @@ export function summarizeSlate(rows: GameweekSlateRow[]): GameweekSlateSummary {
     },
     { settledPnl: 0, openStake: 0, settledCount: 0, openCount: 0, won: 0, lost: 0, unbookedCount: 0 },
   );
-}
-
-/** One row per fixture, with only the booking that belongs to this book. */
-export function slateRowsForStrategy(
-  rows: GameweekSlateRow[],
-  bookings: BookingRecord[],
-  strategy: BookingStrategy,
-): GameweekSlateRow[] {
-  const bookingByFixture = new Map<number, BookingRecord>();
-  for (const booking of bookings) {
-    if (bookingStrategyOf(booking) !== strategy) continue;
-    const current = bookingByFixture.get(booking.fixtureId);
-    if (!current || booking.bookedAt > current.bookedAt) {
-      bookingByFixture.set(booking.fixtureId, booking);
-    }
-  }
-
-  return rows.map((row) => ({
-    ...row,
-    booking: bookingByFixture.get(row.fixtureId) ?? null,
-  }));
 }
 
 export async function listBookingGameweeks(season: string) {

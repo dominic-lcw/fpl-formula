@@ -41,18 +41,16 @@ function pnlClass(value: number) {
 export function BookedPnlStrip({
   entries,
   activeGameweek,
-  bookLabel,
 }: {
   entries: GameweekBookedPnl[];
   activeGameweek?: number;
-  bookLabel?: string;
 }) {
   const book = entries.at(-1)?.runningPnl ?? 0;
 
   return (
     <section aria-label="Booked PnL by gameweek" className="rounded-xl border bg-card p-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">Booked PnL{bookLabel ? ` · ${bookLabel}` : ""}</h2>
+        <h2 className="text-sm font-semibold">Booked PnL</h2>
         <p className="text-xs text-muted-foreground">
           {entries.length === 0
             ? "Per gameweek, from the first realized week"
@@ -65,7 +63,7 @@ export function BookedPnlStrip({
         <div className="flex gap-2 overflow-x-auto pb-1">
           {entries.map((entry) => (
             <article
-              key={`${entry.strategy ?? "largest"}-${entry.gameweek}`}
+              key={entry.gameweek}
               className={`w-28 shrink-0 rounded-lg border bg-muted/20 px-3 py-2 ${entry.gameweek === activeGameweek ? "border-primary ring-1 ring-primary" : ""}`}
               aria-label={`Gameweek ${entry.gameweek}, ${formatPnl(entry.pnl)}`}
             >
@@ -228,8 +226,7 @@ export function MatchdayOnePagerView({
           </div>
         )}
 
-        <BookedPnlStrip entries={pnlHistory.filter((entry) => (entry.strategy ?? "largest") === "largest")} bookLabel="Largest chance" activeGameweek={page.gameweek} />
-        <BookedPnlStrip entries={pnlHistory.filter((entry) => entry.strategy === "kelly")} bookLabel="Kelly" activeGameweek={page.gameweek} />
+        <BookedPnlStrip entries={pnlHistory} activeGameweek={page.gameweek} />
       </div>
     </div>
   );
