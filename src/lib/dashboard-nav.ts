@@ -15,8 +15,24 @@ const viewByPath: Record<string, DashboardView> = {
   "/rankings": "rankings",
 };
 
+function normalisePathname(pathname: string) {
+  return pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
+
+export function forecastFixtureIdFromPathname(pathname: string) {
+  const match = /^\/forecast\/(\d+)$/.exec(normalisePathname(pathname));
+  if (!match) return null;
+  const fixtureId = Number(match[1]);
+  return Number.isInteger(fixtureId) && fixtureId > 0 ? fixtureId : null;
+}
+
+export function isForecastMatchPath(pathname: string) {
+  return /^\/forecast\/[^/]+$/.test(normalisePathname(pathname));
+}
+
 export function viewFromPathname(pathname: string): DashboardView {
-  const path = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  const path = normalisePathname(pathname);
+  if (path === "/forecast" || isForecastMatchPath(path)) return "forecast";
   return viewByPath[path] ?? "rankings";
 }
 
