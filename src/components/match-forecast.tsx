@@ -18,9 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { GameweekBookedPnl } from "@/lib/booked-pnl";
-import { bookingStrategyOf, type BookingMarket, type BookingRecord, type BookingStrategy } from "@/lib/booking-settlement";
-import { slateRowsForStrategy, summarizeSlate, type GameweekSlateRow, type GameweekSlateSummary } from "@/lib/gameweek-slate";
-import { buildKellyPlan, type KellyBet } from "@/lib/kelly";
+import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
+import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
 import { buildMatchdayOnePager } from "@/lib/matchday-one-pager";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
@@ -526,44 +525,31 @@ function TeamStrengthsPanel({
   );
 }
 
-function bookSides(row: GameweekSlateRow, bookings?: BookingRecord[]) {
-  const pool = bookings
-    ? bookings.filter((booking) => booking.fixtureId === row.fixtureId)
-    : row.booking ? [row.booking] : [];
-  const latest = (strategy: BookingStrategy) => pool
-    .filter((booking) => bookingStrategyOf(booking) === strategy)
-    .sort((left, right) => right.bookedAt.localeCompare(left.bookedAt))[0] ?? null;
-  return { largest: latest("largest"), kelly: latest("kelly") };
-}
-
 function resultLabel(homeShortName: string, awayShortName: string, selection: "home" | "draw" | "away") {
   if (selection === "home") return `${homeShortName} win`;
   if (selection === "away") return `${awayShortName} win`;
   return "Draw";
 }
 
-function BookingSummaryCards({ summary, bookLabel }: { summary: GameweekSlateSummary; bookLabel: string }) {
+function BookingSummaryCards({ summary }: { summary: GameweekSlateSummary }) {
   return (
-    <div className="grid gap-3" data-book-label={bookLabel}>
-      <p className="text-sm font-medium">{bookLabel} book</p>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Open stake</p>
-          <p className="mt-2 text-xl font-semibold">${summary.openStake.toFixed(2)}</p>
-          <p className="text-sm text-muted-foreground">{summary.openCount} open</p>
-        </div>
-        <div className="rounded-xl border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Settled PnL</p>
-          <p className={`mt-2 text-xl font-semibold ${summary.settledPnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
-            {formatPnl(summary.settledPnl)}
-          </p>
-          <p className="text-sm text-muted-foreground">{summary.settledCount} settled</p>
-        </div>
-        <div className="rounded-xl border p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Record</p>
-          <p className="mt-2 text-xl font-semibold">{summary.won}–{summary.lost}</p>
-          <p className="text-sm text-muted-foreground">Won–lost</p>
-        </div>
+    <div className="grid gap-3 sm:grid-cols-3">
+      <div className="rounded-xl border p-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">Open stake</p>
+        <p className="mt-2 text-xl font-semibold">${summary.openStake.toFixed(2)}</p>
+        <p className="text-sm text-muted-foreground">{summary.openCount} open</p>
+      </div>
+      <div className="rounded-xl border p-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">Settled PnL</p>
+        <p className={`mt-2 text-xl font-semibold ${summary.settledPnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+          {formatPnl(summary.settledPnl)}
+        </p>
+        <p className="text-sm text-muted-foreground">{summary.settledCount} settled</p>
+      </div>
+      <div className="rounded-xl border p-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">Record</p>
+        <p className="mt-2 text-xl font-semibold">{summary.won}–{summary.lost}</p>
+        <p className="text-sm text-muted-foreground">Won–lost</p>
       </div>
     </div>
   );
@@ -582,15 +568,9 @@ function GameweekBookingTable({
   onRowOddsChange,
   onBookAll,
   onBookRow,
-  bookings,
   bookingFixtureId = null,
   priceClosed = {},
   onPriceOpenChange,
-  capital = "1000",
-  onCapitalChange,
-  kellyBets = [],
-  kellyPassed = 0,
-  kellyScaled = false,
   onClear,
   canResolve,
   isResolving = false,
@@ -607,39 +587,23 @@ function GameweekBookingTable({
   onStakeChange: (stake: string) => void;
   onDefaultOddsChange: (odds: string) => void;
   onRowOddsChange: (fixtureId: number, odds: string) => void;
-  onBookAll: (strategy: BookingStrategy) => void;
-  onBookRow: (fixtureId: number, strategy: BookingStrategy) => void;
-  bookings?: BookingRecord[];
+  onBookAll: () => void;
+  onBookRow: (fixtureId: number) => void;
   bookingFixtureId?: number | null;
   priceClosed?: Record<number, boolean>;
   onPriceOpenChange: (fixtureId: number, open: boolean) => void;
-  capital?: string;
-  onCapitalChange?: (capital: string) => void;
-  kellyBets?: KellyBet[];
-  kellyPassed?: number;
-  kellyScaled?: boolean;
-  onClear: (strategy: BookingStrategy) => void;
+  onClear: () => void;
   canResolve?: boolean;
   isResolving?: boolean;
   resolveMessage?: string | null;
   onResolve?: () => void;
 }) {
-  const sides = rows.map((row) => ({ row, ...bookSides(row, bookings) }));
-  const largestOpen = sides.filter(({ row, largest }) => !largest && !row.finished && row.modelPick && !priceClosed[row.fixtureId]);
-  const leftOut = sides.filter(({ row, largest, kelly }) => (
-    (!largest || !kelly) && !row.finished && row.modelPick && priceClosed[row.fixtureId]
-  )).length;
-  const kellyById = new Map(kellyBets.map((bet) => [bet.fixtureId, bet]));
-  const kellyRows = sides.flatMap(({ row, kelly }) => {
-    if (kelly) return [];
-    const bet = kellyById.get(row.fixtureId);
-    return bet ? [{ row, bet }] : [];
-  });
-  const kellyTotal = kellyRows.reduce((sum, { bet }) => sum + bet.stake, 0);
-  const capitalValue = Number(capital);
-  const largestBooked = sides.filter(({ largest }) => largest).length;
-  const kellyBookedCount = sides.filter(({ kelly }) => kelly).length;
-  const showResolve = canResolve ?? sides.some(({ largest, kelly }) => largest?.status === "open" || kelly?.status === "open");
+  const pending = rows.filter((row) => !row.booking && !row.finished && row.modelPick);
+  const openPending = pending.filter((row) => !priceClosed[row.fixtureId]);
+  const leftOut = pending.length - openPending.length;
+  const bookCount = openPending.length;
+  const bookedCount = rows.filter((row) => row.booking).length;
+  const showResolve = canResolve ?? rows.some((row) => row.booking?.status === "open");
   const busy = isBooking || isClearing || isResolving;
 
   return (
@@ -649,7 +613,7 @@ function GameweekBookingTable({
           <div>
             <CardTitle>Gameweek {gameweek}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Two books on the same matches, each with its own PnL. Largest chance uses the stake you enter, even when that chance is below the price. Kelly sizes a stake from your capital and the odds, and only where the price has an edge. Booking one does not book the other.
+              Largest chance books the most likely result at the stake and odds you enter, even when that chance is below the price. Uncheck Open when a price is not available.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -670,64 +634,35 @@ function GameweekBookingTable({
               type="button"
               variant="outline"
               data-clear-gameweek=""
-              disabled={busy || largestBooked === 0}
-              title="Remove largest-chance bets for this gameweek. Kelly stays."
-              onClick={() => onClear("largest")}
+              disabled={busy || bookedCount === 0}
+              onClick={onClear}
             >
               {isClearing ? <LoaderCircle className="size-4 animate-spin" /> : null}
-              {isClearing ? "Clearing…" : `Clear GW${gameweek} · largest`}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              data-clear-kelly=""
-              disabled={busy || kellyBookedCount === 0}
-              title="Remove Kelly bets for this gameweek. Largest chance stays."
-              onClick={() => onClear("kelly")}
-            >
-              {isClearing ? "Clearing…" : `Clear GW${gameweek} · Kelly`}
+              {isClearing ? "Clearing…" : `Clear GW${gameweek}`}
             </Button>
             <button
               type="button"
-              data-book-largest-all=""
-              disabled={busy || largestOpen.length === 0}
-              onClick={() => onBookAll("largest")}
+              disabled={busy || bookCount === 0}
+              onClick={onBookAll}
               className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             >
               {isBooking && bookingFixtureId === null ? <LoaderCircle className="size-4 animate-spin" /> : null}
-              {largestOpen.length === 0 ? "Largest booked" : `Book ${largestOpen.length} match${largestOpen.length === 1 ? "" : "es"}`}
-            </button>
-            <button
-              type="button"
-              data-book-kelly-all=""
-              disabled={busy || kellyRows.length === 0 || !Number.isFinite(capitalValue) || capitalValue <= 0}
-              onClick={() => onBookAll("kelly")}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-primary bg-background px-4 text-sm font-medium text-primary transition hover:bg-primary/10 disabled:opacity-50"
-            >
-              {kellyRows.length === 0 || !Number.isFinite(capitalValue) || capitalValue <= 0
-                ? "No Kelly bets"
-                : `Book · pay $${kellyTotal.toFixed(2)}`}
+              {pending.length === 0
+                ? "All booked"
+                : bookCount === 0
+                  ? "No open prices"
+                  : `Book ${bookCount} match${bookCount === 1 ? "" : "es"}`}
             </button>
           </div>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="grid gap-1 text-sm">
-            Largest stake ($)
+            Stake ($)
             <Input
               value={stake}
               onChange={(event) => onStakeChange(event.target.value)}
               inputMode="decimal"
               aria-label="Stake for each match"
-              className="w-28"
-            />
-          </label>
-          <label className="grid gap-1 text-sm">
-            Capital ($)
-            <Input
-              value={capital}
-              onChange={(event) => onCapitalChange?.(event.target.value)}
-              inputMode="decimal"
-              aria-label="Capital for Kelly bets"
               className="w-28"
             />
           </label>
@@ -741,46 +676,6 @@ function GameweekBookingTable({
             </p>
           ) : null}
         </div>
-        <div data-kelly-list="" className="rounded-lg border bg-muted/20 p-3">
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">To pay</p>
-                <p className="text-2xl font-semibold tabular-nums" data-to-pay="">
-                  {kellyRows.length === 0 || !Number.isFinite(capitalValue) || capitalValue <= 0
-                    ? "$0.00"
-                    : `$${kellyTotal.toFixed(2)}`}
-                </p>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {kellyRows.length === 0 || !Number.isFinite(capitalValue) || capitalValue <= 0
-                  ? "No open price has an edge yet."
-                  : `${kellyRows.length} bet${kellyRows.length === 1 ? "" : "s"} from your $${capitalValue.toFixed(2)} capital`}
-              </p>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {kellyScaled
-                ? "These prices would cost more than your capital, so each line is scaled down and you pay the capital you entered."
-                : "You pay the Kelly amount, which stays inside the capital you entered."}
-            </p>
-            {kellyRows.length > 0 ? (
-              <ul className="mt-2 grid gap-1 text-sm">
-                {kellyRows.map(({ row, bet }) => (
-                  <li key={row.fixtureId} data-kelly-row={row.fixtureId} className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span>
-                      <span className="font-medium">{row.homeShortName} vs {row.awayShortName}</span>
-                      <span className="text-muted-foreground"> · {resultLabel(row.homeShortName, row.awayShortName, (row.modelPick?.selection ?? "home") as "home" | "draw" | "away")} · {formatPercent(bet.probability)} · {bet.odds.toFixed(2)}</span>
-                    </span>
-                    <span className="font-medium tabular-nums">${bet.stake.toFixed(2)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {kellyPassed > 0 ? (
-              <p className="mt-2 text-xs text-muted-foreground" data-kelly-passed="">
-                {kellyPassed} open price{kellyPassed === 1 ? " has no edge and stays" : "s have no edge and stay"} off the list.
-              </p>
-            ) : null}
-          </div>
         {resolveMessage ? <p className="text-sm text-muted-foreground" data-resolve-message="">{resolveMessage}</p> : null}
       </CardHeader>
       <CardContent>
@@ -790,31 +685,27 @@ function GameweekBookingTable({
               <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="py-2 pr-3">Match</th>
                 <th className="py-2 pr-3">Pick</th>
+                <th className="py-2 pr-3">Stake</th>
                 <th className="py-2 pr-3">Odds</th>
                 <th className="py-2 pr-3">Score</th>
-                <th className="py-2 pr-3">Largest chance</th>
-                <th className="py-2">Kelly</th>
+                <th className="py-2 pr-3">PnL</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="py-2">Book</th>
               </tr>
             </thead>
             <tbody>
-              {sides.map(({ row, largest, kelly }) => {
-                const pick = largest ?? kelly
-                  ? {
-                      selection: (largest ?? kelly)!.selection,
-                      market: (largest ?? kelly)!.market,
-                      probability: (largest ?? kelly)!.modelProb,
-                    }
+              {rows.map((row) => {
+                const booking = row.booking;
+                const pick = booking
+                  ? { selection: booking.selection, market: booking.market, probability: booking.modelProb }
                   : row.modelPick;
                 const kickoff = formatKickoff(row.kickoffTime);
-                const score = largest?.homeScore ?? kelly?.homeScore ?? row.homeScore;
-                const opponentScore = largest?.awayScore ?? kelly?.awayScore ?? row.awayScore;
-                const kellyBet = kelly ? null : kellyById.get(row.fixtureId);
+                const score = booking?.homeScore ?? row.homeScore;
+                const opponentScore = booking?.awayScore ?? row.awayScore;
                 const enteredOdds = parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds);
-                const canQuote = !row.finished && row.modelPick !== null;
-                const priceOpen = !priceClosed[row.fixtureId];
-                const belowPrice = !largest && canQuote && enteredOdds !== null && row.modelPick!.probability < 1 / enteredOdds;
+                const belowPrice = !booking && !row.finished && row.modelPick !== null && enteredOdds !== null
+                  && row.modelPick.probability < 1 / enteredOdds;
                 const enteredStake = Number(stake);
-                const oddsLocked = Boolean(largest && kelly);
 
                 return (
                   <tr key={row.fixtureId} className="border-b border-border/60">
@@ -826,9 +717,9 @@ function GameweekBookingTable({
                       {pick ? (
                         <>
                           <p className="font-medium">
-                            {pick.market === "1X2" && (pick.selection === "home" || pick.selection === "draw" || pick.selection === "away")
-                              ? resultLabel(row.homeShortName, row.awayShortName, pick.selection)
-                              : selectionLabel(pick.market, pick.selection)}
+                            {booking
+                              ? selectionLabel(booking.market, booking.selection)
+                              : resultLabel(row.homeShortName, row.awayShortName, pick.selection as "home" | "draw" | "away")}
                           </p>
                           <p className="text-xs text-muted-foreground">{formatPercent(pick.probability)}</p>
                         </>
@@ -837,21 +728,50 @@ function GameweekBookingTable({
                       )}
                     </td>
                     <td className="py-2 pr-3">
-                      {oddsLocked || !canQuote ? (
-                        <span className="tabular-nums">{largest?.odds.toFixed(2) ?? kelly?.odds.toFixed(2) ?? "—"}</span>
+                      {booking ? (
+                        `$${booking.stake.toFixed(2)}`
+                      ) : !row.finished && row.modelPick && Number.isFinite(enteredStake) && enteredStake > 0 ? (
+                        <span>
+                          <span className="tabular-nums">${enteredStake.toFixed(2)}</span>
+                          {belowPrice ? (
+                            <span className="block text-xs text-muted-foreground" data-below-price={row.fixtureId}>Below the price</span>
+                          ) : null}
+                        </span>
                       ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {booking ? (
+                        booking.odds.toFixed(2)
+                      ) : row.finished ? (
+                        "—"
+                      ) : (
+                        <Input
+                          value={rowOdds[row.fixtureId] ?? defaultOdds}
+                          onChange={(event) => onRowOddsChange(row.fixtureId, event.target.value)}
+                          inputMode="decimal"
+                          aria-label={`Odds for ${row.homeShortName} vs ${row.awayShortName}`}
+                          className="h-8 w-24"
+                        />
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {score === null || opponentScore === null ? "—" : `${score}–${opponentScore}`}
+                    </td>
+                    <td className={`py-2 pr-3 ${booking?.pnl === null || booking?.pnl === undefined ? "text-muted-foreground" : booking.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+                      {booking?.pnl === null || booking?.pnl === undefined ? "—" : formatPnl(booking.pnl)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {!booking ? (row.finished ? "Played" : "—") : booking.status === "open" ? "Open" : booking.outcome === "won" ? "Won" : "Lost"}
+                    </td>
+                    <td className="py-2">
+                      {!booking && !row.finished && row.modelPick ? (
                         <div className="flex items-center gap-2">
-                          <Input
-                            value={rowOdds[row.fixtureId] ?? defaultOdds}
-                            onChange={(event) => onRowOddsChange(row.fixtureId, event.target.value)}
-                            inputMode="decimal"
-                            aria-label={`Odds for ${row.homeShortName} vs ${row.awayShortName}`}
-                            className="h-8 w-24"
-                          />
                           <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                             <input
                               type="checkbox"
-                              checked={priceOpen}
+                              checked={!priceClosed[row.fixtureId]}
                               disabled={busy}
                               data-price-open={row.fixtureId}
                               aria-label={`Price open for ${row.homeShortName} vs ${row.awayShortName}`}
@@ -859,75 +779,18 @@ function GameweekBookingTable({
                             />
                             Open
                           </label>
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3">
-                      {score === null || opponentScore === null ? "—" : `${score}–${opponentScore}`}
-                    </td>
-                    <td className="py-2 pr-3" data-largest-cell={row.fixtureId}>
-                      {largest ? (
-                        <>
-                          <p className="tabular-nums">${largest.stake.toFixed(2)} at {largest.odds.toFixed(2)}</p>
-                          <p className={largest.pnl === null || largest.pnl === undefined ? "text-xs text-muted-foreground" : largest.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"} data-largest-pnl={row.fixtureId}>
-                            {largest.pnl === null || largest.pnl === undefined ? "Open" : formatPnl(largest.pnl)}
-                          </p>
-                        </>
-                      ) : canQuote && Number.isFinite(enteredStake) && enteredStake > 0 ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span>
-                            <span className="tabular-nums">${enteredStake.toFixed(2)}</span>
-                            {belowPrice ? (
-                              <span className="block text-xs text-muted-foreground" data-below-price={row.fixtureId}>Below the price</span>
-                            ) : null}
-                          </span>
                           <Button
                             type="button"
                             size="sm"
                             data-book-row={row.fixtureId}
-                            data-book-largest={row.fixtureId}
-                            disabled={busy || !priceOpen || enteredOdds === null}
-                            onClick={() => onBookRow(row.fixtureId, "largest")}
-                            aria-label={`Book largest chance for ${row.homeShortName} vs ${row.awayShortName}`}
+                            disabled={busy || Boolean(priceClosed[row.fixtureId]) || parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds) === null}
+                            onClick={() => onBookRow(row.fixtureId)}
+                            aria-label={`Book ${row.homeShortName} vs ${row.awayShortName}`}
                           >
                             {bookingFixtureId === row.fixtureId ? <LoaderCircle className="size-4 animate-spin" /> : null}
                             Book
                           </Button>
                         </div>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="py-2" data-kelly-cell={row.fixtureId}>
-                      {kelly ? (
-                        <>
-                          <p className="tabular-nums">${kelly.stake.toFixed(2)} at {kelly.odds.toFixed(2)}</p>
-                          <p className={kelly.pnl === null || kelly.pnl === undefined ? "text-xs text-muted-foreground" : kelly.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"} data-kelly-pnl={row.fixtureId}>
-                            {kelly.pnl === null || kelly.pnl === undefined ? "Open" : formatPnl(kelly.pnl)}
-                          </p>
-                        </>
-                      ) : canQuote && kellyBet && capitalValue > 0 ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span data-kelly-stake={row.fixtureId}>
-                            <span className="font-medium tabular-nums">${kellyBet.stake.toFixed(2)}</span>
-                            <span className="block text-xs text-muted-foreground">
-                              {formatPercent(kellyBet.stake / capitalValue)} of capital
-                            </span>
-                          </span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            data-book-kelly={row.fixtureId}
-                            disabled={busy || !priceOpen || enteredOdds === null}
-                            onClick={() => onBookRow(row.fixtureId, "kelly")}
-                            aria-label={`Book Kelly for ${row.homeShortName} vs ${row.awayShortName}`}
-                          >
-                            {bookingFixtureId === row.fixtureId ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                            Book
-                          </Button>
-                        </div>
-                      ) : canQuote && priceOpen && enteredOdds !== null ? (
-                        <span className="text-muted-foreground" data-kelly-passed-row={row.fixtureId}>No edge</span>
                       ) : (
                         "—"
                       )}
@@ -944,32 +807,22 @@ function GameweekBookingTable({
 }
 
 export function GameweekBookingsView({
+  summary,
   scatterRef,
-  bookings,
   ...tableProps
 }: {
+  summary: GameweekSlateSummary;
   scatterRef?: Ref<HTMLDivElement>;
 } & ComponentProps<typeof GameweekBookingTable>) {
-  const largestRows = tableProps.rows.map((row) => ({ ...row, booking: bookSides(row, bookings).largest }));
-  const kellySummaryRows = tableProps.rows.map((row) => ({ ...row, booking: bookSides(row, bookings).kelly }));
-  const scatterRows = [
-    ...largestRows,
-    ...kellySummaryRows.map((row) => ({
-      ...row,
-      fixtureId: row.fixtureId + 1_000_000,
-      homeShortName: `${row.homeShortName} · Kelly`,
-    })),
-  ];
-  const showScatter = scatterRows.some((row) => row.booking && row.booking.odds > 1);
+  const showScatter = tableProps.rows.some((row) => row.booking && row.booking.odds > 1);
 
   return (
-    <div className="grid gap-5" data-books="both">
-      <BookingSummaryCards summary={summarizeSlate(largestRows)} bookLabel="Largest chance" />
-      <BookingSummaryCards summary={summarizeSlate(kellySummaryRows)} bookLabel="Kelly" />
-      <GameweekBookingTable {...tableProps} bookings={bookings} />
+    <div className="grid gap-5">
+      <BookingSummaryCards summary={summary} />
+      <GameweekBookingTable {...tableProps} />
       {showScatter ? (
         <div ref={scatterRef} id="booking-probability-scatter" className="scroll-mt-6">
-          <BookingProbabilityScatter rows={scatterRows} />
+          <BookingProbabilityScatter rows={tableProps.rows} />
         </div>
       ) : null}
     </div>
@@ -986,6 +839,15 @@ export function MatchForecastPanel() {
   const [pnlHistory, setPnlHistory] = useState<GameweekBookedPnl[]>([]);
   const [onePagerOpen, setOnePagerOpen] = useState(false);
   const [slateRows, setSlateRows] = useState<GameweekSlateRow[]>([]);
+  const [slateSummary, setSlateSummary] = useState<GameweekSlateSummary>({
+    settledPnl: 0,
+    openStake: 0,
+    settledCount: 0,
+    openCount: 0,
+    won: 0,
+    lost: 0,
+    unbookedCount: 0,
+  });
   const [bookingGameweeks, setBookingGameweeks] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSlateLoading, setIsSlateLoading] = useState(false);
@@ -996,7 +858,6 @@ export function MatchForecastPanel() {
   const [error, setError] = useState<string | null>(null);
   const [resolveMessage, setResolveMessage] = useState<string | null>(null);
   const [stake, setStake] = useState("10");
-  const [capital, setCapital] = useState("1000");
   const [defaultOdds, setDefaultOdds] = useState("2.10");
   const [rowOdds, setRowOdds] = useState<Record<number, string>>({});
   const [priceClosed, setPriceClosed] = useState<Record<number, boolean>>({});
@@ -1032,16 +893,6 @@ export function MatchForecastPanel() {
     () => data?.upcomingFixtures.filter((fixture) => fixture.event === resolvedGameweek) ?? [],
     [data?.upcomingFixtures, resolvedGameweek],
   );
-  const largestRows = useMemo(
-    () => slateRowsForStrategy(slateRows, bookings, "largest"),
-    [bookings, slateRows],
-  );
-  const kellySlateRows = useMemo(
-    () => slateRowsForStrategy(slateRows, bookings, "kelly"),
-    [bookings, slateRows],
-  );
-  const largestSummary = useMemo(() => summarizeSlate(largestRows), [largestRows]);
-  const kellySummary = useMemo(() => summarizeSlate(kellySlateRows), [kellySlateRows]);
   const realizedRows = useMemo(
     () => slateRows.filter((row) => row.gameweek === resolvedGameweek),
     [resolvedGameweek, slateRows],
@@ -1090,6 +941,7 @@ export function MatchForecastPanel() {
       if (payload.pnlHistory) setPnlHistory(payload.pnlHistory);
       if (payload.rows && payload.summary) {
         setSlateRows(payload.rows);
+        setSlateSummary(payload.summary);
       }
       if (payload.availableGameweeks) setBookingGameweeks(payload.availableGameweeks);
       return Boolean(payload.rows && payload.summary);
@@ -1177,16 +1029,6 @@ export function MatchForecastPanel() {
     });
   }, [bookings, data, resolvedGameweek, slateRows]);
 
-  const kellyPlan = useMemo(() => {
-    const candidates = kellySlateRows.flatMap((row) => {
-      if (row.booking || row.finished || !row.modelPick || priceClosed[row.fixtureId]) return [];
-      const odds = parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds);
-      if (odds === null) return [];
-      return [{ fixtureId: row.fixtureId, probability: row.modelPick.probability, odds }];
-    });
-    return buildKellyPlan(candidates, Number(capital));
-  }, [capital, defaultOdds, kellySlateRows, priceClosed, rowOdds]);
-
   const openOnePager = useCallback(() => {
     setOnePagerOpen(true);
     if (data?.season) {
@@ -1197,7 +1039,6 @@ export function MatchForecastPanel() {
   async function submitBookings(
     rows: Array<{ fixtureId: number; market: string; selection: string; stake: number; odds: number }>,
     fixtureId: number | null,
-    book: BookingStrategy,
   ) {
     if (!data?.season || rows.length === 0 || bookingLock.current) return;
 
@@ -1211,7 +1052,6 @@ export function MatchForecastPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bookings: rows,
-          strategy: book,
           lookback: params.lookbackGameweeks,
           homeAdvantage: params.homeAdvantage,
           correlation: params.correlation,
@@ -1235,32 +1075,8 @@ export function MatchForecastPanel() {
     }
   }
 
-  async function bookGameweek(book: BookingStrategy) {
+  async function bookGameweek() {
     if (!data?.season) return;
-
-    if (book === "kelly") {
-      if (!Number.isFinite(kellyPlan.capital) || kellyPlan.capital <= 0) {
-        setError("Capital must be positive.");
-        return;
-      }
-      if (kellyPlan.bets.length === 0) {
-        setError("No open price has a Kelly edge.");
-        return;
-      }
-      const rows = kellyPlan.bets.flatMap((bet) => {
-        const row = kellySlateRows.find((item) => item.fixtureId === bet.fixtureId);
-        if (!row?.modelPick) return [];
-        return [{
-          fixtureId: row.fixtureId,
-          market: row.modelPick.market,
-          selection: row.modelPick.selection,
-          stake: bet.stake,
-          odds: bet.odds,
-        }];
-      });
-      await submitBookings(rows, null, "kelly");
-      return;
-    }
 
     const stakeValue = Number(stake);
     if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
@@ -1268,8 +1084,8 @@ export function MatchForecastPanel() {
       return;
     }
 
-    const openRows = largestRows.filter((row) => !row.booking && !row.finished && row.modelPick && !priceClosed[row.fixtureId]);
-    const readyRows = pendingRowsWithOpenOdds(largestRows, rowOdds, defaultOdds, priceClosed);
+    const openRows = slateRows.filter((row) => !row.booking && !row.finished && row.modelPick && !priceClosed[row.fixtureId]);
+    const readyRows = pendingRowsWithOpenOdds(slateRows, rowOdds, defaultOdds, priceClosed);
     if (openRows.length === 0) {
       setError("Mark at least one match as open before booking.");
       return;
@@ -1287,28 +1103,22 @@ export function MatchForecastPanel() {
       odds: parseDecimalOdds(rowOdds[row.fixtureId] ?? defaultOdds)!,
     }));
 
-    await submitBookings(rows, null, "largest");
+    await submitBookings(rows, null);
   }
 
-  async function bookFixture(fixtureId: number, book: BookingStrategy) {
+  async function bookFixture(fixtureId: number) {
     if (!data?.season) return;
 
-    const sourceRows = book === "kelly" ? kellySlateRows : largestRows;
-    const row = sourceRows.find((item) => item.fixtureId === fixtureId);
+    const row = slateRows.find((item) => item.fixtureId === fixtureId);
     const odds = parseDecimalOdds(row ? (rowOdds[row.fixtureId] ?? defaultOdds) : "");
     if (!row || row.booking || row.finished || !row.modelPick || priceClosed[fixtureId] || odds === null) {
       setError("Decimal odds must be greater than 1.");
       return;
     }
 
-    const kellyBet = book === "kelly" ? kellyPlan.bets.find((bet) => bet.fixtureId === fixtureId) : null;
-    if (book === "kelly" && !kellyBet) {
-      setError("That match has no Kelly edge at these odds.");
-      return;
-    }
-    const stakeValue = kellyBet ? kellyBet.stake : Number(stake);
+    const stakeValue = Number(stake);
     if (!Number.isFinite(stakeValue) || stakeValue <= 0) {
-      setError(book === "kelly" ? "Capital must be positive." : "Stake must be positive.");
+      setError("Stake must be positive.");
       return;
     }
 
@@ -1317,8 +1127,8 @@ export function MatchForecastPanel() {
       market: row.modelPick.market,
       selection: row.modelPick.selection,
       stake: stakeValue,
-      odds: kellyBet ? kellyBet.odds : odds,
-    }], fixtureId, book);
+      odds,
+    }], fixtureId);
   }
 
   async function resolveLiveBookings() {
@@ -1363,14 +1173,12 @@ export function MatchForecastPanel() {
     }
   }
 
-  async function clearGameweek(book: BookingStrategy) {
+  async function clearGameweek() {
     if (!data?.season || isClearing) return;
-    const rowsForBook = book === "kelly" ? kellySlateRows : largestRows;
-    const bookedCount = rowsForBook.filter((row) => row.booking).length;
+    const bookedCount = slateRows.filter((row) => row.booking).length;
     if (bookedCount === 0) return;
-    const bookName = book === "kelly" ? "Kelly" : "largest chance";
     const confirmed = window.confirm(
-      `Clear ${bookName} bets for Gameweek ${resolvedGameweek}? This removes that book's bets, including settled ones. The other book stays.`,
+      `Clear all Gameweek ${resolvedGameweek} bookings? This removes every bet for that week, including settled ones, so you can enter them again.`,
     );
     if (!confirmed) return;
 
@@ -1380,7 +1188,6 @@ export function MatchForecastPanel() {
       const query = new URLSearchParams({
         season: data.season,
         gameweek: String(resolvedGameweek),
-        strategy: book,
       });
       const response = await fetch(`/api/bookings?${query.toString()}`, { method: "DELETE" });
       const payload = await response.json() as { error?: string };
@@ -1396,9 +1203,9 @@ export function MatchForecastPanel() {
   useEffect(() => {
     if (!scrollScatterIntoView.current || isBooking || isSlateLoading) return;
     scrollScatterIntoView.current = false;
-    if (!largestRows.some((row) => row.booking && row.booking.odds > 1) && !kellySlateRows.some((row) => row.booking && row.booking.odds > 1)) return;
+    if (!slateRows.some((row) => row.booking && row.booking.odds > 1)) return;
     scatterRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [isBooking, isSlateLoading, kellySlateRows, largestRows]);
+  }, [isBooking, isSlateLoading, slateRows]);
 
   if (isLoading && !data) {
     return (
@@ -1452,9 +1259,9 @@ export function MatchForecastPanel() {
               : subView === "bookings"
                 ? `GW${resolvedGameweek} · book slate`
                 : slateReady && realizedRows.length > 0 && gameweekFixtures.length === 0
-                  ? `GW${resolvedGameweek} · played${largestSummary.settledCount + kellySummary.settledCount > 0 ? ` · largest ${formatPnl(largestSummary.settledPnl)} · Kelly ${formatPnl(kellySummary.settledPnl)}` : ""}`
+                  ? `GW${resolvedGameweek} · played${slateSummary.settledCount > 0 ? ` · ${formatPnl(slateSummary.settledPnl)}` : ""}`
                   : slateReady
-                    ? `GW${resolvedGameweek} · largest ${formatPnl(largestSummary.settledPnl)} · Kelly ${formatPnl(kellySummary.settledPnl)}`
+                    ? `GW${resolvedGameweek} · ${slateSummary.settledCount} settled · ${slateSummary.openCount} open`
                     : `GW${resolvedGameweek}`}
             {isLoading ? " · recomputing…" : ""}
           </p>
@@ -1471,10 +1278,10 @@ export function MatchForecastPanel() {
               </div>
             ) : (
               <GameweekBookingsView
+                summary={slateSummary}
                 scatterRef={scatterRef}
                 gameweek={resolvedGameweek}
                 rows={slateRows}
-                bookings={bookings}
                 stake={stake}
                 defaultOdds={defaultOdds}
                 rowOdds={rowOdds}
@@ -1486,20 +1293,15 @@ export function MatchForecastPanel() {
                   setRowOdds({});
                 }}
                 onRowOddsChange={(fixtureId, value) => setRowOdds((current) => ({ ...current, [fixtureId]: value }))}
-                onBookAll={(book) => void bookGameweek(book)}
-                onBookRow={(fixtureId, book) => void bookFixture(fixtureId, book)}
+                onBookAll={() => void bookGameweek()}
+                onBookRow={(fixtureId) => void bookFixture(fixtureId)}
                 bookingFixtureId={bookingFixtureId}
                 priceClosed={priceClosed}
                 onPriceOpenChange={(fixtureId, open) => {
                   setPriceClosed((current) => ({ ...current, [fixtureId]: !open }));
                 }}
-                capital={capital}
-                onCapitalChange={setCapital}
-                kellyBets={kellyPlan.bets}
-                kellyPassed={kellyPlan.passed}
-                kellyScaled={kellyPlan.scaled}
-                onClear={(book) => void clearGameweek(book)}
-                canResolve={largestSummary.openCount > 0 || kellySummary.openCount > 0 || bookings.some((booking) => booking.status === "open")}
+                onClear={() => void clearGameweek()}
+                canResolve={slateSummary.openCount > 0 || bookings.some((booking) => booking.status === "open")}
                 isResolving={isResolving}
                 resolveMessage={resolveMessage}
                 onResolve={() => void resolveLiveBookings()}
@@ -1536,8 +1338,7 @@ export function MatchForecastPanel() {
         )}
       </div>
     </div>
-      <BookedPnlStrip entries={pnlHistory.filter((entry) => (entry.strategy ?? "largest") === "largest")} bookLabel="Largest chance" />
-      <BookedPnlStrip entries={pnlHistory.filter((entry) => entry.strategy === "kelly")} bookLabel="Kelly" />
+      <BookedPnlStrip entries={pnlHistory} />
       {onePagerOpen && matchdayPage ? (
         <MatchdayOnePager
           page={matchdayPage}

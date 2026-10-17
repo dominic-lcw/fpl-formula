@@ -37,7 +37,6 @@ function booking(overrides: Partial<BookingRecord> = {}): BookingRecord {
     expectedAwayGoals: 0.94,
     modelProb: 0.54,
     expectedValue: 0.13,
-    strategy: "largest",
     notes: null,
     bookedAt: "2025-09-19T12:00:00.000Z",
     status: "settled",

@@ -1,9 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { GameweekBookingsView, pendingRowsWithOpenOdds } from "../src/components/match-forecast";
-import { buildKellyPlan } from "../src/lib/kelly";
 import type { BookingRecord } from "../src/lib/booking-settlement";
-import type { GameweekSlateRow } from "../src/lib/gameweek-slate";
+import type { GameweekSlateRow, GameweekSlateSummary } from "../src/lib/gameweek-slate";
 
 function booking(overrides: Partial<BookingRecord> = {}): BookingRecord {
   return {
@@ -20,7 +19,6 @@ function booking(overrides: Partial<BookingRecord> = {}): BookingRecord {
     expectedAwayGoals: 0.9,
     modelProb: 0.55,
     expectedValue: 0.155,
-    strategy: "largest",
     notes: null,
     bookedAt: "2026-02-01T12:00:00.000Z",
     status: "open",
@@ -51,12 +49,23 @@ function row(overrides: Partial<GameweekSlateRow> = {}): GameweekSlateRow {
   };
 }
 
+const summary: GameweekSlateSummary = {
+  settledPnl: 0,
+  openStake: 10,
+  settledCount: 0,
+  openCount: 1,
+  won: 0,
+  lost: 0,
+  unbookedCount: 0,
+};
+
 function renderBookings(
   rows: GameweekSlateRow[],
   overrides: Partial<Parameters<typeof GameweekBookingsView>[0]> = {},
 ) {
   return renderToStaticMarkup(
     <GameweekBookingsView
+      summary={summary}
       gameweek={24}
       rows={rows}
       stake="10"
@@ -108,6 +117,7 @@ describe("bookings scatterplot", () => {
   it("shows live resolve for open bookings outside the current slate", () => {
     const html = renderToStaticMarkup(
       <GameweekBookingsView
+        summary={{ ...summary, openCount: 0, openStake: 0 }}
         gameweek={24}
         rows={[row({ booking: booking({ status: "settled", outcome: "won", pnl: 11, homeScore: 2, awayScore: 0 }) })]}
         stake="10"
@@ -155,7 +165,7 @@ describe("bookings scatterplot", () => {
     expect(html).toContain("Largest chance");
     expect(html).toContain("even when that chance is below the price");
     expect(html).toContain("Stake for each match");
-    expect(html).toContain("Kelly book");
+    expect(html).not.toContain("Kelly");
     expect(html).toContain('data-book-row="10"');
     expect(html).toContain('data-price-open="10"');
     expect(html).toContain("Book 1 match");
@@ -187,48 +197,8 @@ describe("bookings scatterplot", () => {
   });
 });
 
-describe("Kelly list", () => {
-  it("lists only prices with an edge and shows each stake from the capital", () => {
-    const plan = buildKellyPlan(
-      [
-        { fixtureId: 10, probability: 0.55, odds: 2.1 },
-        { fixtureId: 11, probability: 0.4, odds: 2.1 },
-      ],
-      1000,
-    );
-    const html = renderBookings(
-      [
-        row({ modelPick: { market: "1X2", selection: "home", probability: 0.55 } }),
-        row({
-          fixtureId: 11,
-          homeShortName: "TOT",
-          awayShortName: "NEW",
-          modelPick: { market: "1X2", selection: "away", probability: 0.4 },
-        }),
-      ],
-      {
-        capital: "1000",
-        kellyBets: plan.bets,
-        kellyPassed: plan.passed,
-        kellyScaled: plan.scaled,
-      },
-    );
-
-    expect(html).toContain("To pay");
-    expect(html).toContain('data-to-pay=""');
-    expect(html).toContain("Book · pay $140.91");
-    expect(html).toContain('data-kelly-row="10"');
-    expect(html).toContain("$140.91");
-    expect(html).toContain("1 open price has no edge and stays off the list.");
-    expect(html).toContain('data-kelly-passed-row="11"');
-    expect(html).not.toContain('data-book-kelly="11"');
-    expect(html).toContain('data-book-row="11"');
-    expect(html).not.toContain('data-kelly-row="11"');
-    expect(html).toContain("Capital for Kelly bets");
-    expect(html).toContain("Largest chance");
-  });
-
-  it("still books a largest-chance pick when the model is below the price", () => {
+describe("largest chance book", () => {
+  it("still books a pick when the model is below the price", () => {
     const html = renderBookings(
       [row({ modelPick: { market: "1X2", selection: "home", probability: 0.4 } })],
       { rowOdds: { 10: "2.10" }, stake: "15" },
@@ -238,83 +208,8 @@ describe("Kelly list", () => {
     expect(html).toContain("Below the price");
     expect(html).toContain("$15.00");
     expect(html).toContain("Book 1 match");
+    expect(html).not.toContain("Kelly");
     expect(html).not.toMatch(/data-book-row="10"[^>]*disabled=""/);
-  });
-
-  it("uses the entered stake on largest chance even when Kelly would price the same match", () => {
-    const plan = buildKellyPlan([{ fixtureId: 10, probability: 0.4, odds: 2.1 }], 1000);
-    const html = renderBookings(
-      [row({ modelPick: { market: "1X2", selection: "home", probability: 0.4 } })],
-      { stake: "15", rowOdds: { 10: "2.10" }, kellyBets: plan.bets, kellyPassed: 1 },
-    );
-
-    expect(plan.bets).toEqual([]);
-    expect(html).toContain("$15.00");
-    expect(html).toContain("Below the price");
-    expect(html).toContain('data-kelly-passed-row="10"');
-    expect(html).toContain("No edge");
-    expect(html).not.toMatch(/data-book-row="10"[^>]*disabled=""/);
-  });
-
-  it("still shows the Kelly stake and book button after largest chance is booked", () => {
-    const plan = buildKellyPlan([{ fixtureId: 10, probability: 0.55, odds: 2.1 }], 1000);
-    const html = renderBookings(
-      [row({ booking: booking({ strategy: "largest", stake: 10 }) })],
-      {
-        capital: "1000",
-        rowOdds: { 10: "2.10" },
-        kellyBets: plan.bets,
-        kellyPassed: plan.passed,
-        kellyScaled: plan.scaled,
-      },
-    );
-
-    expect(html).toContain('data-books="both"');
-    expect(html).toContain("Largest chance book");
-    expect(html).toContain("Kelly book");
-    expect(html).not.toContain('data-book-row="10"');
-    expect(html).toContain('data-book-kelly="10"');
-    expect(html).not.toMatch(/data-book-kelly="10"[^>]*disabled=""/);
-    expect(html).toContain('data-largest-pnl="10"');
-    expect(html).toContain('data-kelly-stake="10"');
-    expect(html).toContain("$140.91");
-    expect(html).toContain("Book · pay $140.91");
-    expect(html).toContain('data-kelly-row="10"');
-    expect(html).toContain("$0.00");
-  });
-
-  it("keeps a booked Kelly bet on its own book and leaves the book button off", () => {
-    const html = renderBookings(
-      [row({ booking: booking({ strategy: "kelly", stake: 140.91, odds: 2.1 }) })],
-      { capital: "1000", kellyBets: [], kellyPassed: 0 },
-    );
-
-    expect(html).toContain('data-book-row="10"');
-    expect(html).not.toContain('data-book-kelly="10"');
-    expect(html).not.toContain("data-kelly-stake");
-    expect(html).toContain("$140.91");
-    expect(html).toContain('data-kelly-pnl="10"');
-    expect(html).toContain("No Kelly bets");
-  });
-
-  it("shows each book's pnl when both are booked on the same match", () => {
-    const html = renderBookings(
-      [row()],
-      {
-        bookings: [
-          booking({ strategy: "largest", stake: 10, status: "settled", outcome: "won", pnl: 11, homeScore: 2, awayScore: 0 }),
-          booking({ id: "kelly-1", strategy: "kelly", stake: 25, odds: 2.4, status: "settled", outcome: "lost", pnl: -25, homeScore: 2, awayScore: 0 }),
-        ],
-        kellyBets: [],
-      },
-    );
-
-    expect(html).toContain('data-largest-pnl="10"');
-    expect(html).toContain("+$11.00");
-    expect(html).toContain('data-kelly-pnl="10"');
-    expect(html).toContain("-$25.00");
-    expect(html).not.toContain('data-book-row="10"');
-    expect(html).not.toContain('data-book-kelly="10"');
   });
 });
 

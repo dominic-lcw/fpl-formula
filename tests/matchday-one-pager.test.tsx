@@ -21,7 +21,6 @@ function booking(overrides: Partial<BookingRecord> & Pick<BookingRecord, "fixtur
     expectedAwayGoals: 0.8,
     modelProb: 0.52,
     expectedValue: 0.092,
-    strategy: "largest",
     notes: null,
     bookedAt: "2026-01-01T12:00:00.000Z",
     status: "open",
