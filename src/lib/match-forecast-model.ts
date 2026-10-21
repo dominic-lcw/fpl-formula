@@ -145,6 +145,117 @@ function blendSparseVenueRating(rating: number, overall: number, venueMatches: n
   return weight * rating + (1 - weight) * overall;
 }
 
+export type OpponentAdjustedRates = {
+  attackHome: number;
+  attackAway: number;
+  defenceHome: number;
+  defenceAway: number;
+};
+
+function geometricMean(values: number[]) {
+  if (!values.length) return 1;
+  const logSum = values.reduce((sum, value) => sum + Math.log(Math.max(value, 1e-6)), 0);
+  return Math.exp(logSum / values.length);
+}
+
+function normaliseRatingGroup(ratings: Map<number, number>, activeIds: number[]) {
+  const active = activeIds.map((id) => ratings.get(id) ?? 1).filter((value) => value > 0);
+  const mean = geometricMean(active);
+  if (!(mean > 0)) return;
+  for (const id of activeIds) {
+    ratings.set(id, (ratings.get(id) ?? 1) / mean);
+  }
+}
+
+/**
+ * Iterative attack–defence fit. Goals conceded are divided by the opponent's
+ * attack (and home advantage), so a 5–1 against a strong side moves defence
+ * less than the same score against a weak side.
+ */
+export function estimateOpponentAdjustedRates(
+  fixtures: FinishedFixtureRow[],
+  teamIds: number[],
+  homeAdvantage: number,
+  leagueAverage: number,
+  iterations = 24,
+): Map<number, OpponentAdjustedRates> {
+  const attackHome = new Map(teamIds.map((id) => [id, 1]));
+  const attackAway = new Map(teamIds.map((id) => [id, 1]));
+  const defenceHome = new Map(teamIds.map((id) => [id, 1]));
+  const defenceAway = new Map(teamIds.map((id) => [id, 1]));
+  const known = new Set(teamIds);
+  const matches = fixtures.filter((fixture) => known.has(fixture.team_h) && known.has(fixture.team_a));
+  const average = leagueAverage > 0 ? leagueAverage : 1.35;
+  const advantage = homeAdvantage > 0 ? homeAdvantage : 1;
+
+  if (matches.length) {
+    for (let iteration = 0; iteration < iterations; iteration += 1) {
+      const attackHomeNum = new Map(teamIds.map((id) => [id, 0]));
+      const attackHomeDen = new Map(teamIds.map((id) => [id, 0]));
+      const attackAwayNum = new Map(teamIds.map((id) => [id, 0]));
+      const attackAwayDen = new Map(teamIds.map((id) => [id, 0]));
+      const defenceHomeNum = new Map(teamIds.map((id) => [id, 0]));
+      const defenceHomeDen = new Map(teamIds.map((id) => [id, 0]));
+      const defenceAwayNum = new Map(teamIds.map((id) => [id, 0]));
+      const defenceAwayDen = new Map(teamIds.map((id) => [id, 0]));
+
+      for (const fixture of matches) {
+        const homeAttack = attackHome.get(fixture.team_h) ?? 1;
+        const awayAttack = attackAway.get(fixture.team_a) ?? 1;
+        const homeDefence = defenceHome.get(fixture.team_h) ?? 1;
+        const awayDefence = defenceAway.get(fixture.team_a) ?? 1;
+
+        attackHomeNum.set(fixture.team_h, (attackHomeNum.get(fixture.team_h) ?? 0) + fixture.team_h_score);
+        attackHomeDen.set(
+          fixture.team_h,
+          (attackHomeDen.get(fixture.team_h) ?? 0) + average * awayDefence * advantage,
+        );
+        defenceHomeNum.set(fixture.team_h, (defenceHomeNum.get(fixture.team_h) ?? 0) + fixture.team_a_score);
+        defenceHomeDen.set(
+          fixture.team_h,
+          (defenceHomeDen.get(fixture.team_h) ?? 0) + average * awayAttack,
+        );
+        attackAwayNum.set(fixture.team_a, (attackAwayNum.get(fixture.team_a) ?? 0) + fixture.team_a_score);
+        attackAwayDen.set(
+          fixture.team_a,
+          (attackAwayDen.get(fixture.team_a) ?? 0) + average * homeDefence,
+        );
+        defenceAwayNum.set(fixture.team_a, (defenceAwayNum.get(fixture.team_a) ?? 0) + fixture.team_h_score);
+        defenceAwayDen.set(
+          fixture.team_a,
+          (defenceAwayDen.get(fixture.team_a) ?? 0) + average * homeAttack * advantage,
+        );
+      }
+
+      const apply = (target: Map<number, number>, numerator: Map<number, number>, denominator: Map<number, number>) => {
+        for (const id of teamIds) {
+          const den = denominator.get(id) ?? 0;
+          const num = numerator.get(id) ?? 0;
+          target.set(id, den > 0 ? clamp(num / den, 0.2, 4) : 1);
+        }
+      };
+      apply(attackHome, attackHomeNum, attackHomeDen);
+      apply(attackAway, attackAwayNum, attackAwayDen);
+      apply(defenceHome, defenceHomeNum, defenceHomeDen);
+      apply(defenceAway, defenceAwayNum, defenceAwayDen);
+
+      const playedHome = teamIds.filter((id) => matches.some((fixture) => fixture.team_h === id));
+      const playedAway = teamIds.filter((id) => matches.some((fixture) => fixture.team_a === id));
+      normaliseRatingGroup(attackHome, playedHome);
+      normaliseRatingGroup(defenceHome, playedHome);
+      normaliseRatingGroup(attackAway, playedAway);
+      normaliseRatingGroup(defenceAway, playedAway);
+    }
+  }
+
+  return new Map(teamIds.map((id) => [id, {
+    attackHome: attackHome.get(id) ?? 1,
+    attackAway: attackAway.get(id) ?? 1,
+    defenceHome: defenceHome.get(id) ?? 1,
+    defenceAway: defenceAway.get(id) ?? 1,
+  }]));
+}
+
 export function deriveAttackDefenceRatings(
   fixtures: FinishedFixtureRow[],
   teams: TeamRatingRow[],
@@ -186,17 +297,23 @@ export function deriveAttackDefenceRatings(
   const totalMatches = fixtures.length;
   const leagueAverage = totalMatches > 0 ? totalGoals / (totalMatches * 2) : 1.35;
   const blend = clamp(params.fplStrengthBlend, 0, 1);
+  const adjusted = estimateOpponentAdjustedRates(
+    fixtures,
+    teams.map((team) => team.team_id),
+    params.homeAdvantage,
+    leagueAverage,
+  );
 
   const observed = teams.map((team) => {
     const record = stats.get(team.team_id)!;
-    const rate = (goals: number, matches: number) => (matches ? goals / matches / leagueAverage : 1);
+    const rates = adjusted.get(team.team_id)!;
     return {
       team,
       record,
-      attackHome: rate(record.homeGoalsFor, record.homeMatches),
-      attackAway: rate(record.awayGoalsFor, record.awayMatches),
-      defenceHome: rate(record.homeGoalsAgainst, record.homeMatches),
-      defenceAway: rate(record.awayGoalsAgainst, record.awayMatches),
+      attackHome: record.homeMatches ? rates.attackHome : 1,
+      attackAway: record.awayMatches ? rates.attackAway : 1,
+      defenceHome: record.homeMatches ? rates.defenceHome : 1,
+      defenceAway: record.awayMatches ? rates.defenceAway : 1,
     };
   });
 
