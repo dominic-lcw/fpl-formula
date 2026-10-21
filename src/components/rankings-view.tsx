@@ -159,7 +159,7 @@ export function RankingsView() {
             disabled={isLoading}
             className="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
           >
-            <RefreshCw size={15} /> Refresh
+            <RefreshCw size={15} className={isLoading ? "animate-spin" : undefined} /> Sync FPL
           </button>
         </div>
 
@@ -186,7 +186,9 @@ export function RankingsView() {
             <div>
               <CardTitle>Expected ranking</CardTitle>
               <p aria-live="polite" className="text-sm text-muted-foreground">
-                {isLoading && data ? "Updating rankings…" : `${data?.count ?? 0} eligible players`}
+                {isLoading && data
+                  ? "Syncing FPL data and updating rankings…"
+                  : `${data?.count ?? 0} eligible players${data?.syncedAt ? ` · FPL synced ${new Date(data.syncedAt).toLocaleString()}` : ""}`}
               </p>
             </div>
             <Settings2 size={18} className="text-muted-foreground" />

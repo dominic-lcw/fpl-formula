@@ -1,6 +1,8 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { shouldBootstrapRankings } from "@/lib/dashboard-nav";
 import { liveGameweekForRankings, type LiveGameweekStatus } from "@/lib/fpl-gameweeks";
 import type { Position, RankingParams } from "@/lib/fpl-types";
 import {
@@ -79,6 +81,7 @@ function buildSeasonLabel(
 }
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [params, setParams] = useState<RankingParams>(DEFAULT_PARAMS);
   const [data, setData] = useState<MosaicRankingData | null>(null);
   const [position, setPositionState] = useState<Position | "ALL">("ALL");
@@ -88,7 +91,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [pinnedPlayer, setPinnedPlayer] = useState<{ playerId: number; name: string } | null>(null);
   const [pinnedSnapshot, setPinnedSnapshot] = useState<PinnedPlayerSnapshot | null>(null);
   const [rankHistory, setRankHistory] = useState<Array<{ rank: number; score: number }>>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => shouldBootstrapRankings(pathname));
   const [error, setError] = useState<string | null>(null);
   const [liveGameweek, setLiveGameweek] = useState<LiveGameweekStatus | null>(null);
   const [syncSeason, setSyncSeason] = useState<string | null>(null);
@@ -96,6 +99,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const latestRequest = useRef(0);
   const previousPinnedRank = useRef<number | null>(null);
   const pinnedPlayerRef = useRef(pinnedPlayer);
+  const rankingsBootstrapped = useRef(false);
+  const initialPathname = useRef(pathname);
 
   useEffect(() => {
     pinnedPlayerRef.current = pinnedPlayer;
@@ -165,7 +170,10 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         setError(reason instanceof Error ? reason.message : "Unable to calculate rankings locally.");
       }
     } finally {
-      if (requestId === latestRequest.current) setIsLoading(false);
+      if (requestId === latestRequest.current) {
+        rankingsBootstrapped.current = true;
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -181,11 +189,23 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     }
     const timeout = window.setTimeout(() => {
       setParams(savedParams);
-      void loadRankings(savedParams, "ALL", "ALL");
       void loadLiveGameweek();
+      if (shouldBootstrapRankings(initialPathname.current)) {
+        void loadRankings(savedParams, "ALL", "ALL");
+      } else {
+        setIsLoading(false);
+      }
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [loadLiveGameweek, loadRankings]);
+
+  useEffect(() => {
+    if (!shouldBootstrapRankings(pathname)) return;
+    if (rankingsBootstrapped.current || isLoading) return;
+    void loadRankings(params, position, team, {
+      liveGameweek: showLiveData ? liveGameweekForRankings(liveGameweek) : null,
+    });
+  }, [pathname, params, position, team, showLiveData, liveGameweek, isLoading, loadRankings]);
 
   function updateParams(nextParams: RankingParams) {
     setParams(nextParams);
@@ -224,12 +244,30 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   }
 
   function refreshRankings() {
-    void loadLiveGameweek().then((nextLiveGameweek) => {
-      void loadRankings(params, position, team, {
-        refreshDataset: true,
-        liveGameweek: showLiveData ? liveGameweekForRankings(nextLiveGameweek) : null,
-      });
-    });
+    void (async () => {
+      const requestId = ++latestRequest.current;
+      setIsLoading(true);
+      setError(null);
+      try {
+        const syncResponse = await fetch("/api/sync", { method: "POST", cache: "no-store" });
+        const payload = await syncResponse.json().catch(() => ({})) as { error?: string };
+        if (!syncResponse.ok) {
+          throw new Error(payload.error ?? "Unable to sync latest FPL data.");
+        }
+        if (requestId !== latestRequest.current) return;
+
+        const nextLiveGameweek = await loadLiveGameweek();
+        await loadRankings(params, position, team, {
+          refreshDataset: true,
+          liveGameweek: showLiveData ? liveGameweekForRankings(nextLiveGameweek) : null,
+        });
+      } catch (reason) {
+        if (requestId === latestRequest.current) {
+          setError(reason instanceof Error ? reason.message : "Unable to refresh rankings.");
+          setIsLoading(false);
+        }
+      }
+    })();
   }
 
   function pinPlayer(player: RankedPlayerSuggestion | null) {

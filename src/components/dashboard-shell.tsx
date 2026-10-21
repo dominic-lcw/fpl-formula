@@ -56,9 +56,11 @@ function DashboardPanels({
 
   return (
     <>
-      <div className={panelClass(activeView, "rankings")} aria-hidden={activeView !== "rankings"}>
-        <RankingsView />
-      </div>
+      {mountedViews.has("rankings") ? (
+        <div className={panelClass(activeView, "rankings")} aria-hidden={activeView !== "rankings"}>
+          <RankingsView />
+        </div>
+      ) : null}
       {mountedViews.has("team") ? (
         <div className={panelClass(activeView, "team")} aria-hidden={activeView !== "team"}>
           <TeamAnalysisPanel

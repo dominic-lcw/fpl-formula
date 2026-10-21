@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dashboardViews, viewFromPathname, viewHref } from "../src/lib/dashboard-nav";
+import { dashboardViews, shouldBootstrapRankings, viewFromPathname, viewHref } from "../src/lib/dashboard-nav";
 
 describe("dashboard routes", () => {
   it("maps each sidebar tab to its own path", () => {
@@ -16,5 +16,14 @@ describe("dashboard routes", () => {
     expect(viewFromPathname("/rankings")).toBe("rankings");
     expect(viewFromPathname("/rankings/")).toBe("rankings");
     expect(viewFromPathname("/team/")).toBe("team");
+  });
+
+  it("only bootstraps rankings on the rankings routes", () => {
+    expect(shouldBootstrapRankings("/")).toBe(true);
+    expect(shouldBootstrapRankings(viewHref.rankings)).toBe(true);
+    expect(shouldBootstrapRankings(viewHref.team)).toBe(false);
+    expect(shouldBootstrapRankings(viewHref.tracker)).toBe(false);
+    expect(shouldBootstrapRankings(viewHref.forecast)).toBe(false);
+    expect(shouldBootstrapRankings(viewHref.news)).toBe(false);
   });
 });
