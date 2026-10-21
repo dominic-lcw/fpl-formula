@@ -117,6 +117,7 @@ function buildFixtureForecasts(
   leagueAverageGoals: number,
   homeAdvantage: number,
   params: ForecastParams,
+  forecastOptions: { preferOverallForm?: boolean } = {},
 ): FixtureForecast[] {
   return fixtures.map((fixture) => {
     const homeTeam = strengthById.get(fixture.team_h);
@@ -158,6 +159,7 @@ function buildFixtureForecasts(
       leagueAverageGoals,
       homeAdvantage,
       params,
+      forecastOptions,
     );
   });
 }
@@ -214,6 +216,8 @@ async function buildForecastData(
     ? upcomingFixtures.filter((fixture) => fixture.event === gameweek)
     : upcomingFixtures;
 
+  const preferOverallForm = meta.currentGameweek > 0 && meta.currentGameweek < 12;
+
   const forecasts = buildFixtureForecasts(
     simulationTargets,
     strengthById,
@@ -221,6 +225,7 @@ async function buildForecastData(
     leagueAverageGoals,
     homeAdvantage,
     params,
+    { preferOverallForm },
   );
 
   const availableGameweeks = fixtureEvents
