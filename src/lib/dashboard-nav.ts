@@ -20,6 +20,10 @@ export function viewFromPathname(pathname: string): DashboardView {
   return viewByPath[path] ?? "rankings";
 }
 
+export function shouldBootstrapRankings(pathname: string) {
+  return viewFromPathname(pathname) === "rankings";
+}
+
 export const viewMeta: Record<DashboardView, { title: string; description: string }> = {
   rankings: {
     title: "Player rankings, explained.",
