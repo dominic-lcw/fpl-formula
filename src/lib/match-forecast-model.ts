@@ -102,13 +102,6 @@ function normaliseFplStrength(value: number | null, baseline = 1000) {
   return clamp(value / baseline, 0.65, 1.35);
 }
 
-/** Fewer than four home or away games: pull venue ratings toward overall form. */
-function blendSparseVenueRating(rating: number, overall: number, venueMatches: number, minimumMatches = 4) {
-  if (venueMatches <= 0 || venueMatches >= minimumMatches) return rating;
-  const weight = venueMatches / minimumMatches;
-  return weight * rating + (1 - weight) * overall;
-}
-
 export type OpponentAdjustedRates = {
   attackHome: number;
   attackAway: number;
@@ -298,27 +291,10 @@ export function deriveAttackDefenceRatings(
       : (mixedDefenceHome + mixedDefenceAway) / 2;
     const attackOverall = clamp(attackOverallRaw, 0.45, 2.2);
     const defenceOverall = clamp(defenceOverallRaw, 0.45, 2.2);
-
-    const attackHome = clamp(
-      blendSparseVenueRating(mixedAttackHome, attackOverall, row.record.homeMatches),
-      0.45,
-      2.2,
-    );
-    const attackAway = clamp(
-      blendSparseVenueRating(mixedAttackAway, attackOverall, row.record.awayMatches),
-      0.45,
-      2.2,
-    );
-    const defenceHome = clamp(
-      blendSparseVenueRating(mixedDefenceHome, defenceOverall, row.record.homeMatches),
-      0.45,
-      2.2,
-    );
-    const defenceAway = clamp(
-      blendSparseVenueRating(mixedDefenceAway, defenceOverall, row.record.awayMatches),
-      0.45,
-      2.2,
-    );
+    const attackHome = clamp(mixedAttackHome, 0.45, 2.2);
+    const attackAway = clamp(mixedAttackAway, 0.45, 2.2);
+    const defenceHome = clamp(mixedDefenceHome, 0.45, 2.2);
+    const defenceAway = clamp(mixedDefenceAway, 0.45, 2.2);
 
     return {
       teamId: row.team.team_id,
@@ -346,14 +322,9 @@ export function expectedGoalsForFixture(
   awayTeam: TeamStrength,
   leagueAverageGoals: number,
   homeAdvantage: number,
-  options: { preferOverallForm?: boolean } = {},
 ) {
-  const homeAttack = options.preferOverallForm ? homeTeam.attackOverall : homeTeam.attackHome;
-  const awayAttack = options.preferOverallForm ? awayTeam.attackOverall : awayTeam.attackAway;
-  const homeDefence = options.preferOverallForm ? homeTeam.defenceOverall : homeTeam.defenceHome;
-  const awayDefence = options.preferOverallForm ? awayTeam.defenceOverall : awayTeam.defenceAway;
-  const lambdaHome = leagueAverageGoals * homeAttack * awayDefence * homeAdvantage;
-  const lambdaAway = leagueAverageGoals * awayAttack * homeDefence;
+  const lambdaHome = leagueAverageGoals * homeTeam.attackHome * awayTeam.defenceAway * homeAdvantage;
+  const lambdaAway = leagueAverageGoals * awayTeam.attackAway * homeTeam.defenceHome;
   return {
     lambdaHome: clamp(lambdaHome, 0.05, 4.5),
     lambdaAway: clamp(lambdaAway, 0.05, 4.5),
@@ -457,14 +428,12 @@ export function buildFixtureForecast(
   leagueAverageGoals: number,
   homeAdvantage: number,
   params: Pick<ForecastParams, "correlation" | "simulations">,
-  options: { preferOverallForm?: boolean } = {},
 ): FixtureForecast {
   const { lambdaHome, lambdaAway } = expectedGoalsForFixture(
     homeTeam,
     awayTeam,
     leagueAverageGoals,
     homeAdvantage,
-    options,
   );
   const simulation = runBivariatePoissonMonteCarlo(
     lambdaHome,
