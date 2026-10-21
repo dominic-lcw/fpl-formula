@@ -244,12 +244,30 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   }
 
   function refreshRankings() {
-    void loadLiveGameweek().then((nextLiveGameweek) => {
-      void loadRankings(params, position, team, {
-        refreshDataset: true,
-        liveGameweek: showLiveData ? liveGameweekForRankings(nextLiveGameweek) : null,
-      });
-    });
+    void (async () => {
+      const requestId = ++latestRequest.current;
+      setIsLoading(true);
+      setError(null);
+      try {
+        const syncResponse = await fetch("/api/sync", { method: "POST", cache: "no-store" });
+        const payload = await syncResponse.json().catch(() => ({})) as { error?: string };
+        if (!syncResponse.ok) {
+          throw new Error(payload.error ?? "Unable to sync latest FPL data.");
+        }
+        if (requestId !== latestRequest.current) return;
+
+        const nextLiveGameweek = await loadLiveGameweek();
+        await loadRankings(params, position, team, {
+          refreshDataset: true,
+          liveGameweek: showLiveData ? liveGameweekForRankings(nextLiveGameweek) : null,
+        });
+      } catch (reason) {
+        if (requestId === latestRequest.current) {
+          setError(reason instanceof Error ? reason.message : "Unable to refresh rankings.");
+          setIsLoading(false);
+        }
+      }
+    })();
   }
 
   function pinPlayer(player: RankedPlayerSuggestion | null) {
