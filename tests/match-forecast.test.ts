@@ -5,7 +5,6 @@ import {
   estimateOpponentAdjustedRates,
   expectedGoalsForFixture,
   expectedValue,
-  jamesSteinShrink,
   modelProbabilityForMarket,
   runBivariatePoissonMonteCarlo,
 } from "../src/lib/match-forecast-model";
@@ -132,51 +131,6 @@ describe("match forecast model", () => {
     const concededToWeakAttack = rates.get(2)!.defenceHome;
     expect(concededToStrong).toBeLessThan(concededToWeakAttack);
     expect(rates.get(1)!.attackHome).toBeGreaterThan(rates.get(4)!.attackHome);
-  });
-
-  it("shrinks extreme one-match ratings toward the group mean", () => {
-    const observations = [
-      { value: 2.4, matches: 1 },
-      { value: 0.35, matches: 1 },
-      { value: 1.05, matches: 1 },
-      { value: 0.95, matches: 1 },
-    ];
-    const shrunk = jamesSteinShrink(observations, 1.4);
-    const mean = observations.reduce((sum, item) => sum + item.value, 0) / observations.length;
-    const shrunkMean = shrunk.reduce((sum, value) => sum + value, 0) / shrunk.length;
-    expect(shrunkMean).toBeCloseTo(mean, 6);
-    expect(shrunk[0]).toBeGreaterThan(mean);
-    expect(shrunk[0]).toBeLessThan(observations[0]!.value);
-    expect(Math.max(...shrunk) - Math.min(...shrunk)).toBeGreaterThan(0.05);
-  });
-
-  it("pulls one-game home attack ratings together once enough teams have played", () => {
-    const names = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
-    const squads = names.map((name, index) => ({
-      team_id: index + 1,
-      name,
-      short_name: name,
-      strength_attack_home: 1000,
-      strength_attack_away: 1000,
-      strength_defence_home: 1000,
-      strength_defence_away: 1000,
-    }));
-    const scores: Array<[number, number]> = [[2, 1], [2, 1], [1, 1], [1, 1], [1, 2], [0, 1]];
-    const played = scores.map(([home, away], index) => ({
-      fixture_id: index + 1,
-      event: 1,
-      kickoff_time: null,
-      team_h: index * 2 + 1,
-      team_a: index * 2 + 2,
-      team_h_score: home,
-      team_a_score: away,
-    }));
-    const { strengths } = deriveAttackDefenceRatings(played, squads, {
-      ...DEFAULT_FORECAST_PARAMS,
-      fplStrengthBlend: 0,
-    });
-    const homeAttack = [1, 5, 11].map((teamId) => strengths.find((team) => team.teamId === teamId)!.attackHome);
-    expect(Math.abs(homeAttack[0]! - homeAttack[2]!)).toBeLessThan(0.05);
   });
 
   it("calculates expected value from model probability and odds", () => {

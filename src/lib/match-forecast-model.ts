@@ -102,42 +102,6 @@ function normaliseFplStrength(value: number | null, baseline = 1000) {
   return clamp(value / baseline, 0.65, 1.35);
 }
 
-/** Scale down classic James–Stein (p − 3) so short early-season samples shrink gently. */
-const JAMES_STEIN_INTENSITY = 0.85;
-
-/**
- * Positive-part James–Stein shrinkage toward the match-weighted mean of the group.
- * Sampling variance of an index is approximated as 1 / (matches × league average goals).
- */
-export function jamesSteinShrink(
-  observations: Array<{ value: number; matches: number }>,
-  leagueAverageGoals: number,
-): number[] {
-  const shrunk = observations.map((observation) => observation.value);
-  if (!(leagueAverageGoals > 0)) return shrunk;
-
-  const eligible = observations
-    .map((observation, index) => ({ ...observation, index }))
-    .filter((observation) => observation.matches > 0 && Number.isFinite(observation.value));
-  if (eligible.length < 4) return shrunk;
-
-  const weights = eligible.map((observation) => observation.matches * leagueAverageGoals);
-  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
-  const mean = eligible.reduce((sum, observation, index) => sum + weights[index]! * observation.value, 0) / weightSum;
-
-  let sumSquares = 0;
-  for (let index = 0; index < eligible.length; index += 1) {
-    sumSquares += weights[index]! * (eligible[index]!.value - mean) ** 2;
-  }
-  if (!(sumSquares > 0)) return shrunk;
-
-  const factor = Math.max(0, 1 - (JAMES_STEIN_INTENSITY * (eligible.length - 3)) / sumSquares);
-  for (const observation of eligible) {
-    shrunk[observation.index] = mean + factor * (observation.value - mean);
-  }
-  return shrunk;
-}
-
 /** Fewer than four home or away games: pull venue ratings toward overall form. */
 function blendSparseVenueRating(rating: number, overall: number, venueMatches: number, minimumMatches = 4) {
   if (venueMatches <= 0 || venueMatches >= minimumMatches) return rating;
@@ -317,32 +281,15 @@ export function deriveAttackDefenceRatings(
     };
   });
 
-  const shrunkAttackHome = jamesSteinShrink(
-    observed.map((row) => ({ value: row.attackHome, matches: row.record.homeMatches })),
-    leagueAverage,
-  );
-  const shrunkAttackAway = jamesSteinShrink(
-    observed.map((row) => ({ value: row.attackAway, matches: row.record.awayMatches })),
-    leagueAverage,
-  );
-  const shrunkDefenceHome = jamesSteinShrink(
-    observed.map((row) => ({ value: row.defenceHome, matches: row.record.homeMatches })),
-    leagueAverage,
-  );
-  const shrunkDefenceAway = jamesSteinShrink(
-    observed.map((row) => ({ value: row.defenceAway, matches: row.record.awayMatches })),
-    leagueAverage,
-  );
-
   const mix = (value: number, fplStrength: number | null) =>
     value * (1 - blend) + normaliseFplStrength(fplStrength) * blend;
 
-  const strengths: TeamStrength[] = observed.map((row, index) => {
+  const strengths: TeamStrength[] = observed.map((row) => {
     const matchesPlayed = row.record.homeMatches + row.record.awayMatches;
-    const mixedAttackHome = mix(shrunkAttackHome[index]!, row.team.strength_attack_home);
-    const mixedAttackAway = mix(shrunkAttackAway[index]!, row.team.strength_attack_away);
-    const mixedDefenceHome = mix(shrunkDefenceHome[index]!, row.team.strength_defence_home);
-    const mixedDefenceAway = mix(shrunkDefenceAway[index]!, row.team.strength_defence_away);
+    const mixedAttackHome = mix(row.attackHome, row.team.strength_attack_home);
+    const mixedAttackAway = mix(row.attackAway, row.team.strength_attack_away);
+    const mixedDefenceHome = mix(row.defenceHome, row.team.strength_defence_home);
+    const mixedDefenceAway = mix(row.defenceAway, row.team.strength_defence_away);
     const attackOverallRaw = matchesPlayed
       ? (mixedAttackHome * row.record.homeMatches + mixedAttackAway * row.record.awayMatches) / matchesPlayed
       : (mixedAttackHome + mixedAttackAway) / 2;
