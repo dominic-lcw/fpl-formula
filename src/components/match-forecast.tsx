@@ -99,8 +99,13 @@ function predictedWinner(fixture: FixtureForecast) {
     { label: `${fixture.homeShortName} win`, prob: fixture.homeWinProb },
     { label: "Draw", prob: fixture.drawProb },
     { label: `${fixture.awayShortName} win`, prob: fixture.awayWinProb },
-  ];
-  return outcomes.sort((left, right) => right.prob - left.prob)[0]!;
+  ].sort((left, right) => right.prob - left.prob);
+  const top = outcomes[0]!;
+  const second = outcomes[1]!;
+  if (top.prob < 0.5 || top.prob - second.prob < 0.08) {
+    return { label: `No clear favourite (${top.label.toLowerCase()} ${formatPercent(top.prob)})`, prob: top.prob };
+  }
+  return top;
 }
 
 function mostLikelyScoreline(fixture: FixtureForecast) {
