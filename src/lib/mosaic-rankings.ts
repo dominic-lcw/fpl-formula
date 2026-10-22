@@ -1,12 +1,10 @@
 import type { Position, RankingParams } from "@/lib/fpl-types";
 import {
   attackConSumSql,
-  fixtureComponentSql,
   fixtureMatchScoreSql,
   fixtureOutlookSql,
   fplBonusSumSql,
   individualRawSql,
-  liveSampleGameweeksSql,
   teamAttackSelectSql,
   teamDefenceSelectSql,
   teamRawSql,
@@ -304,11 +302,7 @@ function rankingQuery(
         p.*,
         ${individualRawSql("p")} AS individual_raw,
         ${teamRawSql("p.position", "tf.attack", "tf.defence")} AS team_raw,
-        ${fixtureComponentSql(
-          "coalesce(fm.fixture_outlook, 0)",
-          "p.minutes",
-          liveSampleGameweeksSql("c.current_gameweek", params.formWindow),
-        )} AS fixture_raw,
+        coalesce(fm.fixture_outlook, 0) AS fixture_raw,
         coalesce(fm.next_fixtures, '—') AS next_fixtures
       FROM player_features p
       CROSS JOIN context c

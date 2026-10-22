@@ -3,12 +3,13 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
-  backtestSampleGameweeksSql,
   fixtureMatchScoreSql,
+  formGameweekStart,
+  fixtureHorizonEnd,
+  fixtureHorizonStart,
   FORMULA,
   fplBonusSumSql,
   individualRawSql,
-  liveSampleGameweeksSql,
 } from "../src/lib/formula";
 import { buildMultiFormulaBacktestQuery, TRACKER_PRESET_STRATEGIES } from "../src/lib/formula-tracking-data";
 
@@ -31,18 +32,15 @@ describe("shared individual expression", () => {
     expect(backtest).toContain(`* ${FORMULA.teamDefcon}`);
     expect(backtest).toContain(`* ${FORMULA.teamAttackCon}`);
     expect(backtest).toContain(fixtureMatchScoreSql("u.difficulty", "u.was_home"));
-    expect(backtest).toContain(backtestSampleGameweeksSql("pf.target_gw", "s.form_window"));
     expect(backtest).not.toContain("avg((6 - difficulty");
     expect(backtest).not.toContain("max(fixture_raw) OVER");
+    expect(backtest).not.toContain("minutesPerGameweek");
   });
 
-  it("counts the same finished gameweeks the ranking query samples", () => {
-    expect(liveSampleGameweeksSql("c.current_gameweek", 3)).toBe(
-      "(c.current_gameweek - greatest(1, c.current_gameweek - 2) + 1)",
-    );
-    expect(backtestSampleGameweeksSql("pf.target_gw", "s.form_window")).toBe(
-      "(pf.target_gw - greatest(1, pf.target_gw - s.form_window))",
-    );
+  it("derives inclusive Gameweek ranges from the snapshot Gameweek", () => {
+    expect(formGameweekStart(12, 5)).toBe(8);
+    expect(fixtureHorizonStart(12)).toBe(13);
+    expect(fixtureHorizonEnd(12, 3)).toBe(15);
   });
 
   it("sums official FPL bonus for display columns only", () => {

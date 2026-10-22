@@ -3,7 +3,9 @@ import type { RankingParams } from "@/lib/fpl-types";
 import {
   FIXTURE_FORMULA_NOTE,
   FIXTURE_FORMULA_TEXT,
-  FORMULA,
+  fixtureHorizonEnd,
+  fixtureHorizonStart,
+  formGameweekStart,
   INDIVIDUAL_FORMULA_NOTE,
   INDIVIDUAL_FORMULA_TEXT,
   TEAM_FORMULA_NOTE,
@@ -15,7 +17,18 @@ const weightLabels = [
   { key: "fixtures", label: "Fixture outlook", symbol: "F" },
 ] as const;
 
-export function ScoreFormula({ params }: { params: RankingParams }) {
+export type ScoreFormulaDataContext = {
+  currentGameweek: number;
+  includesLiveGameweek: boolean;
+};
+
+export function ScoreFormula({
+  params,
+  dataContext,
+}: {
+  params: RankingParams;
+  dataContext?: ScoreFormulaDataContext | null;
+}) {
   const totalWeight =
     params.weights.individual +
       params.weights.team +
@@ -24,6 +37,14 @@ export function ScoreFormula({ params }: { params: RankingParams }) {
     params.weights.individual +
       params.weights.team +
       params.weights.fixtures === 0;
+
+  const currentGameweek =
+    dataContext && dataContext.currentGameweek > 0 ? dataContext.currentGameweek : null;
+  const formStart =
+    currentGameweek != null ? formGameweekStart(currentGameweek, params.formWindow) : null;
+  const fixtureStart = currentGameweek != null ? fixtureHorizonStart(currentGameweek) : null;
+  const fixtureEnd =
+    currentGameweek != null ? fixtureHorizonEnd(currentGameweek, params.fixtureHorizon) : null;
 
   return (
     <details className="group">
@@ -74,8 +95,48 @@ export function ScoreFormula({ params }: { params: RankingParams }) {
           <section>
             <h3 className="font-medium">Scoring window and eligibility</h3>
             <ul className="mt-2 grid gap-1.5 leading-6 text-muted-foreground">
-              <li>Recent player and team form: the last {params.formWindow} completed Gameweek{params.formWindow === 1 ? "" : "s"}.</li>
-              <li>Fixture outlook, including home advantage: the next {params.fixtureHorizon} Gameweek{params.fixtureHorizon === 1 ? "" : "s"}.</li>
+              {currentGameweek != null && formStart != null ? (
+                <li>
+                  <span className="text-foreground">Player form (I)</span>: FPL stats summed from{" "}
+                  <span className="font-mono text-foreground">GW{formStart}–GW{currentGameweek}</span>
+                  {dataContext?.includesLiveGameweek
+                    ? " (live toggle on — includes partial stats from the in-progress Gameweek)."
+                    : " (through the latest finished Gameweek only)."}
+                </li>
+              ) : (
+                <li>
+                  Player form (I): the last {params.formWindow} Gameweek{params.formWindow === 1 ? "" : "s"}{" "}
+                  ending at the snapshot Gameweek shown in the header.
+                </li>
+              )}
+              {currentGameweek != null && fixtureStart != null && fixtureEnd != null ? (
+                <li>
+                  <span className="text-foreground">Fixture outlook (F)</span>: scheduled matches in{" "}
+                  <span className="font-mono text-foreground">
+                    GW{fixtureStart}
+                    {fixtureEnd > fixtureStart ? `–GW${fixtureEnd}` : ""}
+                  </span>{" "}
+                  ({params.fixtureHorizon} Gameweek horizon slot{params.fixtureHorizon === 1 ? "" : "s"}).
+                </li>
+              ) : (
+                <li>
+                  Fixture outlook (F): the next {params.fixtureHorizon} Gameweek
+                  {params.fixtureHorizon === 1 ? "" : "s"} after the snapshot Gameweek.
+                </li>
+              )}
+              {currentGameweek != null && formStart != null ? (
+                <li>
+                  <span className="text-foreground">Team form (T)</span>: finished match results from{" "}
+                  <span className="font-mono text-foreground">GW{formStart}–GW{currentGameweek}</span>{" "}
+                  (unfinished fixtures are excluded even when live data is on).
+                </li>
+              ) : (
+                <li>Team form (T): finished match results over the same form window as player stats.</li>
+              )}
+              <li>
+                Last-season prior in I uses the previous campaign (450+ minutes) and does not depend on the
+                current Gameweek window.
+              </li>
               <li>Only players with at least {params.minMinutes} minutes in the form window are ranked.</li>
             </ul>
           </section>

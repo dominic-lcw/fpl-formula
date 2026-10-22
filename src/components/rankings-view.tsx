@@ -177,7 +177,17 @@ export function RankingsView() {
 
         <Card className="mb-4">
           <CardContent>
-            <ScoreFormula params={params} />
+            <ScoreFormula
+              params={params}
+              dataContext={
+                data?.currentGameweek
+                  ? {
+                      currentGameweek: data.currentGameweek,
+                      includesLiveGameweek: data.includesLiveGameweek,
+                    }
+                  : null
+              }
+            />
           </CardContent>
         </Card>
 
