@@ -3,6 +3,7 @@ import {
   buildFixtureForecast,
   DEFAULT_FORECAST_PARAMS,
   deriveAttackDefenceRatings,
+  forecastRatingGameweekStart,
   type FinishedFixtureRow,
   type FixtureForecast,
   type ForecastParams,
@@ -35,7 +36,11 @@ type SeasonMeta = {
 
 export type ForecastData = {
   season: string | null;
+  /** Latest finished Gameweek in the hydrated season (ratings use fixtures through here). */
   currentGameweek: number | null;
+  ratingGameweekStart: number | null;
+  ratingGameweekEnd: number | null;
+  finishedFixturesUsed: number;
   leagueAverageGoals: number | null;
   homeAdvantage: number;
   teamStrengths: TeamStrength[];
@@ -53,6 +58,9 @@ const FORECAST_CACHE_TTL_MS = 5 * 60 * 1000;
 const EMPTY_FORECAST: ForecastData = {
   season: null,
   currentGameweek: null,
+  ratingGameweekStart: null,
+  ratingGameweekEnd: null,
+  finishedFixturesUsed: 0,
   leagueAverageGoals: null,
   homeAdvantage: DEFAULT_FORECAST_PARAMS.homeAdvantage,
   teamStrengths: [],
@@ -231,6 +239,11 @@ async function buildForecastData(
   return {
     season: meta.season,
     currentGameweek: meta.currentGameweek,
+    ratingGameweekStart: meta.currentGameweek > 0
+      ? forecastRatingGameweekStart(meta.currentGameweek, params.lookbackGameweeks)
+      : null,
+    ratingGameweekEnd: meta.currentGameweek > 0 ? meta.currentGameweek : null,
+    finishedFixturesUsed: finishedFixtures.length,
     leagueAverageGoals,
     homeAdvantage,
     teamStrengths: strengths,

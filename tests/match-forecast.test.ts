@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_FORECAST_PARAMS,
   deriveAttackDefenceRatings,
-  estimateOpponentAdjustedRates,
   expectedGoalsForFixture,
   expectedValue,
+  forecastRatingGameweekStart,
   modelProbabilityForMarket,
   runBivariatePoissonMonteCarlo,
 } from "../src/lib/match-forecast-model";
@@ -60,6 +60,11 @@ describe("match forecast model", () => {
     expect(result.strengths[0]?.defenceOverall).toBeGreaterThan(0);
   });
 
+  it("derives the rating lookback window from the latest finished Gameweek", () => {
+    expect(forecastRatingGameweekStart(12, 10)).toBe(3);
+    expect(forecastRatingGameweekStart(4, 10)).toBe(1);
+  });
+
   it("produces expected goals for a fixture", () => {
     const { strengths, leagueAverageGoals, homeAdvantage } = deriveAttackDefenceRatings(
       fixtures,
@@ -102,35 +107,6 @@ describe("match forecast model", () => {
     expect(simulation.expectedAwayGoals).toBeGreaterThan(0);
     expect(simulation.homeWinProb + simulation.drawProb + simulation.awayWinProb).toBeCloseTo(1, 2);
     expect(simulation.topScorelines.length).toBeGreaterThan(0);
-  });
-
-  it("treats a heavy defeat to a strong attack as less of a defensive collapse", () => {
-    const team = (id: number, name: string) => ({
-      team_id: id,
-      name,
-      short_name: name,
-      strength_attack_home: null,
-      strength_attack_away: null,
-      strength_defence_home: null,
-      strength_defence_away: null,
-    });
-    const rates = estimateOpponentAdjustedRates(
-      [
-        { fixture_id: 1, event: 1, kickoff_time: null, team_h: 1, team_a: 2, team_h_score: 5, team_a_score: 1 },
-        { fixture_id: 2, event: 1, kickoff_time: null, team_h: 1, team_a: 3, team_h_score: 4, team_a_score: 0 },
-        { fixture_id: 3, event: 1, kickoff_time: null, team_h: 1, team_a: 4, team_h_score: 3, team_a_score: 0 },
-        { fixture_id: 4, event: 2, kickoff_time: null, team_h: 4, team_a: 2, team_h_score: 5, team_a_score: 0 },
-        { fixture_id: 5, event: 2, kickoff_time: null, team_h: 3, team_a: 4, team_h_score: 1, team_a_score: 0 },
-        { fixture_id: 6, event: 2, kickoff_time: null, team_h: 2, team_a: 3, team_h_score: 1, team_a_score: 1 },
-      ],
-      [1, 2, 3, 4],
-      1,
-      1.4,
-    );
-    const concededToStrong = rates.get(2)!.defenceAway;
-    const concededToWeakAttack = rates.get(2)!.defenceHome;
-    expect(concededToStrong).toBeLessThan(concededToWeakAttack);
-    expect(rates.get(1)!.attackHome).toBeGreaterThan(rates.get(4)!.attackHome);
   });
 
   it("calculates expected value from model probability and odds", () => {

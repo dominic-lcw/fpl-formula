@@ -21,12 +21,16 @@ import type { GameweekBookedPnl } from "@/lib/booked-pnl";
 import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
 import { buildMatchdayOnePager } from "@/lib/matchday-one-pager";
+import { MatchForecastFormula } from "@/components/match-forecast-formula";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
 
 type ForecastResponse = {
   season: string | null;
   currentGameweek: number | null;
+  ratingGameweekStart: number | null;
+  ratingGameweekEnd: number | null;
+  finishedFixturesUsed: number;
   leagueAverageGoals: number | null;
   homeAdvantage: number;
   teamStrengths: TeamStrength[];
@@ -480,7 +484,14 @@ function TeamStrengthsPanel({
           Team attack &amp; defence strength
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          {data.season} · GW{data.currentGameweek ?? "?"} · league avg {data.leagueAverageGoals?.toFixed(2) ?? "—"} goals per team per match
+          {data.season} · ratings from{" "}
+          {data.ratingGameweekStart != null && data.ratingGameweekEnd != null
+            ? data.ratingGameweekStart === data.ratingGameweekEnd
+              ? `GW${data.ratingGameweekEnd}`
+              : `GW${data.ratingGameweekStart}–GW${data.ratingGameweekEnd}`
+            : `GW${data.currentGameweek ?? "?"}`}{" "}
+          ({data.finishedFixturesUsed} finished matches) · league avg{" "}
+          {data.leagueAverageGoals?.toFixed(2) ?? "—"} goals per team per match
         </p>
       </CardHeader>
       <CardContent className="overflow-x-auto">
@@ -1235,7 +1246,24 @@ export function MatchForecastPanel() {
   return (
     <section className="grid gap-5">
       <div className="grid gap-5 xl:grid-cols-[285px_1fr]">
-      <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
+      <div className="grid gap-5">
+        <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
+        <MatchForecastFormula
+          params={params}
+          context={
+            data.season && data.ratingGameweekEnd
+              ? {
+                  season: data.season,
+                  ratingGameweekStart: data.ratingGameweekStart ?? data.ratingGameweekEnd,
+                  ratingGameweekEnd: data.ratingGameweekEnd,
+                  finishedFixturesUsed: data.finishedFixturesUsed,
+                  leagueAverageGoals: data.leagueAverageGoals,
+                  selectedForecastGameweek: subView === "fixtures" || subView === "bookings" ? resolvedGameweek : null,
+                }
+              : null
+          }
+        />
+      </div>
 
       <div className="grid gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
