@@ -206,6 +206,7 @@ async function buildForecastData(
       `SELECT
          p.team_id,
          s.was_home,
+         s.event,
          coalesce(s.expected_goals, 0) + coalesce(s.expected_assists, 0) AS xgi,
          coalesce(s.threat, 0) + coalesce(s.creativity, 0) AS attack_con,
          coalesce(s.defensive_contribution, 0) AS defcon,
@@ -243,6 +244,7 @@ async function buildForecastData(
     playerFormulaRows.map((row) => ({
       team_id: row.team_id,
       was_home: Boolean(row.was_home),
+      event: Number(row.event ?? 0),
       xgi: Number(row.xgi ?? 0),
       attack_con: Number(row.attack_con ?? 0),
       defcon: Number(row.defcon ?? 0),

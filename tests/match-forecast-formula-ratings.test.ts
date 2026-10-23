@@ -2,48 +2,129 @@ import { describe, expect, it } from "vitest";
 import { deriveAttackDefenceRatings } from "../src/lib/match-forecast-model";
 import {
   buildFormulaVenueMultipliers,
+  buildVenueBuckets,
+  forecastRecencyWeight,
   ridgeRegression,
   teamFormulaAttackRaw,
   teamFormulaDefenceRaw,
+  weightedAttackRate,
+  type ForecastSampleOptions,
 } from "../src/lib/match-forecast-formula-ratings";
+
+const defaultSample: ForecastSampleOptions = {
+  ratingEndGameweek: 7,
+  recencyHalfLifeGameweeks: 4,
+  attackGoalsCap: 3,
+};
+
+function sampleBucket(overrides: Partial<{
+  weightSum: number;
+  weightedPoints: number;
+  weightedScoredForAttack: number;
+  weightedConceded: number;
+  xgi: number;
+  attackCon: number;
+  defcon: number;
+}>) {
+  return {
+    weightSum: 1,
+    weightedPoints: 3,
+    weightedScored: 2,
+    weightedScoredForAttack: 2,
+    weightedConceded: 0,
+    xgi: 0,
+    attackCon: 0,
+    defcon: 0,
+    xgc: 0,
+    minutes: 0,
+    playerWeightSum: 0,
+    ...overrides,
+  };
+}
 
 describe("match forecast formula ratings", () => {
   it("builds attack raw from xGI and attack contribution like rankings team form", () => {
-    const raw = teamFormulaAttackRaw({
-      matchPoints: [3],
-      scored: [2],
-      conceded: [0],
-      xgi: 2.5,
-      attackCon: 200,
-      defcon: 0,
-      xgc: 0,
-      minutes: 90,
-    });
+    const raw = teamFormulaAttackRaw(sampleBucket({ xgi: 2.5, attackCon: 200 }));
     expect(raw).toBeGreaterThan(3);
   });
 
   it("builds defence raw from conceded goals and defcon", () => {
-    const leaky = teamFormulaDefenceRaw({
-      matchPoints: [0],
-      scored: [0],
-      conceded: [3],
-      xgi: 0,
-      attackCon: 0,
-      defcon: 40,
-      xgc: 1.2,
-      minutes: 90,
-    });
-    const solid = teamFormulaDefenceRaw({
-      matchPoints: [3],
-      scored: [1],
-      conceded: [0],
-      xgi: 0,
-      attackCon: 0,
-      defcon: 90,
-      xgc: 0.4,
-      minutes: 90,
-    });
+    const leaky = teamFormulaDefenceRaw(sampleBucket({ weightedConceded: 3, defcon: 40 }));
+    const solid = teamFormulaDefenceRaw(sampleBucket({ weightedPoints: 3, weightedConceded: 0, defcon: 90 }));
     expect(solid).toBeGreaterThan(leaky);
+  });
+
+  it("down-weights old blowout wins for attack rate", () => {
+    const options = defaultSample;
+    const buckets = buildVenueBuckets(
+      [
+        {
+          fixture_id: 1,
+          event: 2,
+          kickoff_time: null,
+          team_h: 16,
+          team_a: 12,
+          team_h_score: 5,
+          team_a_score: 2,
+        },
+        {
+          fixture_id: 2,
+          event: 6,
+          kickoff_time: null,
+          team_h: 16,
+          team_a: 19,
+          team_h_score: 1,
+          team_a_score: 1,
+        },
+        {
+          fixture_id: 3,
+          event: 4,
+          kickoff_time: null,
+          team_h: 16,
+          team_a: 15,
+          team_h_score: 0,
+          team_a_score: 1,
+        },
+      ],
+      [],
+      options,
+    );
+    const equalWeight = buildVenueBuckets(
+      [
+        {
+          fixture_id: 1,
+          event: 2,
+          kickoff_time: null,
+          team_h: 16,
+          team_a: 12,
+          team_h_score: 5,
+          team_a_score: 2,
+        },
+        {
+          fixture_id: 2,
+          event: 6,
+          kickoff_time: null,
+          team_h: 16,
+          team_a: 19,
+          team_h_score: 1,
+          team_a_score: 1,
+        },
+        {
+          fixture_id: 3,
+          event: 4,
+          kickoff_time: null,
+          team_h: 16,
+          team_a: 15,
+          team_h_score: 0,
+          team_a_score: 1,
+        },
+      ],
+      [],
+      { ...options, recencyHalfLifeGameweeks: 0, attackGoalsCap: 0 },
+    );
+    const home = buckets.get("16:H")!;
+    const homeEqual = equalWeight.get("16:H")!;
+    expect(weightedAttackRate(home, 1.35)).toBeLessThan(weightedAttackRate(homeEqual, 1.35));
   });
 
   it("uses player xGI and AtkCon when formula blend is on", () => {
@@ -78,12 +159,19 @@ describe("match forecast formula ratings", () => {
         team_a_score: 1,
       },
     ];
-    const params = { homeAdvantage: 1.1, fplStrengthBlend: 0, formulaStrengthBlend: 1 };
+    const params = {
+      homeAdvantage: 1.1,
+      fplStrengthBlend: 0,
+      formulaStrengthBlend: 1,
+      recencyHalfLifeGameweeks: 0,
+      attackGoalsCap: 0,
+    };
     const withoutPlayerStats = deriveAttackDefenceRatings(fixtures, teams, params, []);
     const withPlayerStats = deriveAttackDefenceRatings(fixtures, teams, params, [
       {
         team_id: 1,
         was_home: true,
+        event: 1,
         xgi: 4,
         attack_con: 500,
         defcon: 10,
@@ -94,6 +182,11 @@ describe("match forecast formula ratings", () => {
     const homeWithout = withoutPlayerStats.strengths.find((team) => team.teamId === 1)!.attackHome;
     const homeWith = withPlayerStats.strengths.find((team) => team.teamId === 1)!.attackHome;
     expect(homeWith).toBeGreaterThan(homeWithout);
+  });
+
+  it("decays weight for older gameweeks", () => {
+    expect(forecastRecencyWeight(7, 7, 4)).toBe(1);
+    expect(forecastRecencyWeight(2, 7, 4)).toBeLessThan(forecastRecencyWeight(6, 7, 4));
   });
 
   it("fits ridge regression when enough samples exist", () => {
@@ -151,6 +244,7 @@ describe("match forecast formula ratings", () => {
       [],
       1.35,
       0.5,
+      defaultSample,
     );
     expect(map.get(1)?.attackHome).toBeGreaterThan(0);
     expect(map.get(2)?.defenceAway).toBeGreaterThan(0);

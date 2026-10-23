@@ -4,6 +4,7 @@ import type { FinishedFixtureRow, TeamRatingRow } from "@/lib/match-forecast-mod
 export type PlayerFixtureFormulaRow = {
   team_id: number;
   was_home: boolean;
+  event: number;
   xgi: number;
   attack_con: number;
   defcon: number;
@@ -11,15 +12,24 @@ export type PlayerFixtureFormulaRow = {
   expected_goals_conceded: number;
 };
 
+export type ForecastSampleOptions = {
+  ratingEndGameweek: number;
+  recencyHalfLifeGameweeks: number;
+  attackGoalsCap: number;
+};
+
 type VenueBucket = {
-  matchPoints: number[];
-  scored: number[];
-  conceded: number[];
+  weightSum: number;
+  weightedPoints: number;
+  weightedScored: number;
+  weightedScoredForAttack: number;
+  weightedConceded: number;
   xgi: number;
   attackCon: number;
   defcon: number;
   xgc: number;
   minutes: number;
+  playerWeightSum: number;
 };
 
 type DefenceSample = {
@@ -33,15 +43,33 @@ type DefenceSample = {
 
 function emptyBucket(): VenueBucket {
   return {
-    matchPoints: [],
-    scored: [],
-    conceded: [],
+    weightSum: 0,
+    weightedPoints: 0,
+    weightedScored: 0,
+    weightedScoredForAttack: 0,
+    weightedConceded: 0,
     xgi: 0,
     attackCon: 0,
     defcon: 0,
     xgc: 0,
     minutes: 0,
+    playerWeightSum: 0,
   };
+}
+
+export function forecastRecencyWeight(
+  event: number | null | undefined,
+  ratingEndGameweek: number,
+  halfLifeGameweeks: number,
+) {
+  if (!halfLifeGameweeks || halfLifeGameweeks <= 0 || !event || !ratingEndGameweek) return 1;
+  const age = Math.max(0, ratingEndGameweek - event);
+  return 0.5 ** (age / halfLifeGameweeks);
+}
+
+export function capGoalsForAttackRate(goals: number, cap: number) {
+  if (!cap || cap <= 0) return goals;
+  return Math.min(goals, cap);
 }
 
 function matchPointsFor(teamScore: number, oppScore: number) {
@@ -57,6 +85,7 @@ export function venueKey(teamId: number, wasHome: boolean) {
 export function buildVenueBuckets(
   fixtures: FinishedFixtureRow[],
   playerRows: PlayerFixtureFormulaRow[],
+  options: ForecastSampleOptions,
 ) {
   const buckets = new Map<string, VenueBucket>();
 
@@ -67,34 +96,54 @@ export function buildVenueBuckets(
   };
 
   for (const fixture of fixtures) {
+    const event = fixture.event ?? options.ratingEndGameweek;
+    const weight = forecastRecencyWeight(event, options.ratingEndGameweek, options.recencyHalfLifeGameweeks);
     const home = ensure(fixture.team_h, true);
     const away = ensure(fixture.team_a, false);
-    home.matchPoints.push(matchPointsFor(fixture.team_h_score, fixture.team_a_score));
-    home.scored.push(fixture.team_h_score);
-    home.conceded.push(fixture.team_a_score);
-    away.matchPoints.push(matchPointsFor(fixture.team_a_score, fixture.team_h_score));
-    away.scored.push(fixture.team_a_score);
-    away.conceded.push(fixture.team_h_score);
+    const homeAttackGoals = capGoalsForAttackRate(fixture.team_h_score, options.attackGoalsCap);
+    const awayAttackGoals = capGoalsForAttackRate(fixture.team_a_score, options.attackGoalsCap);
+
+    home.weightSum += weight;
+    home.weightedPoints += weight * matchPointsFor(fixture.team_h_score, fixture.team_a_score);
+    home.weightedScored += weight * fixture.team_h_score;
+    home.weightedScoredForAttack += weight * homeAttackGoals;
+    home.weightedConceded += weight * fixture.team_a_score;
+
+    away.weightSum += weight;
+    away.weightedPoints += weight * matchPointsFor(fixture.team_a_score, fixture.team_h_score);
+    away.weightedScored += weight * fixture.team_a_score;
+    away.weightedScoredForAttack += weight * awayAttackGoals;
+    away.weightedConceded += weight * fixture.team_h_score;
   }
 
   for (const row of playerRows) {
+    const weight = forecastRecencyWeight(
+      row.event,
+      options.ratingEndGameweek,
+      options.recencyHalfLifeGameweeks,
+    );
     const bucket = ensure(row.team_id, row.was_home);
-    bucket.xgi += row.xgi;
-    bucket.attackCon += row.attack_con;
-    bucket.defcon += row.defcon;
-    bucket.xgc += row.expected_goals_conceded;
-    bucket.minutes += row.minutes;
+    bucket.xgi += weight * row.xgi;
+    bucket.attackCon += weight * row.attack_con;
+    bucket.defcon += weight * row.defcon;
+    bucket.xgc += weight * row.expected_goals_conceded;
+    bucket.minutes += weight * row.minutes;
+    bucket.playerWeightSum += weight;
   }
 
   return buckets;
 }
 
+function bucketMatchWeight(bucket: VenueBucket) {
+  return bucket.weightSum > 0 ? bucket.weightSum : 0;
+}
+
 /** Same structure as rankings team attack (T), scoped to home or away matches. */
 export function teamFormulaAttackRaw(bucket: VenueBucket) {
-  const matches = bucket.matchPoints.length;
-  if (!matches) return 0;
-  const avgPoints = bucket.matchPoints.reduce((sum, value) => sum + value, 0) / matches;
-  const avgScored = bucket.scored.reduce((sum, value) => sum + value, 0) / matches;
+  const weight = bucketMatchWeight(bucket);
+  if (!weight) return 0;
+  const avgPoints = bucket.weightedPoints / weight;
+  const avgScored = bucket.weightedScoredForAttack / weight;
   return (
     avgPoints +
     avgScored * FORMULA.teamGoals +
@@ -105,10 +154,24 @@ export function teamFormulaAttackRaw(bucket: VenueBucket) {
 
 /** Same structure as rankings team defence (T), scoped to home or away matches. */
 export function teamFormulaDefenceRaw(bucket: VenueBucket) {
-  const matches = bucket.conceded.length;
-  if (!matches) return 0;
-  const avgConceded = bucket.conceded.reduce((sum, value) => sum + value, 0) / matches;
+  const weight = bucketMatchWeight(bucket);
+  if (!weight) return 0;
+  const avgConceded = bucket.weightedConceded / weight;
   return (FORMULA.teamDefenceBase - avgConceded) + bucket.defcon * FORMULA.teamDefcon;
+}
+
+export function weightedAttackRate(bucket: VenueBucket, leagueAverageGoals: number) {
+  const weight = bucketMatchWeight(bucket);
+  if (!weight) return 1;
+  const leagueAvg = Math.max(leagueAverageGoals, 0.1);
+  return bucket.weightedScoredForAttack / weight / leagueAvg;
+}
+
+export function weightedDefenceRate(bucket: VenueBucket, leagueAverageGoals: number) {
+  const weight = bucketMatchWeight(bucket);
+  if (!weight) return 1;
+  const leagueAvg = Math.max(leagueAverageGoals, 0.1);
+  return bucket.weightedConceded / weight / leagueAvg;
 }
 
 function meanPositive(values: number[]) {
@@ -202,9 +265,10 @@ export function buildFormulaVenueMultipliers(
   playerRows: PlayerFixtureFormulaRow[],
   leagueAverageGoals: number,
   formulaBlend: number,
+  sampleOptions: ForecastSampleOptions,
 ): Map<number, FormulaVenueMultipliers> {
   const blend = Math.min(Math.max(formulaBlend, 0), 1);
-  const buckets = buildVenueBuckets(fixtures, playerRows);
+  const buckets = buildVenueBuckets(fixtures, playerRows, sampleOptions);
   const leagueAvg = Math.max(leagueAverageGoals, 0.1);
 
   const attackRaws: number[] = [];
@@ -213,17 +277,17 @@ export function buildFormulaVenueMultipliers(
   for (const team of teams) {
     for (const wasHome of [true, false]) {
       const bucket = buckets.get(venueKey(team.team_id, wasHome));
-      if (!bucket || !bucket.matchPoints.length) continue;
-      const matches = bucket.matchPoints.length;
+      if (!bucket || !bucketMatchWeight(bucket)) continue;
+      const weight = bucketMatchWeight(bucket);
       const attackRaw = teamFormulaAttackRaw(bucket);
       if (attackRaw > 0) attackRaws.push(attackRaw);
 
       defenceSamples.push({
         key: venueKey(team.team_id, wasHome),
-        concededRate: bucket.conceded.reduce((sum, value) => sum + value, 0) / matches / leagueAvg,
+        concededRate: weightedDefenceRate(bucket, leagueAverageGoals),
         formulaDefenceRaw: teamFormulaDefenceRaw(bucket),
-        defconPerMatch: bucket.defcon / matches,
-        xgcPerMatch: bucket.xgc / matches,
+        defconPerMatch: bucket.defcon / Math.max(weight, 1),
+        xgcPerMatch: bucket.xgc / Math.max(weight, 1),
         fplDefenceNorm: normaliseFplStrength(
           wasHome ? team.strength_defence_home : team.strength_defence_away,
         ),
@@ -259,23 +323,23 @@ export function buildFormulaVenueMultipliers(
     const homeBucket = buckets.get(venueKey(team.team_id, true));
     const awayBucket = buckets.get(venueKey(team.team_id, false));
 
-    const goalsAttackHome = homeBucket?.matchPoints.length
-      ? homeBucket.scored.reduce((sum, value) => sum + value, 0) / homeBucket.matchPoints.length / leagueAvg
+    const goalsAttackHome = homeBucket && bucketMatchWeight(homeBucket)
+      ? weightedAttackRate(homeBucket, leagueAvg)
       : 1;
-    const goalsAttackAway = awayBucket?.matchPoints.length
-      ? awayBucket.scored.reduce((sum, value) => sum + value, 0) / awayBucket.matchPoints.length / leagueAvg
+    const goalsAttackAway = awayBucket && bucketMatchWeight(awayBucket)
+      ? weightedAttackRate(awayBucket, leagueAvg)
       : 1;
-    const goalsDefenceHome = homeBucket?.matchPoints.length
-      ? homeBucket.conceded.reduce((sum, value) => sum + value, 0) / homeBucket.matchPoints.length / leagueAvg
+    const goalsDefenceHome = homeBucket && bucketMatchWeight(homeBucket)
+      ? weightedDefenceRate(homeBucket, leagueAvg)
       : 1;
-    const goalsDefenceAway = awayBucket?.matchPoints.length
-      ? awayBucket.conceded.reduce((sum, value) => sum + value, 0) / awayBucket.matchPoints.length / leagueAvg
+    const goalsDefenceAway = awayBucket && bucketMatchWeight(awayBucket)
+      ? weightedDefenceRate(awayBucket, leagueAvg)
       : 1;
 
-    const formulaAttackHome = homeBucket?.matchPoints.length
+    const formulaAttackHome = homeBucket && bucketMatchWeight(homeBucket)
       ? teamFormulaAttackRaw(homeBucket) / attackScale
       : goalsAttackHome;
-    const formulaAttackAway = awayBucket?.matchPoints.length
+    const formulaAttackAway = awayBucket && bucketMatchWeight(awayBucket)
       ? teamFormulaAttackRaw(awayBucket) / attackScale
       : goalsAttackAway;
 
