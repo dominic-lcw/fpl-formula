@@ -69,6 +69,8 @@ describe("gameweek slate", () => {
       correlation: 0.08,
       simulations: 5000,
       fplStrengthBlend: 0.35,
+      formulaStrengthBlend: 0.55,
+      attackGoalsCap: 3,
     });
 
     expect(slate.rows).toHaveLength(2);

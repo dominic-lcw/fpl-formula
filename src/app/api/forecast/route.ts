@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  DEFAULT_FORECAST_PARAMS,
   getFixtureForecast,
   getForecastData,
+  sanitiseForecastParams,
 } from "@/lib/match-forecast";
 
 export const dynamic = "force-dynamic";
@@ -13,17 +13,15 @@ function numberParam(value: string | null, fallback: number) {
 }
 
 function buildParams(searchParams: URLSearchParams) {
-  return {
-    lookbackGameweeks: numberParam(searchParams.get("lookback"), DEFAULT_FORECAST_PARAMS.lookbackGameweeks),
-    homeAdvantage: numberParam(searchParams.get("homeAdvantage"), DEFAULT_FORECAST_PARAMS.homeAdvantage),
-    correlation: numberParam(searchParams.get("correlation"), DEFAULT_FORECAST_PARAMS.correlation),
-    simulations: Math.round(numberParam(searchParams.get("simulations"), DEFAULT_FORECAST_PARAMS.simulations)),
-    fplStrengthBlend: numberParam(searchParams.get("fplBlend"), DEFAULT_FORECAST_PARAMS.fplStrengthBlend),
-    formulaStrengthBlend: numberParam(
-      searchParams.get("formulaBlend"),
-      DEFAULT_FORECAST_PARAMS.formulaStrengthBlend,
-    ),
-  };
+  return sanitiseForecastParams({
+    lookbackGameweeks: numberParam(searchParams.get("lookback"), NaN),
+    homeAdvantage: numberParam(searchParams.get("homeAdvantage"), NaN),
+    correlation: numberParam(searchParams.get("correlation"), NaN),
+    simulations: numberParam(searchParams.get("simulations"), NaN),
+    fplStrengthBlend: numberParam(searchParams.get("fplBlend"), NaN),
+    formulaStrengthBlend: numberParam(searchParams.get("formulaBlend"), NaN),
+    attackGoalsCap: numberParam(searchParams.get("attackGoalsCap"), NaN),
+  });
 }
 
 export async function GET(request: NextRequest) {

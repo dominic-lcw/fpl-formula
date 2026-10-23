@@ -18,6 +18,7 @@ export {
   expectedValue,
   modelProbabilityForMarket,
   runBivariatePoissonMonteCarlo,
+  sanitiseForecastParams,
 } from "@/lib/match-forecast-model";
 export type {
   FixtureForecast,
@@ -197,6 +198,7 @@ async function buildForecastData(
     query<{
       team_id: number;
       was_home: boolean;
+      event: number;
       xgi: number;
       attack_con: number;
       defcon: number;

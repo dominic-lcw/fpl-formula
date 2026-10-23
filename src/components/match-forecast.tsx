@@ -1012,25 +1012,10 @@ export function MatchForecastPanel() {
   // Debounce so slider drags coalesce into one recompute.
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      void loadForecast({
-        lookbackGameweeks: params.lookbackGameweeks,
-        homeAdvantage: params.homeAdvantage,
-        correlation: params.correlation,
-        simulations: params.simulations,
-        fplStrengthBlend: params.fplStrengthBlend,
-        formulaStrengthBlend: params.formulaStrengthBlend,
-      });
+      void loadForecast(params);
     }, 250);
     return () => window.clearTimeout(timeout);
-  }, [
-    loadForecast,
-    params.lookbackGameweeks,
-    params.homeAdvantage,
-    params.correlation,
-    params.simulations,
-    params.fplStrengthBlend,
-    params.formulaStrengthBlend,
-  ]);
+  }, [loadForecast, params]);
 
   const navigateSubView = useCallback((next: ForecastSubView) => {
     setSubView(next);
