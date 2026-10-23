@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateAttackDefenceMatrix } from "../src/lib/match-forecast-matrix";
+import { classifyTeamsByFdr, estimateAttackDefenceMatrix, fdrClassFactors } from "../src/lib/match-forecast-matrix";
 import {
   DEFAULT_FORECAST_PARAMS,
   deriveAttackDefenceRatings,
@@ -208,6 +208,48 @@ describe("match forecast model", () => {
     const blendedPoor = blended.strengths.find((row) => row.teamId === 4)!;
     expect(blendedUnlucky.defenceAway).toBeLessThan(blendedPoor.defenceAway);
     expect(blendedUnlucky.attackHome).toBeGreaterThan(blendedPoor.attackHome);
+  });
+
+  it("classifies teams by the FDR they present and adjusts the same scoreline", () => {
+    const team = (id: number) => ({
+      team_id: id,
+      name: `T${id}`,
+      short_name: `T${id}`,
+      strength_attack_home: 1000,
+      strength_attack_away: 1000,
+      strength_defence_home: 1000,
+      strength_defence_away: 1000,
+    });
+    const fixtures = [
+      { fixture_id: 1, event: 1, kickoff_time: null, team_h: 1, team_a: 3, team_h_score: 2, team_a_score: 0, team_h_difficulty: 2, team_a_difficulty: 5 },
+      { fixture_id: 2, event: 1, kickoff_time: null, team_h: 2, team_a: 4, team_h_score: 2, team_a_score: 0, team_h_difficulty: 2, team_a_difficulty: 2 },
+      { fixture_id: 3, event: 2, kickoff_time: null, team_h: 3, team_a: 1, team_h_score: 1, team_a_score: 0, team_h_difficulty: 5, team_a_difficulty: 2 },
+      { fixture_id: 4, event: 2, kickoff_time: null, team_h: 4, team_a: 2, team_h_score: 1, team_a_score: 0, team_h_difficulty: 2, team_a_difficulty: 2 },
+    ];
+    const classes = classifyTeamsByFdr(fixtures, [1, 2, 3, 4]);
+    expect(classes.get(1)?.home).toBe(5);
+    expect(classes.get(2)?.home).toBe(2);
+    expect(fdrClassFactors(5).defence).toBeLessThan(fdrClassFactors(2).defence);
+    expect(fdrClassFactors(5).attack).toBeGreaterThan(fdrClassFactors(2).attack);
+
+    const rated = deriveAttackDefenceRatings(fixtures, [1, 2, 3, 4].map(team), {
+      ...DEFAULT_FORECAST_PARAMS,
+      homeAdvantage: 1,
+      fplStrengthBlend: 0,
+      formulaStrengthBlend: 0,
+      attackGoalsCap: 0,
+    });
+    const unlucky = rated.strengths.find((row) => row.teamId === 3)!;
+    const poor = rated.strengths.find((row) => row.teamId === 4)!;
+    expect(unlucky.fdrHome).toBe(2);
+    expect(unlucky.defenceAway).toBeLessThan(poor.defenceAway);
+    expect(unlucky.attackHome).toBeGreaterThan(poor.attackHome);
+
+    const elite = rated.strengths.find((row) => row.teamId === 1)!;
+    const soft = rated.strengths.find((row) => row.teamId === 2)!;
+    const againstHard = expectedGoalsForFixture(unlucky, elite, rated.leagueAverageGoals, 1);
+    const againstEasy = expectedGoalsForFixture(poor, soft, rated.leagueAverageGoals, 1);
+    expect(againstEasy.lambdaHome).toBeGreaterThan(againstHard.lambdaHome);
   });
 
   it("calculates expected value from model probability and odds", () => {

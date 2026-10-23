@@ -2,7 +2,7 @@ import {
   buildFormulaVenueMultipliers,
   type PlayerFixtureFormulaRow,
 } from "@/lib/match-forecast-formula-ratings";
-import { estimateAttackDefenceMatrix } from "@/lib/match-forecast-matrix";
+import { classifyTeamsByFdr, estimateAttackDefenceMatrix, fdrClassFactors } from "@/lib/match-forecast-matrix";
 
 export type TeamStrength = {
   teamId: number;
@@ -14,6 +14,10 @@ export type TeamStrength = {
   defenceAway: number;
   attackOverall: number;
   defenceOverall: number;
+  /** FDR this team presents at home (difficulty assigned to the visitor). */
+  fdrHome: number;
+  /** FDR this team presents away (difficulty assigned to the host). */
+  fdrAway: number;
   matchesPlayed: number;
 };
 
@@ -29,6 +33,8 @@ export type FixtureForecast = {
   awayShortName: string;
   expectedHomeGoals: number;
   expectedAwayGoals: number;
+  homeFdr: number;
+  awayFdr: number;
   homeWinProb: number;
   drawProb: number;
   awayWinProb: number;
@@ -70,6 +76,8 @@ export type FinishedFixtureRow = {
   team_a: number;
   team_h_score: number;
   team_a_score: number;
+  team_h_difficulty?: number | null;
+  team_a_difficulty?: number | null;
 };
 
 export type TeamRatingRow = {
@@ -120,18 +128,19 @@ export function forecastRatingGameweekStart(completedGameweek: number, lookbackG
 }
 
 export const FORECAST_LAMBDA_HOME_TEXT =
-  "λ_home = league avg × home attack (H) × away defence (A) × home advantage";
+  "λ_home = league avg × home attack × away FDR defence × away defence residual × home advantage";
 
-export const FORECAST_LAMBDA_AWAY_TEXT = "λ_away = league avg × away attack (A) × home defence (H)";
+export const FORECAST_LAMBDA_AWAY_TEXT =
+  "λ_away = league avg × away attack × home FDR defence × home defence residual";
 
 export const FORECAST_MATRIX_HOME_TEXT =
-  "home goals(i, j) ≈ league avg × attack_home(i) × defence_away(j)";
+  "home goals(i, j) ≈ league avg × attack_home(i) × defence(FDR class of j)";
 
 export const FORECAST_MATRIX_AWAY_TEXT =
-  "away goals(i, j) ≈ league avg × attack_away(j) × defence_home(i)";
+  "away goals(i, j) ≈ league avg × attack_away(j) × defence(FDR class of i)";
 
 export const FORECAST_RATING_NOTE =
-  "Attack and defence solve that match matrix together. A scoreline is shared by the scorer's attack and the opponent's defence, so the same result against a stronger side moves a rating less than it does against a weaker side. Home and away are solved separately, then each group is scaled to a geometric mean of 1. Attack uses capped goals; defence uses the goals actually conceded. Those multipliers are blended with process stats (squad xGI, AtkCon, DefCon, expected goals conceded) and official FPL strength, then clamped to 0.45–2.2. The home-advantage control is applied only when ratings become expected goals.";
+  "Each team is classified by the FPL fixture difficulty it presents, from 2 to 5. That class is the opponent term in the match matrix: FDR 3 is average, and each step changes attack and defence by 0.12. The same goals against an FDR 5 side move a rating less than they do against an FDR 2 side. Home and away are separate, residuals are scaled to a geometric mean of 1, and the opponent's FDR class is applied again when residuals become expected goals. Attack uses capped goals; defence uses the goals actually conceded. Process stats (squad xGI, AtkCon, DefCon, expected goals conceded) and official FPL strength are blended afterwards. Ratings are clamped to 0.45–2.2. The home-advantage control applies only on λ_home.";
 
 export const FORECAST_SIMULATION_NOTE =
   "A bivariate Poisson draw uses λ_home, λ_away, and a shared λ₃ from the correlation control. Monte Carlo counts produce 1X2, over 2.5, BTTS, and scoreline probabilities.";
@@ -164,9 +173,11 @@ export function deriveAttackDefenceRatings(
   const totalMatches = fixtures.length;
   const leagueAverage = totalMatches > 0 ? totalGoals / (totalMatches * 2) : 1.35;
   const blend = clamp(params.fplStrengthBlend, 0, 1);
+  const teamIds = teams.map((team) => team.team_id);
+  const fdrByTeam = classifyTeamsByFdr(fixtures, teamIds);
   const matrix = estimateAttackDefenceMatrix(
     fixtures,
-    teams.map((team) => team.team_id),
+    teamIds,
     leagueAverage,
     params.attackGoalsCap,
   );
@@ -239,6 +250,8 @@ export function deriveAttackDefenceRatings(
       defenceAway: clamp(defenceAway, 0.45, 2.2),
       attackOverall: clamp(attackOverall, 0.45, 2.2),
       defenceOverall: clamp(defenceOverall, 0.45, 2.2),
+      fdrHome: fdrByTeam.get(team.team_id)?.home ?? 3,
+      fdrAway: fdrByTeam.get(team.team_id)?.away ?? 3,
       matchesPlayed,
     });
   }
@@ -256,8 +269,10 @@ export function expectedGoalsForFixture(
   leagueAverageGoals: number,
   homeAdvantage: number,
 ) {
-  const lambdaHome = leagueAverageGoals * homeTeam.attackHome * awayTeam.defenceAway * homeAdvantage;
-  const lambdaAway = leagueAverageGoals * awayTeam.attackAway * homeTeam.defenceHome;
+  const homeClass = fdrClassFactors(homeTeam.fdrHome);
+  const awayClass = fdrClassFactors(awayTeam.fdrAway);
+  const lambdaHome = leagueAverageGoals * homeTeam.attackHome * awayClass.defence * awayTeam.defenceAway * homeAdvantage;
+  const lambdaAway = leagueAverageGoals * awayTeam.attackAway * homeClass.defence * homeTeam.defenceHome;
   return {
     lambdaHome: clamp(lambdaHome, 0.05, 4.5),
     lambdaAway: clamp(lambdaAway, 0.05, 4.5),
@@ -385,6 +400,8 @@ export function buildFixtureForecast(
     awayTeam: awayMeta.name,
     homeShortName: homeMeta.short_name ?? homeMeta.name,
     awayShortName: awayMeta.short_name ?? awayMeta.name,
+    homeFdr: homeTeam.fdrHome,
+    awayFdr: awayTeam.fdrAway,
     expectedHomeGoals: simulation.expectedHomeGoals,
     expectedAwayGoals: simulation.expectedAwayGoals,
     homeWinProb: simulation.homeWinProb,

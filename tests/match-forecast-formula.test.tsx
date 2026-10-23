@@ -23,6 +23,6 @@ describe("MatchForecastFormula", () => {
     expect(html).toContain("GW13");
     expect(html).toContain("unfinished");
     expect(html).toContain("attack_home(i)");
-    expect(html).toContain("defence_away(j)");
+    expect(html).toContain("FDR class of j");
   });
 });

@@ -42,6 +42,8 @@ function forecast(overrides: Partial<FixtureForecast> & Pick<FixtureForecast, "f
     awayTeam: "Beta",
     homeShortName: "ALP",
     awayShortName: "BET",
+    homeFdr: 3,
+    awayFdr: 3,
     expectedHomeGoals: 1.7,
     expectedAwayGoals: 0.9,
     homeWinProb: 0.52,
