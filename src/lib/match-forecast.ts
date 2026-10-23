@@ -180,7 +180,7 @@ async function buildForecastData(
   }
 
   const minGameweek = Math.max(1, meta.currentGameweek - params.lookbackGameweeks + 1);
-  const [teams, finishedFixtures, upcomingFixtures, fixtureEvents] = await Promise.all([
+  const [teams, finishedFixtures, playerFormulaRows, upcomingFixtures, fixtureEvents] = await Promise.all([
     query<TeamRatingRow>(
       `SELECT team_id, name, short_name, strength_attack_home, strength_attack_away, strength_defence_home, strength_defence_away
        FROM teams WHERE season = ? ORDER BY name`,
@@ -192,6 +192,32 @@ async function buildForecastData(
        WHERE season = ? AND finished = true AND event BETWEEN ? AND ?
          AND team_h_score IS NOT NULL AND team_a_score IS NOT NULL
        ORDER BY event, kickoff_time`,
+      [meta.season, minGameweek, meta.currentGameweek],
+    ),
+    query<{
+      team_id: number;
+      was_home: boolean;
+      xgi: number;
+      attack_con: number;
+      defcon: number;
+      minutes: number;
+      expected_goals_conceded: number;
+    }>(
+      `SELECT
+         p.team_id,
+         s.was_home,
+         coalesce(s.expected_goals, 0) + coalesce(s.expected_assists, 0) AS xgi,
+         coalesce(s.threat, 0) + coalesce(s.creativity, 0) AS attack_con,
+         coalesce(s.defensive_contribution, 0) AS defcon,
+         coalesce(s.minutes, 0) AS minutes,
+         coalesce(s.expected_goals_conceded, 0) AS expected_goals_conceded
+       FROM player_fixture_stats s
+       JOIN players p ON p.season = s.season AND p.player_id = s.player_id
+       JOIN fixtures f ON f.season = s.season AND f.fixture_id = s.fixture_id
+       WHERE s.season = ?
+         AND s.event BETWEEN ? AND ?
+         AND f.finished = true
+         AND s.was_home IS NOT NULL`,
       [meta.season, minGameweek, meta.currentGameweek],
     ),
     query<UpcomingFixtureRow>(
@@ -214,6 +240,15 @@ async function buildForecastData(
     finishedFixtures,
     teams,
     params,
+    playerFormulaRows.map((row) => ({
+      team_id: row.team_id,
+      was_home: Boolean(row.was_home),
+      xgi: Number(row.xgi ?? 0),
+      attack_con: Number(row.attack_con ?? 0),
+      defcon: Number(row.defcon ?? 0),
+      minutes: Number(row.minutes ?? 0),
+      expected_goals_conceded: Number(row.expected_goals_conceded ?? 0),
+    })),
   );
   const strengthById = new Map(strengths.map((team) => [team.teamId, team]));
   const teamNameById = new Map(teams.map((team) => [team.team_id, team]));

@@ -97,8 +97,9 @@ export function MatchForecastFormula({
             <p className="mt-2 text-xs leading-5 text-muted-foreground">{FORECAST_SIMULATION_NOTE}</p>
             <p className="mt-2 text-xs leading-5 text-muted-foreground">
               Home advantage multiplier: {params.homeAdvantage.toFixed(2)} · correlation λ₃ scale:{" "}
-              {params.correlation.toFixed(2)} · FPL blend: {(params.fplStrengthBlend * 100).toFixed(0)}% ·{" "}
-              {params.simulations.toLocaleString()} runs.
+              {params.correlation.toFixed(2)} · rankings formula blend:{" "}
+              {(params.formulaStrengthBlend * 100).toFixed(0)}% · FPL blend:{" "}
+              {(params.fplStrengthBlend * 100).toFixed(0)}% · {params.simulations.toLocaleString()} runs.
             </p>
           </section>
         </div>

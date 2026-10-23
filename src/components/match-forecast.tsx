@@ -459,6 +459,14 @@ function ModelControls({
           onChange={(value) => onChange((current) => ({ ...current, fplStrengthBlend: value }))}
         />
         <ParameterSlider
+          label="Rankings formula blend"
+          value={params.formulaStrengthBlend}
+          min={0}
+          max={1}
+          step={0.05}
+          onChange={(value) => onChange((current) => ({ ...current, formulaStrengthBlend: value }))}
+        />
+        <ParameterSlider
           label="Monte Carlo runs"
           value={params.simulations}
           min={1000}
@@ -939,6 +947,7 @@ export function MatchForecastPanel() {
       correlation: String(forecastParams.correlation),
       simulations: String(forecastParams.simulations),
       fplBlend: String(forecastParams.fplStrengthBlend),
+      formulaBlend: String(forecastParams.formulaStrengthBlend),
     });
     if (gameweek) query.set("gameweek", String(gameweek));
     if (options?.skipSettlement) query.set("skipSettlement", "1");
@@ -977,6 +986,7 @@ export function MatchForecastPanel() {
         correlation: String(nextParams.correlation),
         simulations: String(nextParams.simulations),
         fplBlend: String(nextParams.fplStrengthBlend),
+        formulaBlend: String(nextParams.formulaStrengthBlend),
       });
 
       const response = await fetch(`/api/forecast?${query.toString()}`, { cache: "no-store" });
@@ -1008,6 +1018,7 @@ export function MatchForecastPanel() {
         correlation: params.correlation,
         simulations: params.simulations,
         fplStrengthBlend: params.fplStrengthBlend,
+        formulaStrengthBlend: params.formulaStrengthBlend,
       });
     }, 250);
     return () => window.clearTimeout(timeout);
@@ -1018,6 +1029,7 @@ export function MatchForecastPanel() {
     params.correlation,
     params.simulations,
     params.fplStrengthBlend,
+    params.formulaStrengthBlend,
   ]);
 
   const navigateSubView = useCallback((next: ForecastSubView) => {
@@ -1073,6 +1085,7 @@ export function MatchForecastPanel() {
           correlation: params.correlation,
           simulations: params.simulations,
           fplBlend: params.fplStrengthBlend,
+          formulaBlend: params.formulaStrengthBlend,
         }),
       });
       const payload = await response.json() as { error?: string; missing?: number[] };

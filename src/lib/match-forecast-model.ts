@@ -1,3 +1,8 @@
+import {
+  buildFormulaVenueMultipliers,
+  type PlayerFixtureFormulaRow,
+} from "@/lib/match-forecast-formula-ratings";
+
 export type TeamStrength = {
   teamId: number;
   name: string;
@@ -40,6 +45,8 @@ export type ForecastParams = {
   correlation: number;
   simulations: number;
   fplStrengthBlend: number;
+  /** Blend rankings-style team attack/defence (xGI, AtkCon, DefCon, …) into λ multipliers. */
+  formulaStrengthBlend: number;
 };
 
 export const DEFAULT_FORECAST_PARAMS: ForecastParams = {
@@ -48,6 +55,7 @@ export const DEFAULT_FORECAST_PARAMS: ForecastParams = {
   correlation: 0.08,
   simulations: 10_000,
   fplStrengthBlend: 0.35,
+  formulaStrengthBlend: 0.55,
 };
 
 export type FinishedFixtureRow = {
@@ -113,7 +121,7 @@ export const FORECAST_LAMBDA_HOME_TEXT =
 export const FORECAST_LAMBDA_AWAY_TEXT = "λ_away = league avg × away attack (A) × home defence (H)";
 
 export const FORECAST_RATING_NOTE =
-  "Attack and defence multipliers are goals for or against per match at that venue, divided by the league average from the same finished fixtures. Each multiplier is blended with the official FPL strength rating (1000 = league average) using the FPL strength blend control. Values are clamped to 0.45–2.2.";
+  "Attack blends goals scored with the rankings team-attack recipe (match points, goals, squad xGI, AtkCon). Defence blends goals conceded with a ridge model on the rankings defence recipe (goals conceded, DefCon), expected goals conceded, and FPL defence strength. Each multiplier is then blended with official FPL strength ratings. Values are clamped to 0.45–2.2.";
 
 export const FORECAST_SIMULATION_NOTE =
   "A bivariate Poisson draw uses λ_home, λ_away, and a shared λ₃ from the correlation control. Monte Carlo counts produce 1X2, over 2.5, BTTS, and scoreline probabilities.";
@@ -121,7 +129,8 @@ export const FORECAST_SIMULATION_NOTE =
 export function deriveAttackDefenceRatings(
   fixtures: FinishedFixtureRow[],
   teams: TeamRatingRow[],
-  params: Pick<ForecastParams, "homeAdvantage" | "fplStrengthBlend">,
+  params: Pick<ForecastParams, "homeAdvantage" | "fplStrengthBlend" | "formulaStrengthBlend">,
+  playerRows: PlayerFixtureFormulaRow[] = [],
 ) {
   const stats = new Map<number, {
     homeGoalsFor: number;
@@ -159,25 +168,44 @@ export function deriveAttackDefenceRatings(
   const totalMatches = fixtures.length;
   const leagueAverage = totalMatches > 0 ? totalGoals / (totalMatches * 2) : 1.35;
   const blend = clamp(params.fplStrengthBlend, 0, 1);
+  const formulaVenue =
+    playerRows.length > 0 && params.formulaStrengthBlend > 0
+      ? buildFormulaVenueMultipliers(
+          fixtures,
+          teams,
+          playerRows,
+          leagueAverage,
+          params.formulaStrengthBlend,
+        )
+      : null;
 
   const strengths: TeamStrength[] = [];
 
   for (const team of teams) {
     const record = stats.get(team.team_id)!;
     const matchesPlayed = record.homeMatches + record.awayMatches;
+    const formula = formulaVenue?.get(team.team_id);
 
-    const observedAttackHome = record.homeMatches
-      ? (record.homeGoalsFor / record.homeMatches) / leagueAverage
-      : 1;
-    const observedAttackAway = record.awayMatches
-      ? (record.awayGoalsFor / record.awayMatches) / leagueAverage
-      : 1;
-    const observedDefenceHome = record.homeMatches
-      ? (record.homeGoalsAgainst / record.homeMatches) / leagueAverage
-      : 1;
-    const observedDefenceAway = record.awayMatches
-      ? (record.awayGoalsAgainst / record.awayMatches) / leagueAverage
-      : 1;
+    const observedAttackHome = formula
+      ? formula.attackHome
+      : record.homeMatches
+        ? (record.homeGoalsFor / record.homeMatches) / leagueAverage
+        : 1;
+    const observedAttackAway = formula
+      ? formula.attackAway
+      : record.awayMatches
+        ? (record.awayGoalsFor / record.awayMatches) / leagueAverage
+        : 1;
+    const observedDefenceHome = formula
+      ? formula.defenceHome
+      : record.homeMatches
+        ? (record.homeGoalsAgainst / record.homeMatches) / leagueAverage
+        : 1;
+    const observedDefenceAway = formula
+      ? formula.defenceAway
+      : record.awayMatches
+        ? (record.awayGoalsAgainst / record.awayMatches) / leagueAverage
+        : 1;
 
     const fplAttackHome = normaliseFplStrength(team.strength_attack_home);
     const fplAttackAway = normaliseFplStrength(team.strength_attack_away);
