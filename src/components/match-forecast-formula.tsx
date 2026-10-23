@@ -3,6 +3,8 @@ import type { ForecastParams } from "@/lib/match-forecast-model";
 import {
   FORECAST_LAMBDA_AWAY_TEXT,
   FORECAST_LAMBDA_HOME_TEXT,
+  FORECAST_MATRIX_AWAY_TEXT,
+  FORECAST_MATRIX_HOME_TEXT,
   FORECAST_RATING_NOTE,
   FORECAST_SIMULATION_NOTE,
 } from "@/lib/match-forecast-model";
@@ -87,7 +89,10 @@ export function MatchForecastFormula({
 
         <div className="grid gap-3 lg:grid-cols-2">
           <section className="rounded-md border bg-muted/30 p-3">
-            <h3 className="font-medium">Expected goals</h3>
+            <h3 className="font-medium">Strength matrix</h3>
+            <p className="mt-2 font-mono text-xs leading-5 text-foreground">{FORECAST_MATRIX_HOME_TEXT}</p>
+            <p className="mt-2 font-mono text-xs leading-5 text-foreground">{FORECAST_MATRIX_AWAY_TEXT}</p>
+            <p className="mt-3 font-medium">Expected goals</p>
             <p className="mt-2 font-mono text-xs leading-5 text-foreground">{FORECAST_LAMBDA_HOME_TEXT}</p>
             <p className="mt-2 font-mono text-xs leading-5 text-foreground">{FORECAST_LAMBDA_AWAY_TEXT}</p>
             <p className="mt-2 text-xs leading-5 text-muted-foreground">{FORECAST_RATING_NOTE}</p>

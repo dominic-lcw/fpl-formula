@@ -1,4 +1,6 @@
 import { FORMULA } from "@/lib/formula";
+import type { AttackDefenceVenue } from "@/lib/match-forecast-matrix";
+import { estimateAttackDefenceMatrix } from "@/lib/match-forecast-matrix";
 import type { FinishedFixtureRow, TeamRatingRow } from "@/lib/match-forecast-model";
 
 export type PlayerFixtureFormulaRow = {
@@ -33,7 +35,6 @@ type VenueBucket = {
 type DefenceSample = {
   key: string;
   concededRate: number;
-  formulaDefenceRaw: number;
   defconPerMatch: number;
   xgcPerMatch: number;
   fplDefenceNorm: number;
@@ -119,6 +120,20 @@ function bucketMatchWeight(bucket: VenueBucket) {
   return bucket.weightSum > 0 ? bucket.weightSum : 0;
 }
 
+/**
+ * Forecast attack index. Goals come from the solved match matrix (already
+ * opponent-adjusted), not from raw points or raw goals. xGI and AtkCon stay
+ * as process evidence.
+ */
+export function forecastFormulaAttackRaw(bucket: VenueBucket, adjustedGoalsPerMatch: number) {
+  if (!bucketMatchWeight(bucket)) return 0;
+  return (
+    adjustedGoalsPerMatch * (1 + FORMULA.teamGoals) +
+    bucket.xgi * FORMULA.teamXgi +
+    bucket.attackCon * FORMULA.teamAttackCon
+  );
+}
+
 /** Same structure as rankings team attack (T), scoped to home or away matches. */
 export function teamFormulaAttackRaw(bucket: VenueBucket) {
   const weight = bucketMatchWeight(bucket);
@@ -146,13 +161,6 @@ export function weightedAttackRate(bucket: VenueBucket, leagueAverageGoals: numb
   if (!weight) return 1;
   const leagueAvg = Math.max(leagueAverageGoals, 0.1);
   return bucket.weightedScoredForAttack / weight / leagueAvg;
-}
-
-export function weightedDefenceRate(bucket: VenueBucket, leagueAverageGoals: number) {
-  const weight = bucketMatchWeight(bucket);
-  if (!weight) return 1;
-  const leagueAvg = Math.max(leagueAverageGoals, 0.1);
-  return bucket.weightedConceded / weight / leagueAvg;
 }
 
 function meanPositive(values: number[]) {
@@ -218,13 +226,12 @@ function solveSymmetric(matrix: number[][], rhs: number[]) {
 }
 
 function predictDefenceConcededRate(coefficients: number[], sample: DefenceSample) {
-  const [b0, b1, b2, b3, b4] = coefficients;
+  const [b0, b1, b2, b3] = coefficients;
   const predicted =
     b0! +
-    b1! * sample.formulaDefenceRaw +
-    b2! * sample.defconPerMatch +
-    b3! * sample.xgcPerMatch +
-    b4! * sample.fplDefenceNorm;
+    b1! * sample.defconPerMatch +
+    b2! * sample.xgcPerMatch +
+    b3! * sample.fplDefenceNorm;
   return Math.max(0.35, Math.min(2.4, predicted));
 }
 
@@ -247,26 +254,34 @@ export function buildFormulaVenueMultipliers(
   leagueAverageGoals: number,
   formulaBlend: number,
   sampleOptions: ForecastSampleOptions,
+  matrix?: Map<number, AttackDefenceVenue>,
 ): Map<number, FormulaVenueMultipliers> {
   const blend = Math.min(Math.max(formulaBlend, 0), 1);
   const buckets = buildVenueBuckets(fixtures, playerRows, sampleOptions);
   const leagueAvg = Math.max(leagueAverageGoals, 0.1);
+  const solved = matrix ?? estimateAttackDefenceMatrix(
+    fixtures,
+    teams.map((team) => team.team_id),
+    leagueAverageGoals,
+    sampleOptions.attackGoalsCap,
+  );
 
   const attackRaws: number[] = [];
   const defenceSamples: DefenceSample[] = [];
 
   for (const team of teams) {
+    const rates = solved.get(team.team_id);
     for (const wasHome of [true, false]) {
       const bucket = buckets.get(venueKey(team.team_id, wasHome));
       if (!bucket || !bucketMatchWeight(bucket)) continue;
       const weight = bucketMatchWeight(bucket);
-      const attackRaw = teamFormulaAttackRaw(bucket);
+      const attackMultiplier = wasHome ? rates?.attackHome ?? 1 : rates?.attackAway ?? 1;
+      const attackRaw = forecastFormulaAttackRaw(bucket, attackMultiplier * leagueAvg);
       if (attackRaw > 0) attackRaws.push(attackRaw);
 
       defenceSamples.push({
         key: venueKey(team.team_id, wasHome),
-        concededRate: weightedDefenceRate(bucket, leagueAverageGoals),
-        formulaDefenceRaw: teamFormulaDefenceRaw(bucket),
+        concededRate: wasHome ? rates?.defenceHome ?? 1 : rates?.defenceAway ?? 1,
         defconPerMatch: bucket.defcon / Math.max(weight, 1),
         xgcPerMatch: bucket.xgc / Math.max(weight, 1),
         fplDefenceNorm: normaliseFplStrength(
@@ -282,7 +297,6 @@ export function buildFormulaVenueMultipliers(
       ? ridgeRegression(
           defenceSamples.map((sample) => [
             1,
-            sample.formulaDefenceRaw,
             sample.defconPerMatch,
             sample.xgcPerMatch,
             sample.fplDefenceNorm,
@@ -303,25 +317,26 @@ export function buildFormulaVenueMultipliers(
   for (const team of teams) {
     const homeBucket = buckets.get(venueKey(team.team_id, true));
     const awayBucket = buckets.get(venueKey(team.team_id, false));
+    const rates = solved.get(team.team_id);
 
     const goalsAttackHome = homeBucket && bucketMatchWeight(homeBucket)
-      ? weightedAttackRate(homeBucket, leagueAvg)
+      ? rates?.attackHome ?? 1
       : 1;
     const goalsAttackAway = awayBucket && bucketMatchWeight(awayBucket)
-      ? weightedAttackRate(awayBucket, leagueAvg)
+      ? rates?.attackAway ?? 1
       : 1;
     const goalsDefenceHome = homeBucket && bucketMatchWeight(homeBucket)
-      ? weightedDefenceRate(homeBucket, leagueAvg)
+      ? rates?.defenceHome ?? 1
       : 1;
     const goalsDefenceAway = awayBucket && bucketMatchWeight(awayBucket)
-      ? weightedDefenceRate(awayBucket, leagueAvg)
+      ? rates?.defenceAway ?? 1
       : 1;
 
     const formulaAttackHome = homeBucket && bucketMatchWeight(homeBucket)
-      ? teamFormulaAttackRaw(homeBucket) / attackScale
+      ? forecastFormulaAttackRaw(homeBucket, goalsAttackHome * leagueAvg) / attackScale
       : goalsAttackHome;
     const formulaAttackAway = awayBucket && bucketMatchWeight(awayBucket)
-      ? teamFormulaAttackRaw(awayBucket) / attackScale
+      ? forecastFormulaAttackRaw(awayBucket, goalsAttackAway * leagueAvg) / attackScale
       : goalsAttackAway;
 
     const homeDefenceKey = venueKey(team.team_id, true);

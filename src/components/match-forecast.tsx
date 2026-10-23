@@ -540,7 +540,16 @@ function TeamStrengthsPanel({
           </tbody>
         </table>
         <div className="mt-4 rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
-          <p className="font-medium text-foreground">Formula</p>
+          <p className="font-medium text-foreground">Strength matrix</p>
+          <p className="mt-1">
+            Home goals of i vs j ≈ league avg × attack<sub>home</sub>(i) × defence<sub>away</sub>(j)
+          </p>
+          <p>Away goals of i vs j ≈ league avg × attack<sub>away</sub>(j) × defence<sub>home</sub>(i)</p>
+          <p className="mt-2">
+            The same scoreline is split between the scorer&apos;s attack and the opponent&apos;s defence.
+            Losing to a strong side does not, by itself, mark the defence as weak.
+          </p>
+          <p className="mt-2 font-medium text-foreground">Expected goals</p>
           <p className="mt-1">λ<sub>home</sub> = league avg × attack<sub>home</sub> × defence<sub>away</sub> × home advantage</p>
           <p>λ<sub>away</sub> = league avg × attack<sub>away</sub> × defence<sub>home</sub></p>
         </div>
