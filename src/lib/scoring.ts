@@ -121,12 +121,11 @@ function scale(values: number[]): (value: number) => number {
 export function scorePlayers(
   players: PlayerFeature[],
   params: RankingParams = DEFAULT_PARAMS,
-  options: { sampleGameweeks?: number; fixtureSlots?: number } = {},
+  options: { fixtureSlots?: number } = {},
 ): RankedPlayer[] {
   const safeParams = sanitiseParams(params);
-  const sampleGameweeks = options.sampleGameweeks ?? safeParams.formWindow;
   const fixtureSlots = options.fixtureSlots ?? safeParams.fixtureHorizon;
-  const fixtureOptions = { slots: fixtureSlots, sampleGameweeks };
+  const fixtureOptions = { slots: fixtureSlots };
   const individualScale = scale(players.map(individualRaw));
   const teamScale = scale(players.map(teamRaw));
   const totalWeight = Object.values(safeParams.weights).reduce((sum, weight) => sum + weight, 0) || 1;

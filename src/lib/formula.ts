@@ -63,13 +63,11 @@ export function teamRaw(player: Pick<PlayerFeature, "position" | "teamAttack" | 
  * Each match maps ease (6 − FDR, with +0.5 at home and −0.5 away) onto 0–100
  * between an FDR 5 away game and an FDR 2 home game. The horizon score sums
  * those matches and divides by the scheduled Gameweeks, so a blank adds nothing
- * and a double counts both matches. Minutes then scale it: 60 minutes per
- * sampled Gameweek earns the full outlook.
+ * and a double counts both matches.
  */
 export const FIXTURE_MODEL = {
   easeFloor: 0.5,
   easeCeil: 4.5,
-  minutesPerGameweek: 60,
 } as const;
 
 function clampUnit(value: number, min: number, max: number) {
@@ -93,17 +91,23 @@ export function fixtureOutlook(fixtures: PlayerFeature["fixtures"], slots: numbe
   return clampUnit(total / Math.max(slots, 1), 0, 100);
 }
 
-/** Full credit at 60 minutes per sampled Gameweek. No sample yet (preseason) leaves the outlook intact. */
-export function fixtureInvolvement(minutes: number, sampleGameweeks: number) {
-  if (sampleGameweeks <= 0) return 1;
-  return clampUnit(minutes / (sampleGameweeks * FIXTURE_MODEL.minutesPerGameweek), 0, 1);
+export function fixtureRaw(player: Pick<PlayerFeature, "fixtures">, options: { slots: number }) {
+  return fixtureOutlook(player.fixtures, options.slots);
 }
 
-export function fixtureRaw(
-  player: Pick<PlayerFeature, "fixtures" | "minutes">,
-  options: { slots: number; sampleGameweeks: number },
-) {
-  return fixtureOutlook(player.fixtures, options.slots) * fixtureInvolvement(player.minutes, options.sampleGameweeks);
+/** First Gameweek included in the rolling form window (inclusive). */
+export function formGameweekStart(currentGameweek: number, formWindow: number) {
+  return Math.max(1, currentGameweek - formWindow + 1);
+}
+
+/** First upcoming Gameweek in the fixture horizon (inclusive). */
+export function fixtureHorizonStart(currentGameweek: number) {
+  return currentGameweek + 1;
+}
+
+/** Last upcoming Gameweek in the fixture horizon (inclusive). */
+export function fixtureHorizonEnd(currentGameweek: number, fixtureHorizon: number) {
+  return currentGameweek + fixtureHorizon;
 }
 
 export function fixtureMatchScoreSql(difficulty: string, wasHome: string) {
@@ -114,24 +118,6 @@ export function fixtureMatchScoreSql(difficulty: string, wasHome: string) {
 
 export function fixtureOutlookSql(matchScoreSum: string, slots: string) {
   return `least(100, greatest(0, coalesce(${matchScoreSum}, 0) / nullif(${slots}, 0)))`;
-}
-
-export function fixtureInvolvementSql(minutes: string, sampleGameweeks: string) {
-  return `coalesce(least(1, (${minutes}) / nullif((${sampleGameweeks}) * ${FIXTURE_MODEL.minutesPerGameweek}.0, 0)), 1)`;
-}
-
-export function fixtureComponentSql(outlook: string, minutes: string, sampleGameweeks: string) {
-  return `(${outlook}) * ${fixtureInvolvementSql(minutes, sampleGameweeks)}`;
-}
-
-/** Finished-gameweek sample length used by the live ranking query. */
-export function liveSampleGameweeksSql(currentGameweek: string, formWindow: number) {
-  return `(${currentGameweek} - greatest(1, ${currentGameweek} - ${formWindow - 1}) + 1)`;
-}
-
-/** Pre-kickoff sample length used by the backtest (excludes the Gameweek being predicted). */
-export function backtestSampleGameweeksSql(targetGw: string, formWindow: string) {
-  return `(${targetGw} - greatest(1, ${targetGw} - ${formWindow}))`;
 }
 
 export function individualRawSql(alias: string) {
@@ -173,8 +159,7 @@ export const INDIVIDUAL_FORMULA_NOTE =
 export const TEAM_FORMULA_NOTE =
   `Attack = avg match points + avg goals scored × ${FORMULA.teamGoals} + team xGI × ${FORMULA.teamXgi} + team AtkCon × ${FORMULA.teamAttackCon}. Defence = ${FORMULA.teamDefenceBase} − avg goals conceded + team DefCon × ${FORMULA.teamDefcon}. GKP/DEF use 0.40 attack + 0.60 defence; MID/FWD use 0.80 + 0.20.`;
 
-export const FIXTURE_FORMULA_TEXT =
-  "sum of match ease scores ÷ scheduled Gameweeks × minutes involvement";
+export const FIXTURE_FORMULA_TEXT = "sum of match ease scores ÷ scheduled Gameweeks";
 
 export const FIXTURE_FORMULA_NOTE =
-  `Each match maps 6 − FDR + venue (+0.5 home, −0.5 away) onto 0–100 from ${FIXTURE_MODEL.easeFloor} (FDR 5 away) to ${FIXTURE_MODEL.easeCeil} (FDR 2 home). A blank Gameweek adds nothing and a double Gameweek adds both matches. Involvement is minutes ÷ (${FIXTURE_MODEL.minutesPerGameweek} × sampled Gameweeks), capped at 1, so the whole squad does not inherit the club schedule.`;
+  `Each match maps 6 − FDR + venue (+0.5 home, −0.5 away) onto 0–100 from ${FIXTURE_MODEL.easeFloor} (FDR 5 away) to ${FIXTURE_MODEL.easeCeil} (FDR 2 home). A blank Gameweek adds nothing and a double Gameweek adds both matches. The schedule is shared by every player at the club; use minimum minutes to drop players who are not in the sample.`;

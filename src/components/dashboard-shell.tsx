@@ -37,7 +37,7 @@ function DashboardPanels({
   activeView: DashboardView;
   onNavigate: (view: DashboardView) => void;
 }) {
-  const { params, updateParams, showLiveData, updateLiveData } = useDashboard();
+  const { params, updateParams, showLiveData, updateLiveData, data } = useDashboard();
   // Mount a view the first time it is opened, then keep it mounted. Route changes
   // only show or hide panels, so their client fetches are not repeated or awaited.
   const [mountedViews, setMountedViews] = useState<Set<DashboardView>>(() => new Set([activeView]));
@@ -72,7 +72,18 @@ function DashboardPanels({
       ) : null}
       {mountedViews.has("tracker") ? (
         <div className={panelClass(activeView, "tracker")} aria-hidden={activeView !== "tracker"}>
-          <FormulaTracker currentParams={params} onApplyParams={applyTrackerParams} />
+          <FormulaTracker
+            currentParams={params}
+            onApplyParams={applyTrackerParams}
+            formulaDataContext={
+              data?.currentGameweek
+                ? {
+                    currentGameweek: data.currentGameweek,
+                    includesLiveGameweek: data.includesLiveGameweek,
+                  }
+                : null
+            }
+          />
         </div>
       ) : null}
       {mountedViews.has("forecast") ? (

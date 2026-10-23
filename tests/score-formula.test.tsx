@@ -6,7 +6,14 @@ import { DEFAULT_PARAMS } from "../src/lib/scoring";
 
 describe("ScoreFormula", () => {
   it("shows attack contribution, scaled defensive contribution, and FPL points note", () => {
-    const html = renderToStaticMarkup(<ScoreFormula params={DEFAULT_PARAMS} />);
+    const html = renderToStaticMarkup(
+      <ScoreFormula
+        params={DEFAULT_PARAMS}
+        dataContext={{ currentGameweek: 12, includesLiveGameweek: false }}
+      />,
+    );
+    expect(html).toContain("GW8–GW12");
+    expect(html).toContain("GW13–GW15");
     expect(html).toContain(INDIVIDUAL_FORMULA_TEXT);
     expect(html).toContain("AtkCon");
     expect(html).toContain(`DefCon × ${FORMULA.defcon}`);

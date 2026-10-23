@@ -195,26 +195,24 @@ describe("scorePlayers", () => {
         minMinutes: 0,
         weights: { ...(preset?.weights ?? { individual: 25, team: 15, fixtures: 60 }) },
       },
-      { sampleGameweeks: 3, fixtureSlots: 5 },
+      { fixtureSlots: 5 },
     );
 
     expect(rankings[0]?.name).toBe("Arsenal starter");
-    expect(rankings[2]?.name).toBe("Coventry unused");
     const coventryStarter = rankings.find((player) => player.name === "Coventry starter");
     const coventryUnused = rankings.find((player) => player.name === "Coventry unused");
     const arsenal = rankings.find((player) => player.name === "Arsenal starter");
     expect(coventryStarter?.breakdown.fixtures).toBeGreaterThan(arsenal?.breakdown.fixtures ?? 0);
-    expect(coventryStarter?.breakdown.fixtures).toBeGreaterThan(coventryUnused?.breakdown.fixtures ?? 0);
+    expect(coventryStarter?.breakdown.fixtures).toBe(coventryUnused?.breakdown.fixtures);
     expect(coventryStarter?.breakdown.fixtures).toBeLessThan(100);
-    expect(coventryUnused?.breakdown.fixtures).toBe(0);
+    expect(coventryUnused?.score).toBeLessThan(coventryStarter?.score ?? 0);
   });
 
   it("counts blanks as missed games and doubles as extra games", () => {
-    const options = { slots: 2, sampleGameweeks: 1 };
+    const options = { slots: 2 };
     const played = fixtureRaw(
       {
         ...basePlayer,
-        minutes: 90,
         fixtures: [
           { event: 6, opponent: "Leeds", difficulty: 3, wasHome: true, kickoffTime: null },
           { event: 7, opponent: "Leeds", difficulty: 3, wasHome: true, kickoffTime: null },
@@ -225,7 +223,6 @@ describe("scorePlayers", () => {
     const blank = fixtureRaw(
       {
         ...basePlayer,
-        minutes: 90,
         fixtures: [{ event: 6, opponent: "Leeds", difficulty: 3, wasHome: true, kickoffTime: null }],
       },
       options,
@@ -233,21 +230,19 @@ describe("scorePlayers", () => {
     const double = fixtureRaw(
       {
         ...basePlayer,
-        minutes: 90,
         fixtures: [
           { event: 6, opponent: "Leeds", difficulty: 4, wasHome: false, kickoffTime: null },
           { event: 6, opponent: "Burnley", difficulty: 4, wasHome: false, kickoffTime: null },
         ],
       },
-      { slots: 1, sampleGameweeks: 1 },
+      { slots: 1 },
     );
     const single = fixtureRaw(
       {
         ...basePlayer,
-        minutes: 90,
         fixtures: [{ event: 6, opponent: "Leeds", difficulty: 4, wasHome: false, kickoffTime: null }],
       },
-      { slots: 1, sampleGameweeks: 1 },
+      { slots: 1 },
     );
 
     expect(played).toBeGreaterThan(blank);

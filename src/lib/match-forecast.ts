@@ -3,6 +3,7 @@ import {
   buildFixtureForecast,
   DEFAULT_FORECAST_PARAMS,
   deriveAttackDefenceRatings,
+  forecastRatingGameweekStart,
   type FinishedFixtureRow,
   type FixtureForecast,
   type ForecastParams,
@@ -35,7 +36,11 @@ type SeasonMeta = {
 
 export type ForecastData = {
   season: string | null;
+  /** Latest finished Gameweek in the hydrated season (ratings use fixtures through here). */
   currentGameweek: number | null;
+  ratingGameweekStart: number | null;
+  ratingGameweekEnd: number | null;
+  finishedFixturesUsed: number;
   leagueAverageGoals: number | null;
   homeAdvantage: number;
   teamStrengths: TeamStrength[];
@@ -53,6 +58,9 @@ const FORECAST_CACHE_TTL_MS = 5 * 60 * 1000;
 const EMPTY_FORECAST: ForecastData = {
   season: null,
   currentGameweek: null,
+  ratingGameweekStart: null,
+  ratingGameweekEnd: null,
+  finishedFixturesUsed: 0,
   leagueAverageGoals: null,
   homeAdvantage: DEFAULT_FORECAST_PARAMS.homeAdvantage,
   teamStrengths: [],
@@ -172,7 +180,7 @@ async function buildForecastData(
   }
 
   const minGameweek = Math.max(1, meta.currentGameweek - params.lookbackGameweeks + 1);
-  const [teams, finishedFixtures, upcomingFixtures, fixtureEvents] = await Promise.all([
+  const [teams, finishedFixtures, playerFormulaRows, upcomingFixtures, fixtureEvents] = await Promise.all([
     query<TeamRatingRow>(
       `SELECT team_id, name, short_name, strength_attack_home, strength_attack_away, strength_defence_home, strength_defence_away
        FROM teams WHERE season = ? ORDER BY name`,
@@ -184,6 +192,33 @@ async function buildForecastData(
        WHERE season = ? AND finished = true AND event BETWEEN ? AND ?
          AND team_h_score IS NOT NULL AND team_a_score IS NOT NULL
        ORDER BY event, kickoff_time`,
+      [meta.season, minGameweek, meta.currentGameweek],
+    ),
+    query<{
+      team_id: number;
+      was_home: boolean;
+      xgi: number;
+      attack_con: number;
+      defcon: number;
+      minutes: number;
+      expected_goals_conceded: number;
+    }>(
+      `SELECT
+         p.team_id,
+         s.was_home,
+         s.event,
+         coalesce(s.expected_goals, 0) + coalesce(s.expected_assists, 0) AS xgi,
+         coalesce(s.threat, 0) + coalesce(s.creativity, 0) AS attack_con,
+         coalesce(s.defensive_contribution, 0) AS defcon,
+         coalesce(s.minutes, 0) AS minutes,
+         coalesce(s.expected_goals_conceded, 0) AS expected_goals_conceded
+       FROM player_fixture_stats s
+       JOIN players p ON p.season = s.season AND p.player_id = s.player_id
+       JOIN fixtures f ON f.season = s.season AND f.fixture_id = s.fixture_id
+       WHERE s.season = ?
+         AND s.event BETWEEN ? AND ?
+         AND f.finished = true
+         AND s.was_home IS NOT NULL`,
       [meta.season, minGameweek, meta.currentGameweek],
     ),
     query<UpcomingFixtureRow>(
@@ -206,6 +241,16 @@ async function buildForecastData(
     finishedFixtures,
     teams,
     params,
+    playerFormulaRows.map((row) => ({
+      team_id: row.team_id,
+      was_home: Boolean(row.was_home),
+      event: Number(row.event ?? 0),
+      xgi: Number(row.xgi ?? 0),
+      attack_con: Number(row.attack_con ?? 0),
+      defcon: Number(row.defcon ?? 0),
+      minutes: Number(row.minutes ?? 0),
+      expected_goals_conceded: Number(row.expected_goals_conceded ?? 0),
+    })),
   );
   const strengthById = new Map(strengths.map((team) => [team.teamId, team]));
   const teamNameById = new Map(teams.map((team) => [team.team_id, team]));
@@ -231,6 +276,11 @@ async function buildForecastData(
   return {
     season: meta.season,
     currentGameweek: meta.currentGameweek,
+    ratingGameweekStart: meta.currentGameweek > 0
+      ? forecastRatingGameweekStart(meta.currentGameweek, params.lookbackGameweeks)
+      : null,
+    ratingGameweekEnd: meta.currentGameweek > 0 ? meta.currentGameweek : null,
+    finishedFixturesUsed: finishedFixtures.length,
     leagueAverageGoals,
     homeAdvantage,
     teamStrengths: strengths,

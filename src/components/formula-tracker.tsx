@@ -2,7 +2,7 @@
 
 import { BookmarkPlus, LoaderCircle, Play, SlidersHorizontal, Sparkles, Trash2, Trophy } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { ScoreFormula } from "@/components/score-formula";
+import { ScoreFormula, type ScoreFormulaDataContext } from "@/components/score-formula";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   buildBacktestCacheKey,
@@ -80,9 +80,11 @@ function paramsMatch(left: RankingParams, right: RankingParams) {
 export function FormulaTracker({
   currentParams,
   onApplyParams,
+  formulaDataContext = null,
 }: {
   currentParams: RankingParams;
   onApplyParams: (params: RankingParams) => void;
+  formulaDataContext?: ScoreFormulaDataContext | null;
 }) {
   const savedStrategies = useSyncExternalStore(
     subscribeToSavedStrategies,
@@ -393,7 +395,7 @@ export function FormulaTracker({
 
         <Card>
           <CardContent className="pt-6">
-            <ScoreFormula params={highlightedStrategy.params} />
+            <ScoreFormula params={highlightedStrategy.params} dataContext={formulaDataContext} />
           </CardContent>
         </Card>
 

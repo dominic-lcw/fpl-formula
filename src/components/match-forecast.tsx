@@ -21,12 +21,16 @@ import type { GameweekBookedPnl } from "@/lib/booked-pnl";
 import type { BookingMarket, BookingRecord } from "@/lib/booking-settlement";
 import type { GameweekSlateRow, GameweekSlateSummary } from "@/lib/gameweek-slate";
 import { buildMatchdayOnePager } from "@/lib/matchday-one-pager";
+import { MatchForecastFormula } from "@/components/match-forecast-formula";
 import type { FixtureForecast, ForecastParams, TeamStrength } from "@/lib/match-forecast-model";
 import { DEFAULT_FORECAST_PARAMS } from "@/lib/match-forecast-model";
 
 type ForecastResponse = {
   season: string | null;
   currentGameweek: number | null;
+  ratingGameweekStart: number | null;
+  ratingGameweekEnd: number | null;
+  finishedFixturesUsed: number;
   leagueAverageGoals: number | null;
   homeAdvantage: number;
   teamStrengths: TeamStrength[];
@@ -455,6 +459,14 @@ function ModelControls({
           onChange={(value) => onChange((current) => ({ ...current, fplStrengthBlend: value }))}
         />
         <ParameterSlider
+          label="Rankings formula blend"
+          value={params.formulaStrengthBlend}
+          min={0}
+          max={1}
+          step={0.05}
+          onChange={(value) => onChange((current) => ({ ...current, formulaStrengthBlend: value }))}
+        />
+        <ParameterSlider
           label="Monte Carlo runs"
           value={params.simulations}
           min={1000}
@@ -480,7 +492,14 @@ function TeamStrengthsPanel({
           Team attack &amp; defence strength
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          {data.season} · GW{data.currentGameweek ?? "?"} · league avg {data.leagueAverageGoals?.toFixed(2) ?? "—"} goals per team per match
+          {data.season} · ratings from{" "}
+          {data.ratingGameweekStart != null && data.ratingGameweekEnd != null
+            ? data.ratingGameweekStart === data.ratingGameweekEnd
+              ? `GW${data.ratingGameweekEnd}`
+              : `GW${data.ratingGameweekStart}–GW${data.ratingGameweekEnd}`
+            : `GW${data.currentGameweek ?? "?"}`}{" "}
+          ({data.finishedFixturesUsed} finished matches) · league avg{" "}
+          {data.leagueAverageGoals?.toFixed(2) ?? "—"} goals per team per match
         </p>
       </CardHeader>
       <CardContent className="overflow-x-auto">
@@ -928,6 +947,7 @@ export function MatchForecastPanel() {
       correlation: String(forecastParams.correlation),
       simulations: String(forecastParams.simulations),
       fplBlend: String(forecastParams.fplStrengthBlend),
+      formulaBlend: String(forecastParams.formulaStrengthBlend),
     });
     if (gameweek) query.set("gameweek", String(gameweek));
     if (options?.skipSettlement) query.set("skipSettlement", "1");
@@ -966,6 +986,7 @@ export function MatchForecastPanel() {
         correlation: String(nextParams.correlation),
         simulations: String(nextParams.simulations),
         fplBlend: String(nextParams.fplStrengthBlend),
+        formulaBlend: String(nextParams.formulaStrengthBlend),
       });
 
       const response = await fetch(`/api/forecast?${query.toString()}`, { cache: "no-store" });
@@ -997,6 +1018,7 @@ export function MatchForecastPanel() {
         correlation: params.correlation,
         simulations: params.simulations,
         fplStrengthBlend: params.fplStrengthBlend,
+        formulaStrengthBlend: params.formulaStrengthBlend,
       });
     }, 250);
     return () => window.clearTimeout(timeout);
@@ -1007,6 +1029,7 @@ export function MatchForecastPanel() {
     params.correlation,
     params.simulations,
     params.fplStrengthBlend,
+    params.formulaStrengthBlend,
   ]);
 
   const navigateSubView = useCallback((next: ForecastSubView) => {
@@ -1062,6 +1085,7 @@ export function MatchForecastPanel() {
           correlation: params.correlation,
           simulations: params.simulations,
           fplBlend: params.fplStrengthBlend,
+          formulaBlend: params.formulaStrengthBlend,
         }),
       });
       const payload = await response.json() as { error?: string; missing?: number[] };
@@ -1235,7 +1259,24 @@ export function MatchForecastPanel() {
   return (
     <section className="grid gap-5">
       <div className="grid gap-5 xl:grid-cols-[285px_1fr]">
-      <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
+      <div className="grid gap-5">
+        <ModelControls params={params} isRecomputing={isLoading} onChange={setParams} />
+        <MatchForecastFormula
+          params={params}
+          context={
+            data.season && data.ratingGameweekEnd
+              ? {
+                  season: data.season,
+                  ratingGameweekStart: data.ratingGameweekStart ?? data.ratingGameweekEnd,
+                  ratingGameweekEnd: data.ratingGameweekEnd,
+                  finishedFixturesUsed: data.finishedFixturesUsed,
+                  leagueAverageGoals: data.leagueAverageGoals,
+                  selectedForecastGameweek: subView === "fixtures" || subView === "bookings" ? resolvedGameweek : null,
+                }
+              : null
+          }
+        />
+      </div>
 
       <div className="grid gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">

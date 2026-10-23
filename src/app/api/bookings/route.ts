@@ -33,6 +33,7 @@ function forecastParamsFromBody(body: Record<string, unknown>): ForecastParams {
     correlation: numberParam(body.correlation, DEFAULT_FORECAST_PARAMS.correlation),
     simulations: Math.round(numberParam(body.simulations, DEFAULT_FORECAST_PARAMS.simulations)),
     fplStrengthBlend: numberParam(body.fplBlend, DEFAULT_FORECAST_PARAMS.fplStrengthBlend),
+    formulaStrengthBlend: numberParam(body.formulaBlend, DEFAULT_FORECAST_PARAMS.formulaStrengthBlend),
   };
 }
 
@@ -53,6 +54,10 @@ function forecastParamsFromQuery(searchParams: URLSearchParams): ForecastParams 
     correlation: numberParam(searchParams.get("correlation"), DEFAULT_FORECAST_PARAMS.correlation),
     simulations: Math.round(numberParam(searchParams.get("simulations"), DEFAULT_FORECAST_PARAMS.simulations)),
     fplStrengthBlend: numberParam(searchParams.get("fplBlend"), DEFAULT_FORECAST_PARAMS.fplStrengthBlend),
+    formulaStrengthBlend: numberParam(
+      searchParams.get("formulaBlend"),
+      DEFAULT_FORECAST_PARAMS.formulaStrengthBlend,
+    ),
   };
 }
 

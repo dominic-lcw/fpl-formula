@@ -1,7 +1,5 @@
 import {
   attackConSumSql,
-  backtestSampleGameweeksSql,
-  fixtureComponentSql,
   fixtureMatchScoreSql,
   fixtureOutlookSql,
   individualRawSql,
@@ -240,11 +238,7 @@ export function buildMultiFormulaBacktestQuery(strategies: FormulaStrategy[]) {
         coalesce(outcome.actual_points, 0) AS actual_points,
         ${individualRawSql("pf")} AS individual_raw,
         ${teamRawSql("pf.position", "tf.attack", "tf.defence")} AS team_raw,
-        ${fixtureComponentSql(
-          "coalesce(fm.fixture_outlook, 0)",
-          "pf.minutes",
-          backtestSampleGameweeksSql("pf.target_gw", "s.form_window"),
-        )} AS fixture_raw
+        coalesce(fm.fixture_outlook, 0) AS fixture_raw
       FROM player_features pf
       JOIN strategies s ON s.strategy_id = pf.strategy_id
       LEFT JOIN team_form tf
