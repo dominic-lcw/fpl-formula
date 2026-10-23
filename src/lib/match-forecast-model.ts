@@ -61,6 +61,44 @@ export const DEFAULT_FORECAST_PARAMS: ForecastParams = {
   attackGoalsCap: 3,
 };
 
+export function sanitiseForecastParams(input: Partial<ForecastParams> = {}): ForecastParams {
+  return {
+    lookbackGameweeks: clamp(
+      Math.round(Number(input.lookbackGameweeks) || DEFAULT_FORECAST_PARAMS.lookbackGameweeks),
+      3,
+      20,
+    ),
+    homeAdvantage: clamp(
+      Number(input.homeAdvantage) || DEFAULT_FORECAST_PARAMS.homeAdvantage,
+      1,
+      1.35,
+    ),
+    correlation: clamp(Number(input.correlation) || DEFAULT_FORECAST_PARAMS.correlation, 0, 0.25),
+    simulations: Math.round(
+      clamp(Number(input.simulations) || DEFAULT_FORECAST_PARAMS.simulations, 1000, 25_000),
+    ),
+    fplStrengthBlend: clamp(
+      Number(input.fplStrengthBlend) || DEFAULT_FORECAST_PARAMS.fplStrengthBlend,
+      0,
+      1,
+    ),
+    formulaStrengthBlend: clamp(
+      Number(input.formulaStrengthBlend) || DEFAULT_FORECAST_PARAMS.formulaStrengthBlend,
+      0,
+      1,
+    ),
+    attackGoalsCap: clamp(
+      Math.round(
+        Number.isFinite(Number(input.attackGoalsCap))
+          ? Number(input.attackGoalsCap)
+          : DEFAULT_FORECAST_PARAMS.attackGoalsCap,
+      ),
+      0,
+      10,
+    ),
+  };
+}
+
 export type FinishedFixtureRow = {
   fixture_id: number;
   event: number | null;

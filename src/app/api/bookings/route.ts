@@ -13,9 +13,9 @@ import {
 import { getGameweekSlate } from "@/lib/gameweek-slate";
 import { isBookableSelection, isBookingMarket } from "@/lib/booking-settlement";
 import {
-  DEFAULT_FORECAST_PARAMS,
   getFixtureForecast,
   getForecastData,
+  sanitiseForecastParams,
   type ForecastParams,
 } from "@/lib/match-forecast";
 
@@ -27,14 +27,15 @@ function numberParam(value: unknown, fallback: number) {
 }
 
 function forecastParamsFromBody(body: Record<string, unknown>): ForecastParams {
-  return {
-    lookbackGameweeks: numberParam(body.lookback, DEFAULT_FORECAST_PARAMS.lookbackGameweeks),
-    homeAdvantage: numberParam(body.homeAdvantage, DEFAULT_FORECAST_PARAMS.homeAdvantage),
-    correlation: numberParam(body.correlation, DEFAULT_FORECAST_PARAMS.correlation),
-    simulations: Math.round(numberParam(body.simulations, DEFAULT_FORECAST_PARAMS.simulations)),
-    fplStrengthBlend: numberParam(body.fplBlend, DEFAULT_FORECAST_PARAMS.fplStrengthBlend),
-    formulaStrengthBlend: numberParam(body.formulaBlend, DEFAULT_FORECAST_PARAMS.formulaStrengthBlend),
-  };
+  return sanitiseForecastParams({
+    lookbackGameweeks: numberParam(body.lookback, NaN),
+    homeAdvantage: numberParam(body.homeAdvantage, NaN),
+    correlation: numberParam(body.correlation, NaN),
+    simulations: numberParam(body.simulations, NaN),
+    fplStrengthBlend: numberParam(body.fplBlend, NaN),
+    formulaStrengthBlend: numberParam(body.formulaBlend, NaN),
+    attackGoalsCap: numberParam(body.attackGoalsCap, NaN),
+  });
 }
 
 function errorResponse(error: unknown, fallback: string) {
@@ -48,17 +49,15 @@ function errorResponse(error: unknown, fallback: string) {
 }
 
 function forecastParamsFromQuery(searchParams: URLSearchParams): ForecastParams {
-  return {
-    lookbackGameweeks: numberParam(searchParams.get("lookback"), DEFAULT_FORECAST_PARAMS.lookbackGameweeks),
-    homeAdvantage: numberParam(searchParams.get("homeAdvantage"), DEFAULT_FORECAST_PARAMS.homeAdvantage),
-    correlation: numberParam(searchParams.get("correlation"), DEFAULT_FORECAST_PARAMS.correlation),
-    simulations: Math.round(numberParam(searchParams.get("simulations"), DEFAULT_FORECAST_PARAMS.simulations)),
-    fplStrengthBlend: numberParam(searchParams.get("fplBlend"), DEFAULT_FORECAST_PARAMS.fplStrengthBlend),
-    formulaStrengthBlend: numberParam(
-      searchParams.get("formulaBlend"),
-      DEFAULT_FORECAST_PARAMS.formulaStrengthBlend,
-    ),
-  };
+  return sanitiseForecastParams({
+    lookbackGameweeks: numberParam(searchParams.get("lookback"), NaN),
+    homeAdvantage: numberParam(searchParams.get("homeAdvantage"), NaN),
+    correlation: numberParam(searchParams.get("correlation"), NaN),
+    simulations: numberParam(searchParams.get("simulations"), NaN),
+    fplStrengthBlend: numberParam(searchParams.get("fplBlend"), NaN),
+    formulaStrengthBlend: numberParam(searchParams.get("formulaBlend"), NaN),
+    attackGoalsCap: numberParam(searchParams.get("attackGoalsCap"), NaN),
+  });
 }
 
 export async function GET(request: NextRequest) {
