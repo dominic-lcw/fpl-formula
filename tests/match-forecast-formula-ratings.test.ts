@@ -3,7 +3,7 @@ import { deriveAttackDefenceRatings } from "../src/lib/match-forecast-model";
 import {
   buildFormulaVenueMultipliers,
   buildVenueBuckets,
-  forecastRecencyWeight,
+  capGoalsForAttackRate,
   ridgeRegression,
   teamFormulaAttackRaw,
   teamFormulaDefenceRaw,
@@ -11,11 +11,7 @@ import {
   type ForecastSampleOptions,
 } from "../src/lib/match-forecast-formula-ratings";
 
-const defaultSample: ForecastSampleOptions = {
-  ratingEndGameweek: 7,
-  recencyHalfLifeGameweeks: 4,
-  attackGoalsCap: 3,
-};
+const defaultSample: ForecastSampleOptions = { attackGoalsCap: 3 };
 
 function sampleBucket(overrides: Partial<{
   weightSum: number;
@@ -54,9 +50,8 @@ describe("match forecast formula ratings", () => {
     expect(solid).toBeGreaterThan(leaky);
   });
 
-  it("down-weights old blowout wins for attack rate", () => {
-    const options = defaultSample;
-    const buckets = buildVenueBuckets(
+  it("caps blowout goals when scoring attack rate", () => {
+    const capped = buildVenueBuckets(
       [
         {
           fixture_id: 1,
@@ -87,9 +82,9 @@ describe("match forecast formula ratings", () => {
         },
       ],
       [],
-      options,
+      defaultSample,
     );
-    const equalWeight = buildVenueBuckets(
+    const uncapped = buildVenueBuckets(
       [
         {
           fixture_id: 1,
@@ -120,11 +115,12 @@ describe("match forecast formula ratings", () => {
         },
       ],
       [],
-      { ...options, recencyHalfLifeGameweeks: 0, attackGoalsCap: 0 },
+      { attackGoalsCap: 0 },
     );
-    const home = buckets.get("16:H")!;
-    const homeEqual = equalWeight.get("16:H")!;
-    expect(weightedAttackRate(home, 1.35)).toBeLessThan(weightedAttackRate(homeEqual, 1.35));
+    const homeCapped = capped.get("16:H")!;
+    const homeUncapped = uncapped.get("16:H")!;
+    expect(weightedAttackRate(homeCapped, 1.35)).toBeLessThan(weightedAttackRate(homeUncapped, 1.35));
+    expect(capGoalsForAttackRate(5, 3)).toBe(3);
   });
 
   it("uses player xGI and AtkCon when formula blend is on", () => {
@@ -163,7 +159,6 @@ describe("match forecast formula ratings", () => {
       homeAdvantage: 1.1,
       fplStrengthBlend: 0,
       formulaStrengthBlend: 1,
-      recencyHalfLifeGameweeks: 0,
       attackGoalsCap: 0,
     };
     const withoutPlayerStats = deriveAttackDefenceRatings(fixtures, teams, params, []);
@@ -182,11 +177,6 @@ describe("match forecast formula ratings", () => {
     const homeWithout = withoutPlayerStats.strengths.find((team) => team.teamId === 1)!.attackHome;
     const homeWith = withPlayerStats.strengths.find((team) => team.teamId === 1)!.attackHome;
     expect(homeWith).toBeGreaterThan(homeWithout);
-  });
-
-  it("decays weight for older gameweeks", () => {
-    expect(forecastRecencyWeight(7, 7, 4)).toBe(1);
-    expect(forecastRecencyWeight(2, 7, 4)).toBeLessThan(forecastRecencyWeight(6, 7, 4));
   });
 
   it("fits ridge regression when enough samples exist", () => {

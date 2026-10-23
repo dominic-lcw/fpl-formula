@@ -13,8 +13,6 @@ export type PlayerFixtureFormulaRow = {
 };
 
 export type ForecastSampleOptions = {
-  ratingEndGameweek: number;
-  recencyHalfLifeGameweeks: number;
   attackGoalsCap: number;
 };
 
@@ -57,16 +55,6 @@ function emptyBucket(): VenueBucket {
   };
 }
 
-export function forecastRecencyWeight(
-  event: number | null | undefined,
-  ratingEndGameweek: number,
-  halfLifeGameweeks: number,
-) {
-  if (!halfLifeGameweeks || halfLifeGameweeks <= 0 || !event || !ratingEndGameweek) return 1;
-  const age = Math.max(0, ratingEndGameweek - event);
-  return 0.5 ** (age / halfLifeGameweeks);
-}
-
 export function capGoalsForAttackRate(goals: number, cap: number) {
   if (!cap || cap <= 0) return goals;
   return Math.min(goals, cap);
@@ -96,39 +84,32 @@ export function buildVenueBuckets(
   };
 
   for (const fixture of fixtures) {
-    const event = fixture.event ?? options.ratingEndGameweek;
-    const weight = forecastRecencyWeight(event, options.ratingEndGameweek, options.recencyHalfLifeGameweeks);
     const home = ensure(fixture.team_h, true);
     const away = ensure(fixture.team_a, false);
     const homeAttackGoals = capGoalsForAttackRate(fixture.team_h_score, options.attackGoalsCap);
     const awayAttackGoals = capGoalsForAttackRate(fixture.team_a_score, options.attackGoalsCap);
 
-    home.weightSum += weight;
-    home.weightedPoints += weight * matchPointsFor(fixture.team_h_score, fixture.team_a_score);
-    home.weightedScored += weight * fixture.team_h_score;
-    home.weightedScoredForAttack += weight * homeAttackGoals;
-    home.weightedConceded += weight * fixture.team_a_score;
+    home.weightSum += 1;
+    home.weightedPoints += matchPointsFor(fixture.team_h_score, fixture.team_a_score);
+    home.weightedScored += fixture.team_h_score;
+    home.weightedScoredForAttack += homeAttackGoals;
+    home.weightedConceded += fixture.team_a_score;
 
-    away.weightSum += weight;
-    away.weightedPoints += weight * matchPointsFor(fixture.team_a_score, fixture.team_h_score);
-    away.weightedScored += weight * fixture.team_a_score;
-    away.weightedScoredForAttack += weight * awayAttackGoals;
-    away.weightedConceded += weight * fixture.team_h_score;
+    away.weightSum += 1;
+    away.weightedPoints += matchPointsFor(fixture.team_a_score, fixture.team_h_score);
+    away.weightedScored += fixture.team_a_score;
+    away.weightedScoredForAttack += awayAttackGoals;
+    away.weightedConceded += fixture.team_h_score;
   }
 
   for (const row of playerRows) {
-    const weight = forecastRecencyWeight(
-      row.event,
-      options.ratingEndGameweek,
-      options.recencyHalfLifeGameweeks,
-    );
     const bucket = ensure(row.team_id, row.was_home);
-    bucket.xgi += weight * row.xgi;
-    bucket.attackCon += weight * row.attack_con;
-    bucket.defcon += weight * row.defcon;
-    bucket.xgc += weight * row.expected_goals_conceded;
-    bucket.minutes += weight * row.minutes;
-    bucket.playerWeightSum += weight;
+    bucket.xgi += row.xgi;
+    bucket.attackCon += row.attack_con;
+    bucket.defcon += row.defcon;
+    bucket.xgc += row.expected_goals_conceded;
+    bucket.minutes += row.minutes;
+    bucket.playerWeightSum += 1;
   }
 
   return buckets;

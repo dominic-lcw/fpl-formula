@@ -47,8 +47,6 @@ export type ForecastParams = {
   fplStrengthBlend: number;
   /** Blend rankings-style team attack/defence (xGI, AtkCon, DefCon, …) into λ multipliers. */
   formulaStrengthBlend: number;
-  /** Half-life for exponential recency on finished matches (0 = equal weight). */
-  recencyHalfLifeGameweeks: number;
   /** Cap goals per match when scoring attack rates (0 = no cap). Defence uses actual goals. */
   attackGoalsCap: number;
 };
@@ -60,7 +58,6 @@ export const DEFAULT_FORECAST_PARAMS: ForecastParams = {
   simulations: 10_000,
   fplStrengthBlend: 0.35,
   formulaStrengthBlend: 0.55,
-  recencyHalfLifeGameweeks: 4,
   attackGoalsCap: 3,
 };
 
@@ -127,7 +124,7 @@ export const FORECAST_LAMBDA_HOME_TEXT =
 export const FORECAST_LAMBDA_AWAY_TEXT = "λ_away = league avg × away attack (A) × home defence (H)";
 
 export const FORECAST_RATING_NOTE =
-  "Attack blends recency-weighted goals (capped per match for scoring rate) with the rankings team-attack recipe (match points, goals, squad xGI, AtkCon). Defence blends goals conceded with a ridge model on the rankings defence recipe (goals conceded, DefCon), expected goals conceded, and FPL defence strength. Each multiplier is then blended with official FPL strength ratings. Values are clamped to 0.45–2.2.";
+  "Attack blends goals scored (capped per match for the scoring rate) with the rankings team-attack recipe (match points, goals, squad xGI, AtkCon). Defence blends goals conceded with a ridge model on the rankings defence recipe (goals conceded, DefCon), expected goals conceded, and FPL defence strength. Each multiplier is then blended with official FPL strength ratings. Values are clamped to 0.45–2.2.";
 
 export const FORECAST_SIMULATION_NOTE =
   "A bivariate Poisson draw uses λ_home, λ_away, and a shared λ₃ from the correlation control. Monte Carlo counts produce 1X2, over 2.5, BTTS, and scoreline probabilities.";
@@ -137,23 +134,11 @@ export function deriveAttackDefenceRatings(
   teams: TeamRatingRow[],
   params: Pick<
     ForecastParams,
-    | "homeAdvantage"
-    | "fplStrengthBlend"
-    | "formulaStrengthBlend"
-    | "recencyHalfLifeGameweeks"
-    | "attackGoalsCap"
+    "homeAdvantage" | "fplStrengthBlend" | "formulaStrengthBlend" | "attackGoalsCap"
   >,
   playerRows: PlayerFixtureFormulaRow[] = [],
 ) {
-  const ratingEndGameweek = fixtures.reduce(
-    (max, fixture) => Math.max(max, fixture.event ?? 0),
-    0,
-  );
-  const sampleOptions = {
-    ratingEndGameweek,
-    recencyHalfLifeGameweeks: params.recencyHalfLifeGameweeks,
-    attackGoalsCap: params.attackGoalsCap,
-  };
+  const sampleOptions = { attackGoalsCap: params.attackGoalsCap };
   const stats = new Map<number, {
     homeGoalsFor: number;
     homeGoalsAgainst: number;
