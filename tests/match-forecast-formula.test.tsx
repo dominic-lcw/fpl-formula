@@ -22,5 +22,7 @@ describe("MatchForecastFormula", () => {
     expect(html).toContain("90 finished matches");
     expect(html).toContain("GW13");
     expect(html).toContain("unfinished");
+    expect(html).toContain("attack_home(i)");
+    expect(html).toContain("FDR class of j");
   });
 });

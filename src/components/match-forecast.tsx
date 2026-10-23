@@ -231,11 +231,13 @@ function FixtureForecastCard({
         <div className="text-center">
           <p className="text-lg font-semibold tracking-tight">{fixture.homeShortName}</p>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{fixture.homeTeam}</p>
+          <FdrBadge fdr={fixture.homeFdr} />
         </div>
         <span className="rounded-full border px-2.5 py-1 text-xs font-medium text-muted-foreground">vs</span>
         <div className="text-center">
           <p className="text-lg font-semibold tracking-tight">{fixture.awayShortName}</p>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{fixture.awayTeam}</p>
+          <FdrBadge fdr={fixture.awayFdr} />
         </div>
       </div>
 
@@ -330,6 +332,21 @@ function ParameterSlider({
         onChange={(event) => onChange(Number(event.target.value))}
       />
     </label>
+  );
+}
+
+function FdrBadge({ fdr }: { fdr: number }) {
+  const tone = fdr <= 2
+    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+    : fdr === 3
+      ? "bg-muted text-muted-foreground"
+      : fdr === 4
+        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+        : "bg-red-500/15 text-red-700 dark:text-red-300";
+  return (
+    <span className={`mt-1 inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-medium ${tone}`}>
+      FDR {fdr}
+    </span>
   );
 }
 
@@ -507,6 +524,7 @@ function TeamStrengthsPanel({
           <thead>
             <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
               <th className="py-2 pr-3">Team</th>
+              <th className="py-2 pr-3">FDR (H/A)</th>
               <th className="py-2 pr-3">Attack (H/A)</th>
               <th className="py-2 pr-3">Defence (H/A)</th>
               <th className="py-2">Matches</th>
@@ -516,6 +534,11 @@ function TeamStrengthsPanel({
             {data.teamStrengths.map((team) => (
               <tr key={team.teamId} className="border-b border-border/60">
                 <td className="py-2 pr-3 font-medium">{team.shortName}</td>
+                <td className="py-2 pr-3">
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {team.fdrHome} / {team.fdrAway}
+                  </span>
+                </td>
                 <td className="py-2 pr-3">
                   <div className="grid gap-1">
                     <StrengthBar value={team.attackHome} tone="attack" />
@@ -540,9 +563,21 @@ function TeamStrengthsPanel({
           </tbody>
         </table>
         <div className="mt-4 rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
-          <p className="font-medium text-foreground">Formula</p>
-          <p className="mt-1">λ<sub>home</sub> = league avg × attack<sub>home</sub> × defence<sub>away</sub> × home advantage</p>
-          <p>λ<sub>away</sub> = league avg × attack<sub>away</sub> × defence<sub>home</sub></p>
+          <p className="font-medium text-foreground">FDR class</p>
+          <p className="mt-1">
+            A team&apos;s class is the fixture difficulty its opponent is given. FDR 2 is the easiest class and FDR 5 the hardest.
+          </p>
+          <p className="mt-2 font-medium text-foreground">Strength matrix</p>
+          <p className="mt-1">
+            Home goals of i vs j ≈ league avg × attack<sub>home</sub>(i) × defence(FDR of j)
+          </p>
+          <p>Away goals of i vs j ≈ league avg × attack<sub>away</sub>(j) × defence(FDR of i)</p>
+          <p className="mt-2">
+            The same scoreline against an FDR 5 side moves the rating less than it does against an FDR 2 side.
+          </p>
+          <p className="mt-2 font-medium text-foreground">Expected goals</p>
+          <p className="mt-1">λ<sub>home</sub> = league avg × attack<sub>home</sub> × FDR defence<sub>away</sub> × defence residual<sub>away</sub> × home advantage</p>
+          <p>λ<sub>away</sub> = league avg × attack<sub>away</sub> × FDR defence<sub>home</sub> × defence residual<sub>home</sub></p>
         </div>
       </CardContent>
     </Card>

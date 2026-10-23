@@ -143,6 +143,8 @@ function buildFixtureForecasts(
         awayTeam: awayMeta?.name ?? "Away",
         homeShortName: homeMeta?.short_name ?? "H",
         awayShortName: awayMeta?.short_name ?? "A",
+        homeFdr: homeTeam?.fdrHome ?? 3,
+        awayFdr: awayTeam?.fdrAway ?? 3,
         expectedHomeGoals: 0,
         expectedAwayGoals: 0,
         homeWinProb: 0,
@@ -187,7 +189,8 @@ async function buildForecastData(
       [meta.season],
     ),
     query<FinishedFixtureRow>(
-      `SELECT fixture_id, event, kickoff_time, team_h, team_a, team_h_score, team_a_score
+      `SELECT fixture_id, event, kickoff_time, team_h, team_a, team_h_score, team_a_score,
+              team_h_difficulty, team_a_difficulty
        FROM fixtures
        WHERE season = ? AND finished = true AND event BETWEEN ? AND ?
          AND team_h_score IS NOT NULL AND team_a_score IS NOT NULL
@@ -222,7 +225,8 @@ async function buildForecastData(
       [meta.season, minGameweek, meta.currentGameweek],
     ),
     query<UpcomingFixtureRow>(
-      `SELECT fixture_id, event, kickoff_time, team_h, team_a, team_h_score, team_a_score, finished
+      `SELECT fixture_id, event, kickoff_time, team_h, team_a, team_h_score, team_a_score,
+              team_h_difficulty, team_a_difficulty, finished
        FROM fixtures
        WHERE season = ? AND finished = false
        ORDER BY kickoff_time NULLS LAST, event, fixture_id`,
